@@ -8,6 +8,7 @@ node_modules/
 certs/
 logs/
 public/css/main.css
+public/css/main.css.map
 *.log
 public/uploads/*
 !public/uploads/.gitkeep

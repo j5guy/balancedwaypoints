@@ -20,7 +20,7 @@ jobs:
       - name: Clone or Pull Latest Code
         run: |
           if [ -d "${{ env.WEB_DIR }}/.git" ]; then
-            git reset --hard HEAD
+            git -C "${{ env.WEB_DIR }}" reset --hard HEAD
             git -C "${{ env.WEB_DIR }}" pull
           else
             mkdir -p "${{ env.WEB_DIR }}"

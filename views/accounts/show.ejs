@@ -37,6 +37,23 @@
                 </select>
             </div>
         </div>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="pref-limit-history">
+            <label for="pref-limit-history">Limit how far back this register loads transactions</label>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="pref-history-amount">Show history within</label>
+                <input type="number" id="pref-history-amount" min="1" style="max-width:100px;">
+            </div>
+            <div class="form-group">
+                <label for="pref-history-unit">&nbsp;</label>
+                <select id="pref-history-unit">
+                    <option value="days">Day(s)</option>
+                    <option value="months">Month(s)</option>
+                </select>
+            </div>
+        </div>
         <div class="btn-row">
             <button type="button" class="btn btn-primary" id="save-settings-btn">Save settings</button>
             <button type="button" class="btn btn-secondary" id="cancel-settings-btn">Cancel</button>
@@ -138,8 +155,8 @@
                 <col style="width:100px" data-col="tags">
                 <col style="width:88px" data-col="amount">
                 <col style="width:88px" data-col="balance">
-                <col style="width:56px">
                 <col style="width:34px" data-col="cleared">
+                <col style="width:56px">
             </colgroup>
             <thead>
                 <tr>
@@ -151,8 +168,8 @@
                     <th data-col="tags">Tags</th>
                     <th data-col="amount">Amount</th>
                     <th data-col="balance">Balance</th>
-                    <th></th>
                     <th title="Cleared" data-col="cleared">✓</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody id="quick-add-tbody">
@@ -172,8 +189,8 @@
                     <td data-col="tags"><input type="text" id="qa-tags" placeholder="tag, tag"></td>
                     <td data-col="amount"><input type="number" id="qa-amount" step="0.01" placeholder="-45.00"></td>
                     <td class="muted" data-col="balance">—</td>
-                    <td><button type="button" class="btn btn-primary btn-sm" id="qa-add-btn">Add</button></td>
                     <td style="text-align:center;" data-col="cleared"><input type="checkbox" id="qa-cleared" title="Cleared"></td>
+                    <td><button type="button" class="btn btn-primary btn-sm" id="qa-add-btn">Add</button></td>
                 </tr>
             </tbody>
             <tbody id="register-tbody"></tbody>

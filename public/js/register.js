@@ -9,7 +9,6 @@
     let categoryGroups = [];
     let payees = [];
     let editingId = null;
-    let startingBalanceCents = 0;
     let currentBalanceCents = 0;
     let transactionsById = new Map();
     let preferences = null;
@@ -20,7 +19,8 @@
     };
     const DEFAULT_PREFERENCES = {
         registerColumns: { date: true, payee: true, category: true, notes: true, tags: true, amount: true, balance: true, cleared: true },
-        upcomingSchedules: { enabled: false, amount: 14, unit: 'days' }
+        upcomingSchedules: { enabled: false, amount: 14, unit: 'days' },
+        registerHistory: { enabled: false, amount: 3, unit: 'months' }
     };
 
     function showError(err) {
@@ -51,7 +51,6 @@
         const account = accounts.find(a => a.id === accountId);
         document.getElementById('account-name').textContent = account ? account.name : 'Register';
         if (account) {
-            startingBalanceCents = account.startingBalanceCents;
             currentBalanceCents = account.balanceCents;
             const balEl = document.getElementById('account-balance');
             balEl.textContent = window.BWMoney.formatCents(account.balanceCents);
@@ -87,16 +86,21 @@
     // top by default) rather than the transaction date — so dragging a row
     // to a new position recalculates every balance between its old and new
     // spot, same as physically re-ordering entries in a paper ledger would.
-    // orderedTransactions must already be in top-to-bottom display order;
-    // the bottom-most row is treated as "earliest" and accumulates up from
-    // the account's starting balance.
+    // orderedTransactions must already be in top-to-bottom display order.
+    // Seeded from the account's real CURRENT balance and walked newest
+    // (top) to oldest (bottom), subtracting each transaction's own amount
+    // to step to the balance just before it — rather than seeding from the
+    // starting balance and walking the other way — so this stays correct
+    // even when the register's history is limited to a rolling window
+    // (see the registerHistory preference) and the oldest loaded row isn't
+    // actually the account's first-ever transaction.
     function computeRunningBalances(orderedTransactions) {
-        let running = startingBalanceCents;
+        let running = currentBalanceCents;
         const balanceById = new Map();
-        for (let i = orderedTransactions.length - 1; i >= 0; i--) {
+        for (let i = 0; i < orderedTransactions.length; i++) {
             const t = orderedTransactions[i];
-            running += t.amountCents;
             balanceById.set(t.id, running);
+            running -= t.amountCents;
         }
         return balanceById;
     }
@@ -138,13 +142,13 @@
             <td data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
             <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents)}</td>
             <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents)}</td>
-            <td class="row-actions">
-                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
-                <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
-            </td>
             <td data-col="cleared">
                 <button type="button" class="cleared-toggle ${isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off'}"
                         data-cleared-toggle title="${isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared'}">${isCleared ? '✓' : '✕'}</button>
+            </td>
+            <td class="row-actions">
+                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
+                <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
             </td>
         `;
         tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(t));
@@ -207,6 +211,9 @@
         document.getElementById('pref-show-upcoming').checked = preferences.upcomingSchedules.enabled;
         document.getElementById('pref-upcoming-amount').value = preferences.upcomingSchedules.amount;
         document.getElementById('pref-upcoming-unit').value = preferences.upcomingSchedules.unit;
+        document.getElementById('pref-limit-history').checked = preferences.registerHistory.enabled;
+        document.getElementById('pref-history-amount').value = preferences.registerHistory.amount;
+        document.getElementById('pref-history-unit').value = preferences.registerHistory.unit;
         panel.hidden = false;
     });
     document.getElementById('cancel-settings-btn').addEventListener('click', () => {
@@ -220,8 +227,13 @@
             amount: Math.max(1, Number(document.getElementById('pref-upcoming-amount').value) || 1),
             unit: document.getElementById('pref-upcoming-unit').value
         };
+        const registerHistory = {
+            enabled: document.getElementById('pref-limit-history').checked,
+            amount: Math.max(1, Number(document.getElementById('pref-history-amount').value) || 1),
+            unit: document.getElementById('pref-history-unit').value
+        };
         try {
-            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerColumns, upcomingSchedules } });
+            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerColumns, upcomingSchedules, registerHistory } });
             applyColumnPreferences();
             document.getElementById('settings-panel').hidden = true;
             await loadTransactions();
@@ -251,8 +263,8 @@
             <td data-col="tags"></td>
             <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents)}</td>
             <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents)}</td>
-            <td><span class="badge" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">Scheduled</span></td>
             <td data-col="cleared"></td>
+            <td><span class="badge" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">Scheduled</span></td>
         `;
         return tr;
     }
@@ -315,9 +327,22 @@
         }
     }
 
+    // null means "no limit" — the default, so existing registers keep
+    // showing full history until a user opts into a rolling window.
+    function historyFromDate() {
+        const { enabled, amount, unit } = preferences.registerHistory;
+        if (!enabled) return null;
+        const from = new Date();
+        if (unit === 'months') from.setMonth(from.getMonth() - amount);
+        else from.setDate(from.getDate() - amount);
+        return from;
+    }
+
     async function loadTransactions() {
         try {
-            const { transactions } = await window.BWApi.apiFetch(`/api/transactions?account=${accountId}`);
+            const from = historyFromDate();
+            const url = `/api/transactions?account=${accountId}` + (from ? `&from=${from.toISOString()}` : '');
+            const { transactions } = await window.BWApi.apiFetch(url);
             transactionsById = new Map(transactions.map(t => [t.id, t]));
             const tbody = document.getElementById('register-tbody');
             tbody.innerHTML = '';
@@ -328,7 +353,7 @@
 
             if (transactions.length === 0) {
                 if (upcomingRows.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No transactions yet.</td></tr>';
+                    tbody.innerHTML = `<tr><td colspan="10" class="empty-state">${from ? 'No transactions in this time window.' : 'No transactions yet.'}</td></tr>`;
                 }
                 return;
             }

@@ -121,6 +121,15 @@ const userSchema = new mongoose.Schema({
             amount: { type: Number, default: 14 },
             unit: { type: String, enum: ['days', 'months'], default: 'days' }
         },
+        // How far back the register loads real transactions from — mirrors
+        // upcomingSchedules' shape but looking the other direction in time.
+        // Disabled by default so existing registers keep showing full
+        // history until a user opts into a rolling window.
+        registerHistory: {
+            enabled: { type: Boolean, default: false },
+            amount: { type: Number, default: 3 },
+            unit: { type: String, enum: ['days', 'months'], default: 'months' }
+        },
         // Sent by services/jobs/weeklyReportEmailJob.js through this user's
         // own configured SMTP (smtp above) — requires that to be set up, same
         // as per-schedule email alerts (see models/schedule.js's notifyByEmail).

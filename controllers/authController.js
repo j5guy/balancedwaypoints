@@ -161,6 +161,7 @@ async function getPreferences(req, res) {
     res.json({
         registerColumns: user.preferences.registerColumns,
         upcomingSchedules: user.preferences.upcomingSchedules,
+        registerHistory: user.preferences.registerHistory,
         weeklyReportEmail: user.preferences.weeklyReportEmail,
         notifyEmail: user.notifyEmail,
         themeColors: user.themeColors
@@ -192,9 +193,10 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { registerColumns, upcomingSchedules, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
+    const { registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
+    if (registerHistory) Object.assign(user.preferences.registerHistory, registerHistory);
     if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
     // notifyEmail lives directly on the user doc (see models/user.js), not
     // under preferences, but is accepted here too so the My Account page's
@@ -222,6 +224,7 @@ async function updatePreferences(req, res) {
         res.json({
             registerColumns: user.preferences.registerColumns,
             upcomingSchedules: user.preferences.upcomingSchedules,
+            registerHistory: user.preferences.registerHistory,
             weeklyReportEmail: user.preferences.weeklyReportEmail,
             notifyEmail: user.notifyEmail,
             themeColors: user.themeColors

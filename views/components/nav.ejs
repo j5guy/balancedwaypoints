@@ -11,6 +11,7 @@
             <a href="/schedules" class="nav-link<%= locals.path && locals.path.startsWith('/schedules') ? ' active' : '' %>">Schedules</a>
             <a href="/imports" class="nav-link<%= locals.path && locals.path.startsWith('/imports') ? ' active' : '' %>">Import</a>
             <a href="/reports" class="nav-link<%= locals.path && locals.path.startsWith('/reports') ? ' active' : '' %>">Reports</a>
+            <a href="/account" class="nav-link<%= locals.path && locals.path.startsWith('/account') ? ' active' : '' %>">My Account</a>
             <% if (locals.isAdmin) { %>
                 <a href="/admin" class="nav-link<%= locals.path && locals.path.startsWith('/admin') ? ' active' : '' %>">Admin</a>
             <% } %>

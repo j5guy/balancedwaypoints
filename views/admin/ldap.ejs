@@ -1,0 +1,52 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-admin-ldap">
+    <div class="page-header">
+        <h1>LDAP</h1>
+    </div>
+    <div id="ldap-error" class="form-error" hidden></div>
+    <div id="ldap-success" class="form-success" hidden></div>
+    <p class="muted">
+        When enabled, the login page offers LDAP as a second way to log in, alongside local
+        accounts — nobody's local account is affected either way. A first-time LDAP login
+        auto-creates an account here the same way signing up does.
+    </p>
+
+    <div class="card">
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="ldap-enabled">
+            <label for="ldap-enabled">Enable LDAP login</label>
+        </div>
+        <div class="form-group">
+            <label for="ldap-url">Server URL</label>
+            <input type="text" id="ldap-url" placeholder="ldap://dc.example.lan:389">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="ldap-bind-dn">Bind DN</label>
+                <input type="text" id="ldap-bind-dn" placeholder="cn=service-account,dc=example,dc=lan">
+            </div>
+            <div class="form-group">
+                <label for="ldap-bind-password">Bind password</label>
+                <input type="password" id="ldap-bind-password" autocomplete="off">
+                <p class="form-hint" id="ldap-bind-password-hint" hidden>Leave blank to keep the currently saved password.</p>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="ldap-search-base">Search base</label>
+            <input type="text" id="ldap-search-base" placeholder="ou=people,dc=example,dc=lan">
+        </div>
+        <div class="form-group">
+            <label for="ldap-search-filter">Search filter</label>
+            <input type="text" id="ldap-search-filter" placeholder="(sAMAccountName={{username}})">
+            <p class="form-hint">Must contain the literal <code>{{username}}</code> placeholder — e.g. <code>(sAMAccountName={{username}})</code> for Active Directory, <code>(uid={{username}})</code> for OpenLDAP.</p>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-ldap-btn">Save</button>
+            <button type="button" class="btn btn-secondary" id="test-ldap-btn">Test connection</button>
+            <button type="button" class="btn btn-danger" id="reset-ldap-btn">Disable &amp; clear</button>
+        </div>
+        <p class="muted" id="ldap-test-status" style="margin-top:12px;"></p>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/adminLdap.js'] }) %>

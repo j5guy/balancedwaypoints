@@ -15,6 +15,22 @@
             </div>
             <button type="submit" class="btn btn-primary btn-block" id="login-submit">Log in</button>
         </form>
+
+        <p class="form-hint" id="ldap-toggle-row" hidden>
+            <a href="#" id="toggle-ldap-form-link">Log in with LDAP instead</a>
+        </p>
+        <form id="ldap-login-form" hidden>
+            <div class="form-group">
+                <label for="ldap-username">Username</label>
+                <input type="text" id="ldap-username" name="username" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="ldap-password">Password</label>
+                <input type="password" id="ldap-password" name="password" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" id="ldap-login-submit">Log in with LDAP</button>
+        </form>
+
         <p class="form-hint">
             Need an account? <a href="/auth/signup">Sign up</a>
         </p>

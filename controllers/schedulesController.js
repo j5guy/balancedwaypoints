@@ -21,7 +21,10 @@ function serialize(schedule) {
         notes: schedule.notes,
         // "Upcoming" is computed here, never stored — a schedule is due soon
         // once we're within its own reminder window of nextDate.
-        dueSoon: schedule.active && dueInDays <= schedule.reminderDaysBefore
+        dueSoon: schedule.active && dueInDays <= schedule.reminderDaysBefore,
+        // See services/jobs/scheduleReminderEmailJob.js — emails everyone
+        // with their own SMTP configured once this occurrence goes dueSoon.
+        notifyByEmail: schedule.notifyByEmail
     };
 }
 
@@ -38,7 +41,7 @@ async function list(req, res) {
 }
 
 async function create(req, res) {
-    const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, notes } = req.body || {};
+    const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, notes, notifyByEmail } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (!account) return res.status(400).json({ error: 'account is required' });
     if (amountCents === undefined) return res.status(400).json({ error: 'amountCents is required' });
@@ -56,14 +59,15 @@ async function create(req, res) {
         nextDate, endDate: endDate || null,
         autoEnter: !!autoEnter,
         reminderDaysBefore: reminderDaysBefore !== undefined ? Number(reminderDaysBefore) : 3,
-        notes: notes || ''
+        notes: notes || '',
+        notifyByEmail: !!notifyByEmail
     });
     const populated = await schedules.findById(schedule._id);
     res.status(201).json(serialize(populated));
 }
 
 async function update(req, res) {
-    const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes } = req.body || {};
+    const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes, notifyByEmail } = req.body || {};
     if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
 
     const data = {};
@@ -80,6 +84,7 @@ async function update(req, res) {
     if (reminderDaysBefore !== undefined) data.reminderDaysBefore = Number(reminderDaysBefore);
     if (active !== undefined) data.active = !!active;
     if (notes !== undefined) data.notes = notes;
+    if (notifyByEmail !== undefined) data.notifyByEmail = !!notifyByEmail;
 
     const schedule = await schedules.update(req.params.id, data);
     if (!schedule) return res.status(404).json({ error: 'Not found' });

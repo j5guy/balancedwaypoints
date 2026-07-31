@@ -13,6 +13,8 @@ self-hosted, Quicken/Actual-Budget-style personal finance app.
 - **Schedules** — recurring transactions (bills, paychecks) that either auto-enter into the register or just remind you they're coming due.
 - **Import** — CSV (tolerant bank-export column detection) and OFX/QFX, with duplicate detection and rule-based suggestions before you commit.
 - **Reports** — spending by category, income vs. expense, net worth over time.
+- **LDAP login** (optional) — log in against Active Directory/OpenLDAP alongside local accounts, configurable at install time or later from Admin > LDAP.
+- **Email notifications** — each person configures their own outgoing mail server from My Account; per-schedule "email when due" alerts and an opt-in weekly summary go out through it.
 
 ## Quick install
 

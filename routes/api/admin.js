@@ -9,4 +9,9 @@ router.get('/users', adminController.listUsers);
 router.put('/users/:id/admin', adminController.setAdmin);
 router.delete('/users/:id', adminController.removeUser);
 
+router.get('/settings/ldap', adminController.getLdapSettings);
+router.put('/settings/ldap', adminController.updateLdapSettings);
+router.delete('/settings/ldap', adminController.resetLdapSettings);
+router.post('/settings/ldap/test', adminController.testLdapSettings);
+
 module.exports = router;

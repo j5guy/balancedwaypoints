@@ -1,0 +1,78 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-account">
+    <div class="page-header">
+        <h1>My Account</h1>
+    </div>
+    <div id="account-error" class="form-error" hidden></div>
+    <div id="account-success" class="form-success" hidden></div>
+
+    <div class="card">
+        <h3>Signed in as</h3>
+        <p><span id="account-email" class="money"></span> <span class="badge" id="account-auth-source"></span></p>
+    </div>
+
+    <div class="card">
+        <h3>Email notifications</h3>
+        <p class="muted">
+            Schedule alerts (turned on per-schedule) and the weekly summary below are sent through
+            your own mail server — nothing goes out until you set one up here.
+        </p>
+        <div class="form-group">
+            <label for="notify-email">Send notifications to</label>
+            <input type="email" id="notify-email" placeholder="you@example.com">
+            <p class="form-hint">Defaults to your login email for a local account. LDAP accounts have no
+            guaranteed email from the directory, so set this yourself.</p>
+        </div>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="weekly-report-email">
+            <label for="weekly-report-email">Email me a weekly summary (spending by category, account balances)</label>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-notifications-btn">Save</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>My outgoing mail server</h3>
+        <p class="muted">E.g. Gmail: host <code>smtp.gmail.com</code>, port <code>587</code>, and an
+        <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">app password</a>
+        (not your regular password) as the password below.</p>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="smtp-host">Host</label>
+                <input type="text" id="smtp-host" placeholder="smtp.gmail.com">
+            </div>
+            <div class="form-group">
+                <label for="smtp-port">Port</label>
+                <input type="number" id="smtp-port" placeholder="587">
+            </div>
+            <div class="checkbox-row form-group" style="align-self:flex-end;">
+                <input type="checkbox" id="smtp-secure">
+                <label for="smtp-secure">Use TLS (usually on for port 465)</label>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="smtp-user">Username</label>
+                <input type="text" id="smtp-user" placeholder="you@gmail.com">
+            </div>
+            <div class="form-group">
+                <label for="smtp-pass">Password</label>
+                <input type="password" id="smtp-pass" autocomplete="off">
+                <p class="form-hint" id="smtp-pass-hint" hidden>Leave blank to keep the currently saved password.</p>
+            </div>
+            <div class="form-group">
+                <label for="smtp-from">From address (optional)</label>
+                <input type="text" id="smtp-from" placeholder="you@gmail.com">
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-smtp-btn">Save</button>
+            <button type="button" class="btn btn-secondary" id="test-smtp-btn">Test connection</button>
+            <button type="button" class="btn btn-danger" id="clear-smtp-btn">Clear</button>
+        </div>
+        <p class="muted" id="smtp-test-status" style="margin-top:12px;"></p>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/account.js'] }) %>

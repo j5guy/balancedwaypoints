@@ -35,9 +35,15 @@ const FIELD_LABELS = {
     mongoUser: 'MongoDB username',
     mongoPass: 'MongoDB password',
     mongoPort: 'MongoDB port',
-    mongoDBName: 'MongoDB database name'
+    mongoDBName: 'MongoDB database name',
+    LDAP_ENABLED: 'Enable LDAP login (true/false)',
+    LDAP_URL: 'LDAP server URL',
+    LDAP_BIND_DN: 'LDAP bind DN',
+    LDAP_BIND_PASSWORD: 'LDAP bind password',
+    LDAP_SEARCH_BASE: 'LDAP search base',
+    LDAP_SEARCH_FILTER: 'LDAP search filter'
 };
-const MASKED_KEYS = new Set(['mongoPass']);
+const MASKED_KEYS = new Set(['mongoPass', 'LDAP_BIND_PASSWORD']);
 const HIDDEN_KEYS = new Set(['sessionSecret', 'MONGO_IMAGE']);
 const MONGO_EXTERNAL_ONLY_KEYS = new Set(['mongoHost', 'mongoUser', 'mongoPass']);
 const REQUIRED_KEYS = new Set(['WEB_FQDN']);

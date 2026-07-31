@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const usersDb = require('../services/database/users');
 const { adminEmail, signupAllowlist } = require('../config/config');
+const { resolveLdapConfig, authenticateLdap } = require('../config/ldapAuth');
 const logger = require('../utils/logger');
 
 const BCRYPT_ROUNDS = 12;
@@ -34,7 +35,14 @@ async function signup(req, res) {
     const isAdmin = userCount === 0 || email === adminEmail;
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-    const user = await usersDb.create({ email, displayName, passwordHash, isAdmin, lastLoginAt: new Date() });
+    const user = await usersDb.create({
+        email, displayName, passwordHash, isAdmin, lastLoginAt: new Date(),
+        // Defaults the notify-email used by schedule/weekly-report emails
+        // (see models/user.js) to the login email — editable later from My
+        // Account. LDAP accounts don't get this default (no guaranteed email
+        // from the directory); see loginLdap below.
+        notifyEmail: email
+    });
     establishSession(req, user);
     logger.info(`New signup: ${email}${isAdmin ? ' (admin)' : ''}`);
     req.session.save((err) => {
@@ -49,13 +57,74 @@ async function login(req, res) {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
 
     const user = await usersDb.findByEmailWithPassword(email);
-    const valid = user && await bcrypt.compare(password, user.passwordHash);
+    // passwordHash is only set for authSource:'local' accounts — an
+    // LDAP-provisioned user sharing this email (unlikely, but possible) has
+    // none, and bcrypt.compare() throws on a non-string hash rather than
+    // just returning false, so this has to short-circuit first.
+    const valid = user && user.passwordHash && await bcrypt.compare(password, user.passwordHash);
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
 
     user.lastLoginAt = new Date();
     await user.save();
     establishSession(req, user);
     logger.info(`Login: ${email}`);
+    req.session.save((err) => {
+        if (err) logger.error('Session save error: ' + err.message);
+        res.json({ email: user.email, displayName: user.displayName, isAdmin: user.isAdmin });
+    });
+}
+
+// Public — the login page uses this to decide whether to show the LDAP
+// login form at all, so it isn't presented as an option when nobody's
+// configured it.
+async function ldapStatus(req, res) {
+    const config = await resolveLdapConfig().catch(() => null);
+    res.json({ enabled: !!(config && config.enabled) });
+}
+
+async function loginLdap(req, res) {
+    const username = String((req.body || {}).username || '').trim();
+    const password = String((req.body || {}).password || '');
+    if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+
+    const config = await resolveLdapConfig();
+    if (!config || !config.enabled) return res.status(400).json({ error: 'LDAP login is not enabled' });
+
+    let entry;
+    try {
+        entry = await authenticateLdap(config, username, password);
+    } catch (err) {
+        logger.info(`LDAP login failed for "${username}": ${err.message}`);
+        return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    let user = await usersDb.findByLdapUsername(username);
+    if (!user) {
+        // No guaranteed `mail` attribute in every directory — fall back to a
+        // clearly-non-routable placeholder; the user sets a real notifyEmail
+        // themselves from My Account before any email actually goes out.
+        const email = (entry.mail || `${username}@ldap.local`).toLowerCase();
+        const displayName = entry.displayName || entry.cn || username;
+
+        const emailConflict = await usersDb.findByEmail(email);
+        if (emailConflict) {
+            logger.error(`LDAP login for "${username}" resolved to email "${email}", which already belongs to a different account`);
+            return res.status(409).json({ error: 'An account with this email already exists — ask an admin to resolve this' });
+        }
+
+        const userCount = await usersDb.count();
+        const isAdmin = userCount === 0 || email === adminEmail;
+        user = await usersDb.create({
+            email, displayName, isAdmin, authSource: 'ldap', ldapUsername: username, lastLoginAt: new Date()
+        });
+        logger.info(`New LDAP-provisioned account: ${username}${isAdmin ? ' (admin)' : ''}`);
+    } else {
+        user.lastLoginAt = new Date();
+        await user.save();
+    }
+
+    establishSession(req, user);
+    logger.info(`LDAP login: ${username}`);
     req.session.save((err) => {
         if (err) logger.error('Session save error: ' + err.message);
         res.json({ email: user.email, displayName: user.displayName, isAdmin: user.isAdmin });
@@ -90,15 +159,27 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { registerColumns, upcomingSchedules } = req.body || {};
+    const { registerColumns, upcomingSchedules, weeklyReportEmail, notifyEmail } = req.body || {};
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
+    if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
+    // notifyEmail lives directly on the user doc (see models/user.js), not
+    // under preferences, but is accepted here too so the My Account page's
+    // notification-settings card can save it independent of the SMTP
+    // card's fields (see controllers/accountController.js for those) — it
+    // shouldn't require a valid mail server to already be configured.
+    if (notifyEmail !== undefined) user.notifyEmail = String(notifyEmail).toLowerCase().trim() || null;
     // Mutating a nested schema object's properties directly (rather than
     // replacing it wholesale) doesn't always get picked up by Mongoose's
     // change tracking — belt-and-suspenders so the save below actually persists it.
     user.markModified('preferences');
     await user.save();
-    res.json(user.preferences);
+    res.json({
+        registerColumns: user.preferences.registerColumns,
+        upcomingSchedules: user.preferences.upcomingSchedules,
+        weeklyReportEmail: user.preferences.weeklyReportEmail,
+        notifyEmail: user.notifyEmail
+    });
 }
 
-module.exports = { signup, login, logout, me, getPreferences, updatePreferences };
+module.exports = { signup, login, loginLdap, ldapStatus, logout, me, getPreferences, updatePreferences };

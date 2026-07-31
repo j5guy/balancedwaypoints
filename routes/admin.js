@@ -10,4 +10,8 @@ router.get('/users', requireAdmin, (req, res) => {
     res.render('admin/users', { title: 'Users' });
 });
 
+router.get('/ldap', requireAdmin, (req, res) => {
+    res.render('admin/ldap', { title: 'LDAP' });
+});
+
 module.exports = router;

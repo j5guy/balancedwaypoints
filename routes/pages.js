@@ -39,4 +39,8 @@ router.get('/reports', requireAuth, (req, res) => {
     res.render('reports/index', { title: 'Reports' });
 });
 
+router.get('/account', requireAuth, (req, res) => {
+    res.render('account/index', { title: 'My Account' });
+});
+
 module.exports = router;

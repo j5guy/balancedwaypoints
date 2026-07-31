@@ -7,7 +7,8 @@
     </div>
     <div id="schedules-error" class="form-error" hidden></div>
 
-    <div class="card" id="new-schedule-form" hidden>
+    <div class="card" id="schedule-form" hidden>
+        <h3 id="schedule-form-title">New schedule</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="sched-name">Name</label>
@@ -24,9 +25,16 @@
         </div>
         <div class="form-row">
             <div class="form-group">
+                <label for="sched-payee">Payee</label>
+                <input type="text" id="sched-payee" list="sched-payee-options" placeholder="Payee name">
+                <datalist id="sched-payee-options"></datalist>
+            </div>
+            <div class="form-group">
                 <label for="sched-category">Category</label>
                 <select id="sched-category"><option value="">— none —</option></select>
             </div>
+        </div>
+        <div class="form-row">
             <div class="form-group">
                 <label for="sched-next-date">Next date</label>
                 <input type="date" id="sched-next-date">
@@ -55,9 +63,17 @@
                 <input type="number" id="sched-reminder" value="3" min="0">
             </div>
         </div>
+        <div class="form-group">
+            <label for="sched-notes">Notes</label>
+            <input type="text" id="sched-notes">
+        </div>
         <div class="checkbox-row form-group">
             <input type="checkbox" id="sched-auto-enter">
             <label for="sched-auto-enter">Auto-enter into the register when due (otherwise just a reminder)</label>
+        </div>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="sched-notify-email">
+            <label for="sched-notify-email">Email everyone with a mail server configured when this is due (see My Account)</label>
         </div>
         <div class="btn-row">
             <button type="button" class="btn btn-primary" id="save-schedule-btn">Save</button>
@@ -67,7 +83,7 @@
 
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Name</th><th>Account</th><th>Amount</th><th>Category</th><th>Next date</th><th>Repeats</th><th>Auto-enter</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Account</th><th>Payee</th><th>Amount</th><th>Category</th><th>Next date</th><th>Repeats</th><th>Auto-enter</th><th></th></tr></thead>
             <tbody id="schedules-tbody"></tbody>
         </table>
     </div>

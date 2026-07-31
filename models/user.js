@@ -16,13 +16,54 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    // 'ldap' accounts have no passwordHash — they authenticate against the
+    // directory every time (see config/ldapAuth.js) and are auto-provisioned
+    // on first successful LDAP login (services/database/users.js's
+    // findOrCreateFromLdap).
+    authSource: {
+        type: String,
+        enum: ['local', 'ldap'],
+        default: 'local'
+    },
+    // The username this account was looked up by in LDAP — only set for
+    // authSource: 'ldap'. Distinct from email, which LDAP may not reliably
+    // provide (hence notifyEmail below being a separate, manually-set field
+    // for LDAP accounts).
+    ldapUsername: {
+        type: String,
+        default: null
+    },
     passwordHash: {
         type: String,
-        required: true,
         select: false
     },
     lastLoginAt: {
         type: Date
+    },
+    // Where schedule/weekly-report emails go (see services/mail and
+    // services/jobs). Defaults to `email` for local accounts at signup time;
+    // LDAP accounts have no guaranteed email from the directory, so this is
+    // left null until the user sets it themselves on the My Account page.
+    notifyEmail: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        default: null
+    },
+    // Each user's own outgoing mail server (e.g. their personal Gmail with
+    // an app password) — deliberately per-user rather than a shared/admin
+    // singleton, so reminders go out through whichever account the
+    // recipient actually wants them sent from. See services/mail/userMailer.js.
+    smtp: {
+        host: { type: String, trim: true, default: null },
+        port: { type: Number, default: null },
+        secure: { type: Boolean, default: null },
+        user: { type: String, trim: true, default: null },
+        from: { type: String, trim: true, default: null },
+        // AES-256-GCM ciphertext — see utils/secretCrypto.js. Never
+        // select()-ed back to a serializer without deliberately decrypting.
+        passIv: { type: String, default: null },
+        passCiphertext: { type: String, default: null }
     },
     // Per-theme overrides for a curated set of CSS custom properties (see
     // public/scss/layout/_base.scss). null/unset means "use the theme
@@ -57,7 +98,11 @@ const userSchema = new mongoose.Schema({
             enabled: { type: Boolean, default: false },
             amount: { type: Number, default: 14 },
             unit: { type: String, enum: ['days', 'months'], default: 'days' }
-        }
+        },
+        // Sent by services/jobs/weeklyReportEmailJob.js through this user's
+        // own configured SMTP (smtp above) — requires that to be set up, same
+        // as per-schedule email alerts (see models/schedule.js's notifyByEmail).
+        weeklyReportEmail: { type: Boolean, default: false }
     }
 }, { timestamps: true });
 

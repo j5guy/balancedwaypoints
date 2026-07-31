@@ -7,8 +7,9 @@
     </div>
     <div id="accounts-error" class="form-error" hidden></div>
 
-    <div class="card" id="new-account-form" hidden>
-        <h3>New account</h3>
+    <div class="card" id="account-form" hidden>
+        <h3 id="account-form-title">New account</h3>
+        <input type="hidden" id="acct-id">
         <div class="form-row">
             <div class="form-group">
                 <label for="acct-name">Name</label>
@@ -29,11 +30,18 @@
             <div class="form-group">
                 <label for="acct-balance">Starting balance</label>
                 <input type="number" id="acct-balance" step="0.01" value="0">
+                <p class="form-hint" id="acct-balance-hint" hidden>Changing this shifts the account's current balance by the same amount — it doesn't touch any existing transactions.</p>
             </div>
         </div>
-        <div class="checkbox-row form-group">
-            <input type="checkbox" id="acct-on-budget" checked>
-            <label for="acct-on-budget">On budget (counts toward envelope budgeting)</label>
+        <div class="form-row">
+            <div class="checkbox-row form-group">
+                <input type="checkbox" id="acct-on-budget" checked>
+                <label for="acct-on-budget">On budget (counts toward envelope budgeting)</label>
+            </div>
+            <div class="checkbox-row form-group" id="acct-closed-group" hidden>
+                <input type="checkbox" id="acct-closed">
+                <label for="acct-closed">Closed</label>
+            </div>
         </div>
         <div class="btn-row">
             <button type="button" class="btn btn-primary" id="save-account-btn">Save</button>
@@ -41,6 +49,7 @@
         </div>
     </div>
 
+    <p class="muted" id="accounts-hint" style="font-size:0.85rem;" hidden>Drag a card by its handle (⠿) to reorder accounts.</p>
     <div class="card-grid" id="accounts-grid"></div>
 </main>
-<%- include('../components/footer', { pageScripts: ['/js/accounts.js'] }) %>
+<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/accounts.js'] }) %>

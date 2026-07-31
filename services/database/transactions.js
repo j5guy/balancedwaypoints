@@ -14,7 +14,9 @@ const list = ({ account, category, tag, payee, from, to, limit } = {}) => {
         if (from) query.date.$gte = new Date(from);
         if (to) query.date.$lte = new Date(to);
     }
-    let cursor = Transaction.find(query).sort({ date: -1, createdAt: -1 }).populate(populateOpts);
+    // sortOrder first — the manual drag-and-drop override (see models/transaction.js)
+    // — falling back to date/createdAt for anything that's never been dragged.
+    let cursor = Transaction.find(query).sort({ sortOrder: -1, date: -1, createdAt: -1 }).populate(populateOpts);
     if (limit) cursor = cursor.limit(limit);
     return cursor.exec();
 };
@@ -38,6 +40,15 @@ const createTransfer = async ({ fromAccount, toAccount, date, amountCents, notes
 };
 
 const removeTransferPair = async (transferId) => Transaction.deleteMany({ transferId }).exec();
+
+// Bulk-persists a new manual display order from the register's drag-and-drop
+// (see public/js/dragReorder.js) — ids top-to-bottom as currently displayed.
+// Allowed even for transfer/schedule-created rows, since this only ever
+// touches sortOrder (cosmetic), never the financial fields update() guards.
+const reorder = async (ids) => {
+    const total = ids.length;
+    await Promise.all(ids.map((id, i) => Transaction.updateOne({ _id: id }, { sortOrder: total - i }).exec()));
+};
 
 const sumForAccount = async (accountId) => {
     const [agg] = await Transaction.aggregate([
@@ -70,5 +81,5 @@ const sumForCategoryMonth = async (categoryId, month) => {
 
 module.exports = {
     list, findById, findByImportedIds, create, update, remove,
-    createTransfer, removeTransferPair, sumForAccount, sumForCategoryMonth
+    createTransfer, removeTransferPair, reorder, sumForAccount, sumForCategoryMonth
 };

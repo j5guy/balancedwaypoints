@@ -25,12 +25,24 @@
     function groupSection(group, categoryRows) {
         const section = document.createElement('div');
         section.className = 'budget-group';
+        section.draggable = true;
+        section.dataset.dragId = group.id;
         section.innerHTML = `
-            <div class="budget-group-title">${group.name}
+            <div class="budget-group-title">
+                <span class="drag-handle">⠿</span>${group.name}
                 <button type="button" class="btn btn-secondary btn-sm" data-add-category style="margin-left:8px;">+ category</button>
             </div>
+            <div class="budget-group-rows"></div>
         `;
-        categoryRows.forEach(row => section.appendChild(categoryRow(row)));
+        const rowsContainer = section.querySelector('.budget-group-rows');
+        categoryRows.forEach(row => rowsContainer.appendChild(categoryRow(row)));
+        window.BWDragReorder.makeSortable(rowsContainer, async (ids) => {
+            try {
+                await Promise.all(ids.map((id, i) => window.BWApi.apiFetch(`/api/categories/${id}`, { method: 'PUT', body: { sortOrder: ids.length - i } })));
+            } catch (err) {
+                showError(err);
+            }
+        });
         section.querySelector('[data-add-category]').addEventListener('click', async () => {
             const name = prompt(`New category name in "${group.name}":`);
             if (!name || !name.trim()) return;
@@ -47,9 +59,11 @@
     function categoryRow(row) {
         const div = document.createElement('div');
         div.className = 'budget-row';
+        div.draggable = true;
+        div.dataset.dragId = row.category.id;
         const balanceClass = row.balanceCents < 0 ? 'balance-negative' : 'balance-positive';
         div.innerHTML = `
-            <span>${row.category.name}</span>
+            <span><span class="drag-handle">⠿</span>${row.category.name}</span>
             <input type="number" class="assign-input" step="0.01" value="${(row.assignedCents / 100).toFixed(2)}">
             <span class="money">${window.BWMoney.formatCents(row.activityCents)}</span>
             <span class="balance-cell ${balanceClass}">${window.BWMoney.formatCents(row.balanceCents)}</span>
@@ -92,6 +106,13 @@
             budgetGroups.forEach(group => {
                 const rows = summary.categories.filter(c => c.category.group === group.id);
                 container.appendChild(groupSection(group, rows));
+            });
+            window.BWDragReorder.makeSortable(container, async (ids) => {
+                try {
+                    await Promise.all(ids.map((id, i) => window.BWApi.apiFetch(`/api/category-groups/${id}`, { method: 'PUT', body: { sortOrder: ids.length - i } })));
+                } catch (err) {
+                    showError(err);
+                }
             });
         } catch (err) {
             showError(err);

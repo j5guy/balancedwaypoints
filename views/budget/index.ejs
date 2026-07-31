@@ -37,9 +37,10 @@
         </div>
     </div>
 
+    <p class="muted" style="font-size:0.85rem;">Drag a category or group by its handle (⠿) to reorder.</p>
     <div class="budget-row-head">
         <span>Category</span><span>Assigned</span><span>Activity</span><span>Available</span>
     </div>
     <div id="budget-groups"></div>
 </main>
-<%- include('../components/footer', { pageScripts: ['/js/budget.js'] }) %>
+<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/budget.js'] }) %>

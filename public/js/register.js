@@ -8,6 +8,7 @@
     let categories = [];
     let payees = [];
     let editingId = null;
+    let startingBalanceCents = 0;
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -32,6 +33,7 @@
         const account = accounts.find(a => a.id === accountId);
         document.getElementById('account-name').textContent = account ? account.name : 'Register';
         if (account) {
+            startingBalanceCents = account.startingBalanceCents;
             const balEl = document.getElementById('account-balance');
             balEl.textContent = window.BWMoney.formatCents(account.balanceCents);
             balEl.classList.add(account.balanceCents < 0 ? 'money-negative' : 'money-positive');
@@ -44,11 +46,34 @@
         document.getElementById('payee-options').innerHTML = payees.map(p => `<option value="${p.name}">`).join('');
     }
 
-    function transactionRow(t) {
+    // Running balance always follows true chronological (date) order,
+    // independent of the manual drag-and-drop display order below — a
+    // balance that jumped around with a manual reorder wouldn't mean
+    // anything. createdAt is the tiebreak for same-day transactions.
+    function computeRunningBalances(transactions) {
+        const chronological = [...transactions].sort((a, b) => {
+            const byDate = new Date(a.date) - new Date(b.date);
+            if (byDate !== 0) return byDate;
+            return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+        });
+        let running = startingBalanceCents;
+        const balanceById = new Map();
+        chronological.forEach(t => {
+            running += t.amountCents;
+            balanceById.set(t.id, running);
+        });
+        return balanceById;
+    }
+
+    function transactionRow(t, balanceCents) {
         const tr = document.createElement('tr');
+        tr.draggable = true;
+        tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
         const amountClass = t.amountCents < 0 ? 'money-negative' : 'money-positive';
+        const balanceClass = balanceCents < 0 ? 'money-negative' : 'money-positive';
         tr.innerHTML = `
+            <td class="drag-handle">⠿</td>
             <td>${new Date(t.date).toLocaleDateString()}</td>
             <td>${t.payee ? t.payee.name : ''}</td>
             <td>${category}</td>
@@ -56,6 +81,7 @@
             <td>${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
             <td>${t.cleared}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(t.amountCents)}</td>
+            <td class="money ${balanceClass}">${window.BWMoney.formatCents(balanceCents)}</td>
             <td class="row-actions">
                 <button type="button" class="btn btn-secondary btn-sm" data-edit>Edit</button>
                 <button type="button" class="btn btn-danger btn-sm" data-delete>Delete</button>
@@ -71,11 +97,20 @@
             const { transactions } = await window.BWApi.apiFetch(`/api/transactions?account=${accountId}`);
             const tbody = document.getElementById('register-tbody');
             tbody.innerHTML = '';
+            document.getElementById('register-hint').hidden = transactions.length < 2;
             if (transactions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No transactions yet.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No transactions yet.</td></tr>';
                 return;
             }
-            transactions.forEach(t => tbody.appendChild(transactionRow(t)));
+            const balanceById = computeRunningBalances(transactions);
+            transactions.forEach(t => tbody.appendChild(transactionRow(t, balanceById.get(t.id))));
+            window.BWDragReorder.makeSortable(tbody, async (ids) => {
+                try {
+                    await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids } });
+                } catch (err) {
+                    showError(err);
+                }
+            });
         } catch (err) {
             showError(err);
         }

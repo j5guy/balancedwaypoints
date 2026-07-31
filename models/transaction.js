@@ -30,10 +30,18 @@ const transactionSchema = new mongoose.Schema({
     // account+date+amount+payee for CSV (see services/import/dedupe.js).
     importedId: { type: String, default: null },
     // Set when this row was auto-entered by services/schedules/scheduler.js.
-    schedule: { type: mongoose.Schema.Types.ObjectId, ref: 'Schedule', default: null }
+    schedule: { type: mongoose.Schema.Types.ObjectId, ref: 'Schedule', default: null },
+    // Manual display-order override for the register (drag-and-drop) —
+    // purely cosmetic, never used for balance math (see
+    // services/budget/envelope.js and the register's running-balance
+    // calculation, both of which sort by `date` instead). Defaults to the
+    // creation timestamp so new transactions land at the top of the
+    // register (sorted desc) exactly like before, until manually dragged.
+    sortOrder: { type: Number, default: () => Date.now() }
 }, { timestamps: true });
 
 transactionSchema.index({ account: 1, date: -1 });
+transactionSchema.index({ account: 1, sortOrder: -1 });
 transactionSchema.index({ importedId: 1 }, { sparse: true });
 transactionSchema.index({ category: 1, date: 1 });
 

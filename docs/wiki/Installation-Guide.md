@@ -39,10 +39,16 @@ MongoDB server instead of the bundled container.
 npm install
 npm run build-css      # or npm run watch-css while developing
 cp .env.example .env   # set mongoHost=localhost (or wherever a local Mongo runs) and sessionSecret
+echo "NODE_ENV=development" >> .env
 node server.js
 ```
 
-The app listens on port 5570 directly (no nginx in front) in this mode.
+The app listens on port 5570 directly (no nginx in front) in this mode, over
+plain HTTP. **`NODE_ENV=development` is required here** — without it,
+`config/config.js` defaults to `production`, which makes the session and CSRF
+cookies `Secure`-only (the CSRF one is even `__Host-`-prefixed, which browsers
+refuse to set over plain HTTP at all). Leaving `NODE_ENV` unset is only safe
+behind the bundled/Docker nginx, which actually terminates TLS.
 
 ## First account
 

@@ -117,3 +117,22 @@ h1, h2, h3 {
     padding: 48px 24px;
     color: $text-muted;
 }
+
+// Shared drag-and-drop affordance (see public/js/dragReorder.js) — applied
+// to whichever element carries `draggable="true"` in a given list (a
+// stat-card, a table row, a budget row/group).
+[draggable='true'] {
+    cursor: grab;
+}
+
+.dragging {
+    opacity: 0.4;
+}
+
+.drag-handle {
+    cursor: grab;
+    color: $text-muted;
+    padding: 0 6px;
+    user-select: none;
+    touch-action: none;
+}

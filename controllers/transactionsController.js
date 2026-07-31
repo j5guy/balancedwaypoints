@@ -21,7 +21,9 @@ function serialize(t) {
         transferAccount: t.transferAccount || null,
         transferId: t.transferId || null,
         importedId: t.importedId || null,
-        schedule: t.schedule || null
+        schedule: t.schedule || null,
+        sortOrder: t.sortOrder,
+        createdAt: t.createdAt
     };
 }
 
@@ -115,6 +117,17 @@ async function remove(req, res) {
     res.status(204).end();
 }
 
+// Persists a new manual display order for the register (drag-and-drop) —
+// a dedicated action, separate from update(), because it needs to work even
+// for transfer-linked or schedule-created rows that update() otherwise
+// locks down; sortOrder is purely cosmetic and never affects balances.
+async function reorder(req, res) {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array' });
+    await transactions.reorder(ids);
+    res.status(204).end();
+}
+
 // Runs the active ruleset against a candidate (not-yet-saved) transaction
 // and returns suggested category/payee/tags — never writes anything.
 async function previewRules(req, res) {
@@ -124,4 +137,4 @@ async function previewRules(req, res) {
     res.json(result);
 }
 
-module.exports = { list, get, create, createTransfer, update, remove, previewRules };
+module.exports = { list, get, create, createTransfer, update, remove, reorder, previewRules };

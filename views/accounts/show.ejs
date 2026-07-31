@@ -10,7 +10,13 @@
     </div>
     <div id="register-error" class="form-error" hidden></div>
 
-    <div class="card">
+    <p class="muted" style="font-size:0.85rem;">
+        Type a new transaction directly into the top row of the table below.
+        Need a transfer or a split across categories instead?
+        <a href="#" id="toggle-advanced-form-link">Use the full form</a>.
+    </p>
+
+    <div class="card" id="txn-form-card" hidden>
         <h3 id="txn-form-title">New transaction</h3>
         <input type="hidden" id="txn-id">
         <div class="form-row">
@@ -91,20 +97,41 @@
     <div class="table-wrap">
         <table class="data-table register-table">
             <colgroup>
-                <col style="width:28px">
-                <col style="width:100px">
-                <col style="width:160px">
-                <col style="width:140px">
+                <col style="width:22px">
+                <col style="width:92px">
+                <col style="width:130px">
+                <col style="width:120px">
                 <col>
-                <col style="width:150px">
                 <col style="width:100px">
-                <col style="width:100px">
-                <col style="width:96px">
-                <col style="width:36px">
+                <col style="width:88px">
+                <col style="width:88px">
+                <col style="width:56px">
+                <col style="width:34px">
             </colgroup>
             <thead>
                 <tr><th></th><th>Date</th><th>Payee</th><th>Category</th><th class="wrap">Notes</th><th>Tags</th><th>Amount</th><th>Balance</th><th></th><th title="Cleared">✓</th></tr>
             </thead>
+            <tbody id="quick-add-tbody">
+                <tr class="quick-add-row">
+                    <td class="muted" style="text-align:center;">+</td>
+                    <td><input type="date" id="qa-date"></td>
+                    <td><input type="text" id="qa-payee" list="payee-options" placeholder="Payee"></td>
+                    <td>
+                        <div style="display:flex;flex-direction:column;gap:3px;">
+                            <input type="text" id="qa-category" list="category-options" placeholder="Category">
+                            <select id="qa-category-new-group" title="Group for a new category" style="font-size:0.78rem;padding:2px 4px;">
+                                <option value="">new category's group…</option>
+                            </select>
+                        </div>
+                    </td>
+                    <td><input type="text" id="qa-notes" placeholder="Notes"></td>
+                    <td><input type="text" id="qa-tags" placeholder="tag, tag"></td>
+                    <td><input type="number" id="qa-amount" step="0.01" placeholder="-45.00"></td>
+                    <td class="muted">—</td>
+                    <td><button type="button" class="btn btn-primary btn-sm" id="qa-add-btn">Add</button></td>
+                    <td style="text-align:center;"><input type="checkbox" id="qa-cleared" title="Cleared"></td>
+                </tr>
+            </tbody>
             <tbody id="register-tbody"></tbody>
         </table>
     </div>

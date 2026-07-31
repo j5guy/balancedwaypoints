@@ -47,7 +47,10 @@
         }
 
         document.getElementById('category-options').innerHTML = categories.map(c => `<option value="${c.name}">`).join('');
-        document.getElementById('txn-category-new-group').innerHTML = '<option value="">— pick a group —</option>' +
+        const groupOptionsHtml = '<option value="">— pick a group —</option>' +
+            categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        document.getElementById('txn-category-new-group').innerHTML = groupOptionsHtml;
+        document.getElementById('qa-category-new-group').innerHTML = '<option value="">new category group...</option>' +
             categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
         document.getElementById('txn-transfer-account').innerHTML = accounts
             .filter(a => a.id !== accountId)
@@ -124,8 +127,8 @@
             <td class="money ${amountClass}">${window.BWMoney.formatCents(t.amountCents)}</td>
             <td class="money js-balance-cell ${balanceClass}">${window.BWMoney.formatCents(balanceCents)}</td>
             <td class="row-actions">
-                <button type="button" class="btn btn-secondary btn-sm" data-edit>Edit</button>
-                <button type="button" class="btn btn-danger btn-sm" data-delete>Delete</button>
+                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
+                <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
             </td>
             <td>
                 <button type="button" class="cleared-toggle ${isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off'}"
@@ -277,6 +280,7 @@
             return;
         }
         editingId = t.id;
+        document.getElementById('txn-form-card').hidden = false;
         document.getElementById('txn-form-title').textContent = 'Edit transaction';
         document.getElementById('txn-date').value = new Date(t.date).toISOString().slice(0, 10);
         document.getElementById('txn-payee').value = t.payee ? t.payee.name : '';
@@ -318,9 +322,23 @@
         document.getElementById('splits-editor').hidden = true;
         document.getElementById('splits-list').innerHTML = '';
         document.getElementById('cancel-txn-btn').hidden = true;
+        document.getElementById('txn-form-card').hidden = true;
     }
 
     document.getElementById('cancel-txn-btn').addEventListener('click', resetForm);
+
+    // The full form (transfers/splits/edit) is collapsed by default — the
+    // quick-add row below the table handles the common case instead.
+    document.getElementById('toggle-advanced-form-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        const card = document.getElementById('txn-form-card');
+        if (card.hidden) {
+            resetForm();
+            card.hidden = false;
+        } else {
+            resetForm();
+        }
+    });
 
     document.getElementById('save-txn-btn').addEventListener('click', async () => {
         clearError();
@@ -382,7 +400,58 @@
         }
     }
 
+    // ── Quick-add row — a live "type straight into the table" entry point
+    // for the common case (no transfer, no split). Stays in its own tbody
+    // (see accounts/show.ejs) so loadTransactions()'s innerHTML wipe of
+    // #register-tbody never touches it.
+    document.getElementById('qa-add-btn').addEventListener('click', async () => {
+        clearError();
+        const date = document.getElementById('qa-date').value;
+        const amountCents = window.BWMoney.toCents(document.getElementById('qa-amount').value || 0);
+        if (!date) return showError(new Error('Date is required'));
+        if (!amountCents) return showError(new Error('Amount is required'));
+
+        try {
+            const payeeId = await resolvePayee(document.getElementById('qa-payee').value.trim());
+            const tagIds = await resolveTags(document.getElementById('qa-tags').value);
+            const categoryId = await resolveCategory(
+                document.getElementById('qa-category').value.trim(),
+                document.getElementById('qa-category-new-group').value
+            );
+
+            await window.BWApi.apiFetch('/api/transactions', {
+                method: 'POST',
+                body: {
+                    account: accountId, date, amountCents,
+                    payee: payeeId,
+                    category: categoryId,
+                    cleared: document.getElementById('qa-cleared').checked ? 'cleared' : 'pending',
+                    tags: tagIds,
+                    notes: document.getElementById('qa-notes').value
+                }
+            });
+
+            // Left in place (not removed) — clear it out and leave the date
+            // as-is so entering several same-day transactions stays fast.
+            document.getElementById('qa-payee').value = '';
+            document.getElementById('qa-category').value = '';
+            document.getElementById('qa-category-new-group').value = '';
+            document.getElementById('qa-notes').value = '';
+            document.getElementById('qa-tags').value = '';
+            document.getElementById('qa-amount').value = '';
+            document.getElementById('qa-cleared').checked = false;
+            document.getElementById('qa-payee').focus();
+
+            await loadReferenceData();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
+
     (async function init() {
+        document.getElementById('qa-date').value = new Date().toISOString().slice(0, 10);
+
         await loadReferenceData();
         await loadTransactions();
 
@@ -397,6 +466,17 @@
             } catch (err) {
                 showError(err);
             }
+        });
+
+        // Enter submits the quick-add row from any of its text/number
+        // fields, like filling out a spreadsheet row.
+        document.querySelectorAll('.quick-add-row input').forEach((input) => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('qa-add-btn').click();
+                }
+            });
         });
     })();
 })();

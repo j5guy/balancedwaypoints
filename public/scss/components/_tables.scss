@@ -50,9 +50,33 @@ table.data-table {
 table.register-table {
     table-layout: fixed;
 
+    // Tighter than the default .data-table padding — several of this
+    // table's columns (drag handle, cleared, amount/balance) are narrow by
+    // design so Notes gets the most room, and the default 14px side padding
+    // alone would eat most of that.
+    th, td {
+        padding: 8px 8px;
+    }
+
     td:not(.wrap) {
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+}
+
+// The register's Edit/Delete buttons are icon-only (✎ / 🗑) to leave the
+// Notes column as much width as possible in the fixed-layout register table.
+.icon-btn {
+    padding: 4px 7px;
+    line-height: 1;
+}
+
+.quick-add-row {
+    background: $bg-secondary;
+
+    input, select {
+        font-size: 0.85rem;
+        padding: 6px 8px;
     }
 }
 

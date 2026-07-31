@@ -53,4 +53,26 @@
         <div id="income-groups"></div>
     </div>
 </main>
+
+<div class="modal-overlay" id="delete-category-overlay" hidden>
+    <div class="modal-card">
+        <h3>Delete category</h3>
+        <p id="delete-category-warning" class="form-error"></p>
+        <p>This <strong>cannot be undone</strong>. Any transactions currently using this category will be
+        moved first:</p>
+        <div class="form-group">
+            <label for="delete-category-reassign">Move existing transactions to</label>
+            <select id="delete-category-reassign"><option value="">— no category —</option></select>
+        </div>
+        <p>To confirm, type the category's name below:</p>
+        <p class="muted" id="delete-category-name-hint" style="font-weight:600;"></p>
+        <div class="form-group">
+            <input type="text" id="delete-category-confirm-input" autocomplete="off">
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-danger" id="delete-category-confirm-btn" disabled>Delete category</button>
+            <button type="button" class="btn btn-secondary" id="delete-category-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
 <%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/budget.js'] }) %>

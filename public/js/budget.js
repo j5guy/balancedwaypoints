@@ -5,6 +5,7 @@
 
     let month = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
     let groups = [];
+    let allCategories = [];
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -63,7 +64,9 @@
         div.dataset.dragId = row.category.id;
         const balanceClass = row.balanceCents < 0 ? 'balance-negative' : 'balance-positive';
         div.innerHTML = `
-            <span><span class="drag-handle">⠿</span>${row.category.name}</span>
+            <span><span class="drag-handle">⠿</span>${row.category.name}
+                <button type="button" class="icon-btn" data-delete-category title="Delete category" style="border:none;background:none;cursor:pointer;">🗑</button>
+            </span>
             <input type="number" class="assign-input" step="0.01" value="${(row.assignedCents / 100).toFixed(2)}">
             <span class="money">${window.BWMoney.formatCents(row.activityCents)}</span>
             <span class="balance-cell ${balanceClass}">${window.BWMoney.formatCents(row.balanceCents)}</span>
@@ -80,6 +83,7 @@
                 showError(err);
             }
         });
+        div.querySelector('[data-delete-category]').addEventListener('click', () => openDeleteCategoryModal(row.category));
         return div;
     }
 
@@ -132,7 +136,7 @@
                 window.BWApi.apiFetch('/api/categories')
             ]);
             groups = groupsRes.categoryGroups;
-            const categories = categoriesRes.categories;
+            allCategories = categoriesRes.categories;
 
             const rtaEl = document.getElementById('rta-value');
             const banner = document.getElementById('rta-banner');
@@ -163,7 +167,7 @@
             incomeSection.hidden = incomeGroups.length === 0;
             incomeContainer.innerHTML = '';
             incomeGroups.forEach(group => {
-                const cats = categories.filter(c => c.group === group.id);
+                const cats = allCategories.filter(c => c.group === group.id);
                 incomeContainer.appendChild(incomeGroupSection(group, cats));
             });
         } catch (err) {
@@ -193,6 +197,57 @@
             render();
         } catch (err) {
             showError(err);
+        }
+    });
+
+    // ── Delete category — requires typing the exact name to confirm, and
+    // offers to move any transactions currently using it to a replacement
+    // category (or to no category, when nothing blocks that — see
+    // controllers/categoriesController.js).
+    let pendingDeleteCategory = null;
+    const deleteOverlay = document.getElementById('delete-category-overlay');
+    const deleteConfirmInput = document.getElementById('delete-category-confirm-input');
+    const deleteConfirmBtn = document.getElementById('delete-category-confirm-btn');
+    const deleteReassignSelect = document.getElementById('delete-category-reassign');
+
+    function openDeleteCategoryModal(category) {
+        pendingDeleteCategory = category;
+        document.getElementById('delete-category-warning').textContent =
+            `You are about to permanently delete "${category.name}".`;
+        document.getElementById('delete-category-name-hint').textContent = category.name;
+        deleteReassignSelect.innerHTML = '<option value="">— no category —</option>' +
+            allCategories.filter(c => c.id !== category.id).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        deleteConfirmInput.value = '';
+        deleteConfirmBtn.disabled = true;
+        deleteOverlay.hidden = false;
+        deleteConfirmInput.focus();
+    }
+
+    function closeDeleteCategoryModal() {
+        pendingDeleteCategory = null;
+        deleteOverlay.hidden = true;
+    }
+
+    deleteConfirmInput.addEventListener('input', () => {
+        deleteConfirmBtn.disabled = !pendingDeleteCategory || deleteConfirmInput.value !== pendingDeleteCategory.name;
+    });
+
+    document.getElementById('delete-category-cancel-btn').addEventListener('click', closeDeleteCategoryModal);
+    deleteOverlay.addEventListener('click', (e) => {
+        if (e.target === deleteOverlay) closeDeleteCategoryModal();
+    });
+
+    deleteConfirmBtn.addEventListener('click', async () => {
+        if (!pendingDeleteCategory || deleteConfirmInput.value !== pendingDeleteCategory.name) return;
+        try {
+            await window.BWApi.apiFetch(`/api/categories/${pendingDeleteCategory.id}`, {
+                method: 'DELETE',
+                body: { reassignTo: deleteReassignSelect.value || null }
+            });
+            closeDeleteCategoryModal();
+            render();
+        } catch (err) {
+            document.getElementById('delete-category-warning').textContent = err.message || 'Could not delete this category.';
         }
     });
 

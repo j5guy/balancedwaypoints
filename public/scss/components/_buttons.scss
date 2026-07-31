@@ -20,6 +20,14 @@
         cursor: not-allowed;
         transform: none;
     }
+
+    // Same fix as .modal-overlay/.checkbox-row — an explicit `display` here
+    // would otherwise silently override a `hidden` attribute on the same
+    // element (e.g. #cancel-txn-btn), since it has equal-or-higher
+    // specificity and comes later than the browser's own [hidden] rule.
+    &[hidden] {
+        display: none;
+    }
 }
 
 .btn-primary {

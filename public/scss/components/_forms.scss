@@ -90,4 +90,10 @@ select {
     label {
         margin: 0;
     }
+
+    // Same fix as .modal-overlay/.btn — an explicit `display` here would
+    // otherwise silently override a `hidden` attribute on the same element.
+    &[hidden] {
+        display: none;
+    }
 }

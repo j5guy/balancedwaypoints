@@ -9,6 +9,14 @@
     justify-content: center;
     z-index: 100;
     padding: 16px;
+
+    // Without this, the [hidden] attribute gets silently overridden: it has
+    // the same specificity as the class selector above, and this stylesheet
+    // comes later in the cascade — so `display: flex` was winning even when
+    // `hidden` was set, making the overlay render open unconditionally.
+    &[hidden] {
+        display: none;
+    }
 }
 
 .modal-card {

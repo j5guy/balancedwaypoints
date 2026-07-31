@@ -34,5 +34,33 @@ jobs:
         run: "npx sass public/scss/main.scss public/css/main.css"
         working-directory: ${{ env.WEB_DIR }}
 
+      - name: Ensure systemd service exists
+        run: |
+          if ! systemctl list-unit-files | grep -q "^${{ env.NODEJS_NAME }}.service"; then
+            echo "${{ env.NODEJS_NAME }}.service not found — creating it"
+            cat <<EOF > /etc/systemd/system/${{ env.NODEJS_NAME }}.service
+          [Unit]
+          Description=Balanced Waypoints Node.js Server
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=${{ env.WEB_DIR }}/
+
+          StandardOutput=file:/var/log/node/logs/${{ env.NODEJS_NAME }}_app.log
+          StandardError=file:/var/log/node/logs/${{ env.NODEJS_NAME }}_err.log
+
+          ExecStart=/usr/bin/npm start
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+            systemctl daemon-reload
+          else
+            echo "${{ env.NODEJS_NAME }}.service already exists"
+          fi
+
       - name: Restart Node.js server
         run: "systemctl restart ${{ env.NODEJS_NAME }}"

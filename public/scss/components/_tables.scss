@@ -100,3 +100,32 @@ table.register-table {
 .cleared-toggle-off {
     color: $text-muted;
 }
+
+// Column show/hide (see public/js/register.js's applyColumnPreferences).
+// Zeroing the <col> width AND display:none-ing the cells at that position is
+// belt-and-suspenders: table-layout:fixed fixes column widths from the
+// colgroup alone, so hiding just the cells would leave an empty gap the
+// <col> still reserves — this collapses both.
+$register-toggle-columns: date, payee, category, notes, tags, amount, balance, cleared;
+table.register-table {
+    @each $col in $register-toggle-columns {
+        &.hide-col-#{$col} {
+            col[data-col='#{$col}'] {
+                width: 0;
+            }
+            th[data-col='#{$col}'],
+            td[data-col='#{$col}'] {
+                display: none;
+            }
+        }
+    }
+}
+
+.upcoming-row {
+    font-style: italic;
+    color: $text-muted;
+
+    td {
+        background: $bg-secondary;
+    }
+}

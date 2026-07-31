@@ -11,6 +11,16 @@
     let editingId = null;
     let startingBalanceCents = 0;
     let transactionsById = new Map();
+    let preferences = null;
+
+    const COLUMN_LABELS = {
+        date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
+        tags: 'Tags', amount: 'Amount', balance: 'Balance', cleared: 'Cleared'
+    };
+    const DEFAULT_PREFERENCES = {
+        registerColumns: { date: true, payee: true, category: true, notes: true, tags: true, amount: true, balance: true, cleared: true },
+        upcomingSchedules: { enabled: false, amount: 14, unit: 'days' }
+    };
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -119,18 +129,18 @@
         const isCleared = t.cleared !== 'pending';
         tr.innerHTML = `
             <td class="drag-handle">⠿</td>
-            <td>${new Date(t.date).toLocaleDateString()}</td>
-            <td>${t.payee ? t.payee.name : ''}</td>
-            <td>${category}</td>
-            <td class="wrap">${t.notes || ''}</td>
-            <td>${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
-            <td class="money ${amountClass}">${window.BWMoney.formatCents(t.amountCents)}</td>
-            <td class="money js-balance-cell ${balanceClass}">${window.BWMoney.formatCents(balanceCents)}</td>
+            <td data-col="date">${new Date(t.date).toLocaleDateString()}</td>
+            <td data-col="payee">${t.payee ? t.payee.name : ''}</td>
+            <td data-col="category">${category}</td>
+            <td class="wrap" data-col="notes">${t.notes || ''}</td>
+            <td data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
+            <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents)}</td>
+            <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents)}</td>
             <td class="row-actions">
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
                 <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
             </td>
-            <td>
+            <td data-col="cleared">
                 <button type="button" class="cleared-toggle ${isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off'}"
                         data-cleared-toggle title="${isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared'}">${isCleared ? '✓' : '✕'}</button>
             </td>
@@ -160,6 +170,107 @@
         }
     }
 
+    // ── Register preferences (columns shown, upcoming schedules) ────
+    // Persisted on the logged-in user (see /api/auth/preferences) so they
+    // follow the account across devices, not just this browser.
+    async function loadPreferences() {
+        try {
+            preferences = await window.BWApi.apiFetch('/api/auth/preferences');
+        } catch (err) {
+            preferences = DEFAULT_PREFERENCES;
+        }
+        applyColumnPreferences();
+    }
+
+    function applyColumnPreferences() {
+        const table = document.querySelector('.register-table');
+        Object.keys(COLUMN_LABELS).forEach((key) => {
+            table.classList.toggle(`hide-col-${key}`, !preferences.registerColumns[key]);
+        });
+    }
+
+    function renderColumnToggles() {
+        document.getElementById('column-toggle-list').innerHTML = Object.entries(COLUMN_LABELS).map(([key, label]) => `
+            <label class="checkbox-row" style="width:auto;">
+                <input type="checkbox" class="col-toggle-checkbox" data-col-key="${key}" ${preferences.registerColumns[key] ? 'checked' : ''}>
+                ${label}
+            </label>
+        `).join('');
+    }
+
+    document.getElementById('toggle-settings-btn').addEventListener('click', () => {
+        const panel = document.getElementById('settings-panel');
+        if (!panel.hidden) { panel.hidden = true; return; }
+        renderColumnToggles();
+        document.getElementById('pref-show-upcoming').checked = preferences.upcomingSchedules.enabled;
+        document.getElementById('pref-upcoming-amount').value = preferences.upcomingSchedules.amount;
+        document.getElementById('pref-upcoming-unit').value = preferences.upcomingSchedules.unit;
+        panel.hidden = false;
+    });
+    document.getElementById('cancel-settings-btn').addEventListener('click', () => {
+        document.getElementById('settings-panel').hidden = true;
+    });
+    document.getElementById('save-settings-btn').addEventListener('click', async () => {
+        const registerColumns = {};
+        document.querySelectorAll('.col-toggle-checkbox').forEach((cb) => { registerColumns[cb.dataset.colKey] = cb.checked; });
+        const upcomingSchedules = {
+            enabled: document.getElementById('pref-show-upcoming').checked,
+            amount: Math.max(1, Number(document.getElementById('pref-upcoming-amount').value) || 1),
+            unit: document.getElementById('pref-upcoming-unit').value
+        };
+        try {
+            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerColumns, upcomingSchedules } });
+            applyColumnPreferences();
+            document.getElementById('settings-panel').hidden = true;
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
+
+    // ── Upcoming (scheduled) transaction rows ────────────────────────
+    // Read-only preview rows, not real Transactions — no drag id, no
+    // edit/delete, and no effect on the Balance column (see
+    // computeRunningBalances, which only ever sees real transactions).
+    function upcomingRow(s) {
+        const tr = document.createElement('tr');
+        tr.className = 'upcoming-row';
+        const category = s.category ? s.category.name : (s.splits && s.splits.length ? 'Split' : '');
+        const amountClass = s.amountCents < 0 ? 'money-negative' : 'money-positive';
+        tr.innerHTML = `
+            <td></td>
+            <td data-col="date">${new Date(s.nextDate).toLocaleDateString()}</td>
+            <td data-col="payee">${s.payee ? s.payee.name : ''}</td>
+            <td data-col="category">${category}</td>
+            <td class="wrap" data-col="notes">${s.notes || ''}</td>
+            <td data-col="tags"></td>
+            <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents)}</td>
+            <td class="money" data-col="balance">—</td>
+            <td><span class="badge" title="From schedule &quot;${s.name}&quot; — not a real transaction yet">Scheduled</span></td>
+            <td data-col="cleared"></td>
+        `;
+        return tr;
+    }
+
+    async function loadUpcomingRows() {
+        if (!preferences.upcomingSchedules.enabled) return [];
+        try {
+            const { schedules } = await window.BWApi.apiFetch('/api/schedules');
+            const { amount, unit } = preferences.upcomingSchedules;
+            const cutoff = new Date();
+            if (unit === 'months') cutoff.setMonth(cutoff.getMonth() + amount);
+            else cutoff.setDate(cutoff.getDate() + amount);
+
+            return schedules
+                .filter(s => s.active && s.account === accountId && new Date(s.nextDate) <= cutoff)
+                .sort((a, b) => new Date(a.nextDate) - new Date(b.nextDate))
+                .map(upcomingRow);
+        } catch (err) {
+            showError(err);
+            return [];
+        }
+    }
+
     async function loadTransactions() {
         try {
             const { transactions } = await window.BWApi.apiFetch(`/api/transactions?account=${accountId}`);
@@ -167,8 +278,14 @@
             const tbody = document.getElementById('register-tbody');
             tbody.innerHTML = '';
             document.getElementById('register-hint').hidden = transactions.length < 2;
+
+            const upcomingRows = await loadUpcomingRows();
+            upcomingRows.forEach(row => tbody.appendChild(row));
+
             if (transactions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No transactions yet.</td></tr>';
+                if (upcomingRows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No transactions yet.</td></tr>';
+                }
                 return;
             }
             const balanceById = computeRunningBalances(transactions);
@@ -452,6 +569,7 @@
     (async function init() {
         document.getElementById('qa-date').value = new Date().toISOString().slice(0, 10);
 
+        await loadPreferences();
         await loadReferenceData();
         await loadTransactions();
 

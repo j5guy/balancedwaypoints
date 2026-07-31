@@ -3,12 +3,45 @@
 <main class="page page-register" data-account-id="<%= accountId %>">
     <div class="page-header">
         <h1 id="account-name">Register</h1>
-        <div class="stat-card" style="padding:10px 18px;">
-            <div class="stat-label">Balance</div>
-            <div class="stat-value money" id="account-balance">—</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div class="stat-card" style="padding:10px 18px;">
+                <div class="stat-label">Balance</div>
+                <div class="stat-value money" id="account-balance">—</div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="toggle-settings-btn" title="Table settings">⚙ Table settings</button>
         </div>
     </div>
     <div id="register-error" class="form-error" hidden></div>
+
+    <div class="card" id="settings-panel" hidden>
+        <h3>Table settings</h3>
+        <p class="form-hint">Saved to your account — applies to every register you view, on any device.</p>
+        <div class="form-group">
+            <label>Columns to show</label>
+            <div class="form-row" id="column-toggle-list"></div>
+        </div>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="pref-show-upcoming">
+            <label for="pref-show-upcoming">Show upcoming scheduled transactions in this register</label>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="pref-upcoming-amount">Show upcoming within</label>
+                <input type="number" id="pref-upcoming-amount" min="1" style="max-width:100px;">
+            </div>
+            <div class="form-group">
+                <label for="pref-upcoming-unit">&nbsp;</label>
+                <select id="pref-upcoming-unit">
+                    <option value="days">Day(s)</option>
+                    <option value="months">Month(s)</option>
+                </select>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-settings-btn">Save settings</button>
+            <button type="button" class="btn btn-secondary" id="cancel-settings-btn">Cancel</button>
+        </div>
+    </div>
 
     <p class="muted" style="font-size:0.85rem;">
         Type a new transaction directly into the top row of the table below.
@@ -98,25 +131,36 @@
         <table class="data-table register-table">
             <colgroup>
                 <col style="width:22px">
-                <col style="width:92px">
-                <col style="width:130px">
-                <col style="width:120px">
-                <col>
-                <col style="width:100px">
-                <col style="width:88px">
-                <col style="width:88px">
+                <col style="width:92px" data-col="date">
+                <col style="width:130px" data-col="payee">
+                <col style="width:120px" data-col="category">
+                <col data-col="notes">
+                <col style="width:100px" data-col="tags">
+                <col style="width:88px" data-col="amount">
+                <col style="width:88px" data-col="balance">
                 <col style="width:56px">
-                <col style="width:34px">
+                <col style="width:34px" data-col="cleared">
             </colgroup>
             <thead>
-                <tr><th></th><th>Date</th><th>Payee</th><th>Category</th><th class="wrap">Notes</th><th>Tags</th><th>Amount</th><th>Balance</th><th></th><th title="Cleared">✓</th></tr>
+                <tr>
+                    <th></th>
+                    <th data-col="date">Date</th>
+                    <th data-col="payee">Payee</th>
+                    <th data-col="category">Category</th>
+                    <th class="wrap" data-col="notes">Notes</th>
+                    <th data-col="tags">Tags</th>
+                    <th data-col="amount">Amount</th>
+                    <th data-col="balance">Balance</th>
+                    <th></th>
+                    <th title="Cleared" data-col="cleared">✓</th>
+                </tr>
             </thead>
             <tbody id="quick-add-tbody">
                 <tr class="quick-add-row">
                     <td class="muted" style="text-align:center;">+</td>
-                    <td><input type="date" id="qa-date"></td>
-                    <td><input type="text" id="qa-payee" list="payee-options" placeholder="Payee"></td>
-                    <td>
+                    <td data-col="date"><input type="date" id="qa-date"></td>
+                    <td data-col="payee"><input type="text" id="qa-payee" list="payee-options" placeholder="Payee"></td>
+                    <td data-col="category">
                         <div style="display:flex;flex-direction:column;gap:3px;">
                             <input type="text" id="qa-category" list="category-options" placeholder="Category">
                             <select id="qa-category-new-group" title="Group for a new category" style="font-size:0.78rem;padding:2px 4px;">
@@ -124,12 +168,12 @@
                             </select>
                         </div>
                     </td>
-                    <td><input type="text" id="qa-notes" placeholder="Notes"></td>
-                    <td><input type="text" id="qa-tags" placeholder="tag, tag"></td>
-                    <td><input type="number" id="qa-amount" step="0.01" placeholder="-45.00"></td>
-                    <td class="muted">—</td>
+                    <td class="wrap" data-col="notes"><input type="text" id="qa-notes" placeholder="Notes"></td>
+                    <td data-col="tags"><input type="text" id="qa-tags" placeholder="tag, tag"></td>
+                    <td data-col="amount"><input type="number" id="qa-amount" step="0.01" placeholder="-45.00"></td>
+                    <td class="muted" data-col="balance">—</td>
                     <td><button type="button" class="btn btn-primary btn-sm" id="qa-add-btn">Add</button></td>
-                    <td style="text-align:center;"><input type="checkbox" id="qa-cleared" title="Cleared"></td>
+                    <td style="text-align:center;" data-col="cleared"><input type="checkbox" id="qa-cleared" title="Cleared"></td>
                 </tr>
             </tbody>
             <tbody id="register-tbody"></tbody>

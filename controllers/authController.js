@@ -77,4 +77,28 @@ function me(req, res) {
     res.json({ email: req.session.email, displayName: req.session.displayName, isAdmin: req.session.isAdmin });
 }
 
-module.exports = { signup, login, logout, me };
+// Register display preferences (which columns show, whether/how far out to
+// show upcoming schedules) — persisted on the User doc so they follow
+// whoever's logged in, not tied to one browser. See models/user.js.
+async function getPreferences(req, res) {
+    const user = await usersDb.findById(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    res.json(user.preferences);
+}
+
+async function updatePreferences(req, res) {
+    const user = await usersDb.findById(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+
+    const { registerColumns, upcomingSchedules } = req.body || {};
+    if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
+    if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
+    // Mutating a nested schema object's properties directly (rather than
+    // replacing it wholesale) doesn't always get picked up by Mongoose's
+    // change tracking — belt-and-suspenders so the save below actually persists it.
+    user.markModified('preferences');
+    await user.save();
+    res.json(user.preferences);
+}
+
+module.exports = { signup, login, logout, me, getPreferences, updatePreferences };

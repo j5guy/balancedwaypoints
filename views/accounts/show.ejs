@@ -156,7 +156,7 @@
                 <col style="width:88px" data-col="amount">
                 <col style="width:88px" data-col="balance">
                 <col style="width:34px" data-col="cleared">
-                <col style="width:56px">
+                <col style="width:130px">
             </colgroup>
             <thead>
                 <tr>
@@ -197,4 +197,93 @@
         </table>
     </div>
 </main>
+
+<div class="modal-overlay" id="occurrence-overlay" hidden>
+    <div class="modal-card" style="max-width:560px;">
+        <h3>Upcoming occurrence</h3>
+        <p class="muted" id="occ-modal-subtitle"></p>
+
+        <div id="occ-edit-fields">
+            <h4 style="margin-bottom:8px;">Edit</h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="occ-amount">Amount</label>
+                    <input type="number" id="occ-amount" step="0.01" placeholder="-45.00">
+                </div>
+                <div class="form-group">
+                    <label for="occ-payee">Payee</label>
+                    <input type="text" id="occ-payee" list="payee-options" placeholder="Payee">
+                </div>
+                <div class="form-group">
+                    <label for="occ-category">Category</label>
+                    <input type="text" id="occ-category" list="category-options" placeholder="Category">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="occ-notes">Notes</label>
+                <input type="text" id="occ-notes" placeholder="Notes">
+            </div>
+        </div>
+        <p class="form-hint" id="occ-edit-splits-note" hidden>
+            This schedule uses split categories — edit the schedule itself (from the Schedules page) to change its amounts. You can still delete occurrences below.
+        </p>
+
+        <div class="form-group">
+            <label>Applies to</label>
+            <div class="checkbox-row" style="width:auto;">
+                <input type="radio" name="occ-scope" id="occ-scope-single" value="single">
+                <label for="occ-scope-single" style="width:auto;">Just this occurrence</label>
+            </div>
+            <div class="checkbox-row" style="width:auto;">
+                <input type="radio" name="occ-scope" id="occ-scope-count" value="count">
+                <label for="occ-scope-count" style="width:auto;">This and the next</label>
+            </div>
+            <div class="form-row" id="occ-scope-count-row" style="margin-left:24px;max-width:160px;">
+                <input type="number" id="occ-scope-count-input" min="1" style="max-width:80px;">
+                <span class="muted" style="align-self:center;">occurrences (including this one)</span>
+            </div>
+            <div class="checkbox-row" style="width:auto;">
+                <input type="radio" name="occ-scope" id="occ-scope-forever" value="forever">
+                <label for="occ-scope-forever" style="width:auto;">This and every occurrence after</label>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="occ-save-edit-btn">Save edit</button>
+            <button type="button" class="btn btn-danger" id="occ-delete-occ-btn">Delete occurrence(s)</button>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+
+        <h4 style="margin-bottom:8px;">Post to a real transaction</h4>
+        <div class="form-group">
+            <div class="checkbox-row" style="width:auto;">
+                <input type="radio" name="occ-post-to" id="occ-post-today" value="today">
+                <label for="occ-post-today" style="width:auto;">Today</label>
+            </div>
+            <div class="checkbox-row" style="width:auto;">
+                <input type="radio" name="occ-post-to" id="occ-post-scheduled" value="scheduled">
+                <label for="occ-post-scheduled" style="width:auto;">Its scheduled date</label>
+            </div>
+            <div class="checkbox-row" style="width:auto;">
+                <input type="radio" name="occ-post-to" id="occ-post-custom" value="custom">
+                <label for="occ-post-custom" style="width:auto;">A custom date</label>
+            </div>
+            <div class="form-group" id="occ-post-custom-row" style="margin-left:24px;max-width:200px;">
+                <input type="date" id="occ-post-custom-date">
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="occ-post-btn">Post transaction</button>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+
+        <div class="btn-row" style="justify-content:space-between;">
+            <button type="button" class="btn btn-danger btn-sm" id="occ-delete-schedule-btn">Delete this schedule entirely</button>
+            <button type="button" class="btn btn-secondary" id="occ-modal-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/register.js'] }) %>

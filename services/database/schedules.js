@@ -1,8 +1,35 @@
 const Schedule = require('../../models/schedule');
+const { reconcile } = require('../schedules/occurrenceOverrides');
 
 const list = () => Schedule.find().sort({ nextDate: 1 }).populate('account payee category').exec();
 const findById = (id) => Schedule.findById(id).populate('account payee category').exec();
 const findDue = (asOf = new Date()) => Schedule.find({ active: true, autoEnter: true, nextDate: { $lte: asOf } }).exec();
+
+// Used by the register's "upcoming" projection (see
+// services/schedules/occurrenceProjection.js) — populates the override
+// entries' own payee/category refs too, since an override can point to a
+// different payee/category than the base schedule.
+const listActiveForAccount = (accountId) => Schedule.find({ account: accountId, active: true })
+    .populate(['account', 'payee', 'category', 'occurrenceOverrides.payee', 'occurrenceOverrides.category'])
+    .exec();
+
+// Raw (unpopulated) fetch — for mutating flows (posting, setting overrides)
+// where we want plain ObjectId refs to hand to Transaction.create(), not
+// populated documents, and need the real Mongoose document to call .save().
+const findRawById = (id) => Schedule.findById(id).exec();
+
+// Applies a new occurrence override, reconciling it against whatever
+// overrides already exist so ranges never overlap (see
+// services/schedules/occurrenceOverrides.js). `entry` is a full snapshot:
+// { occurrenceDate, occurrenceCount, amountCents, category, payee, notes, splits }.
+const setOccurrenceOverride = async (scheduleId, entry) => {
+    const schedule = await Schedule.findById(scheduleId).exec();
+    if (!schedule) return null;
+    schedule.occurrenceOverrides = reconcile(schedule.occurrenceOverrides, entry, schedule.frequency);
+    schedule.markModified('occurrenceOverrides');
+    await schedule.save();
+    return findById(scheduleId);
+};
 
 // Candidates for services/jobs/scheduleReminderEmailJob.js — active,
 // opted-in schedules whose OWN reminder window has arrived (reminderDaysBefore
@@ -25,4 +52,7 @@ const create = (data) => Schedule.create(data);
 const update = (id, data) => Schedule.findByIdAndUpdate(id, data, { new: true, runValidators: true }).exec();
 const remove = (id) => Schedule.findByIdAndDelete(id).exec();
 
-module.exports = { list, findById, findDue, findNotifiable, create, update, remove };
+module.exports = {
+    list, findById, findDue, findNotifiable, create, update, remove,
+    listActiveForAccount, findRawById, setOccurrenceOverride
+};

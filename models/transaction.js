@@ -29,8 +29,15 @@ const transactionSchema = new mongoose.Schema({
     // Dedup key for CSV/OFX re-import — OFX's FITID directly, or a hash of
     // account+date+amount+payee for CSV (see services/import/dedupe.js).
     importedId: { type: String, default: null },
-    // Set when this row was auto-entered by services/schedules/scheduler.js.
+    // Set when this row was auto-entered by services/schedules/scheduler.js,
+    // or manually "posted" from an upcoming occurrence in the register.
     schedule: { type: mongoose.Schema.Types.ObjectId, ref: 'Schedule', default: null },
+    // The occurrence date this transaction fulfills, per the schedule's own
+    // recurrence — distinct from `date` above, which is when it's actually
+    // dated (posting can back/forward-date to today or a custom date). Lets
+    // the schedule's upcoming projection know this occurrence is already
+    // posted even though it isn't dated on its "natural" schedule date.
+    scheduleOccurrenceDate: { type: Date, default: null },
     // Manual display-order override for the register (drag-and-drop) —
     // purely cosmetic, never used for balance math (see
     // services/budget/envelope.js and the register's running-balance
@@ -44,6 +51,7 @@ transactionSchema.index({ account: 1, date: -1 });
 transactionSchema.index({ account: 1, sortOrder: -1 });
 transactionSchema.index({ importedId: 1 }, { sparse: true });
 transactionSchema.index({ category: 1, date: 1 });
+transactionSchema.index({ schedule: 1, scheduleOccurrenceDate: 1 }, { sparse: true });
 
 module.exports = mongoose.model('Transaction', transactionSchema);
 module.exports.CLEARED_STATES = CLEARED_STATES;

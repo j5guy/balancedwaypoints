@@ -247,6 +247,9 @@
     // edit/delete. Their Balance is a projection (see loadUpcomingRows),
     // marked as an estimate via the cell's title tooltip rather than an
     // inline character, since a "~" read like a stray minus sign at a glance.
+    // The "⋯" button opens a modal to edit this occurrence (just this one /
+    // this and the next N / this and every one after) or post it into a
+    // real Transaction — see openOccurrenceModal below.
     function upcomingRow(occurrence) {
         const s = occurrence.schedule;
         const tr = document.createElement('tr');
@@ -264,48 +267,32 @@
             <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents)}</td>
             <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents)}</td>
             <td data-col="cleared"></td>
-            <td><span class="badge" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">Scheduled</span></td>
+            <td class="row-actions">
+                <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>
+                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-occ-actions title="Edit or post this occurrence">⋯</button>
+            </td>
         `;
+        tr.querySelector('[data-occ-actions]').addEventListener('click', () => openOccurrenceModal(occurrence));
         return tr;
-    }
-
-    // A schedule's own nextDate is only its NEXT single occurrence — to show
-    // every occurrence out to the configured cutoff (e.g. 6 monthly
-    // occurrences over a 6-month window), each one has to be projected
-    // forward using the same interval math the server's auto-enter job uses
-    // (services/schedules/nextOccurrence.js) until it passes the cutoff (or
-    // the schedule's own endDate, if it has one).
-    function projectOccurrences(schedule, cutoff) {
-        const occurrences = [];
-        let date = new Date(schedule.nextDate);
-        const endDate = schedule.endDate ? new Date(schedule.endDate) : null;
-        let guard = 0;
-        while (date <= cutoff && (!endDate || date <= endDate) && guard < 500) {
-            occurrences.push({ schedule, date: new Date(date) });
-            guard++;
-            const next = new Date(date);
-            const { unit, interval } = schedule.frequency;
-            if (unit === 'days') next.setUTCDate(next.getUTCDate() + interval);
-            else if (unit === 'weeks') next.setUTCDate(next.getUTCDate() + interval * 7);
-            else if (unit === 'months') next.setUTCMonth(next.getUTCMonth() + interval);
-            else if (unit === 'years') next.setUTCFullYear(next.getUTCFullYear() + interval);
-            date = next;
-        }
-        return occurrences;
     }
 
     async function loadUpcomingRows() {
         if (!preferences.upcomingSchedules.enabled) return [];
         try {
-            const { schedules } = await window.BWApi.apiFetch('/api/schedules');
             const { amount, unit } = preferences.upcomingSchedules;
             const cutoff = new Date();
             if (unit === 'months') cutoff.setMonth(cutoff.getMonth() + amount);
             else cutoff.setDate(cutoff.getDate() + amount);
 
-            let occurrences = schedules
-                .filter(s => s.active && s.account === accountId)
-                .flatMap(s => projectOccurrences(s, cutoff));
+            // Projection now lives server-side (services/schedules/occurrenceProjection.js)
+            // since it has to cross-reference which occurrences are already
+            // posted (models/transaction.js's scheduleOccurrenceDate) and
+            // merge in any per-occurrence overrides — data only the server
+            // can efficiently query.
+            const { occurrences: raw } = await window.BWApi.apiFetch(
+                `/api/schedules/upcoming?account=${accountId}&cutoff=${cutoff.toISOString()}`
+            );
+            let occurrences = raw.map(o => ({ ...o, date: new Date(o.date) }));
 
             // Nearest-first to accumulate a projected balance outward from
             // the account's real current balance...
@@ -326,6 +313,144 @@
             return [];
         }
     }
+
+    // ── Edit / post an upcoming occurrence ───────────────────────────
+    let occurrenceContext = null;
+
+    function openOccurrenceModal(occurrence) {
+        occurrenceContext = occurrence;
+        const s = occurrence.schedule;
+        document.getElementById('occ-modal-subtitle').textContent = `${s.name} — ${occurrence.date.toLocaleDateString()}`;
+
+        const hasSplits = s.splits && s.splits.length > 0;
+        document.getElementById('occ-edit-fields').hidden = hasSplits;
+        document.getElementById('occ-edit-splits-note').hidden = !hasSplits;
+
+        document.getElementById('occ-amount').value = (s.amountCents / 100).toFixed(2);
+        document.getElementById('occ-payee').value = s.payee ? s.payee.name : '';
+        document.getElementById('occ-category').value = s.category ? s.category.name : '';
+        document.getElementById('occ-notes').value = s.notes || '';
+        document.querySelector('input[name="occ-scope"][value="single"]').checked = true;
+        document.getElementById('occ-scope-count-row').hidden = true;
+        document.getElementById('occ-scope-count-input').value = 3;
+
+        document.querySelector('input[name="occ-post-to"][value="scheduled"]').checked = true;
+        document.getElementById('occ-post-custom-row').hidden = true;
+        document.getElementById('occ-post-custom-date').value = new Date().toISOString().slice(0, 10);
+
+        document.getElementById('occurrence-overlay').hidden = false;
+    }
+
+    function closeOccurrenceModal() {
+        document.getElementById('occurrence-overlay').hidden = true;
+        occurrenceContext = null;
+    }
+
+    document.getElementById('occ-modal-cancel-btn').addEventListener('click', closeOccurrenceModal);
+
+    document.querySelectorAll('input[name="occ-scope"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+            const scope = document.querySelector('input[name="occ-scope"]:checked').value;
+            document.getElementById('occ-scope-count-row').hidden = scope !== 'count';
+        });
+    });
+    document.querySelectorAll('input[name="occ-post-to"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+            const postTo = document.querySelector('input[name="occ-post-to"]:checked').value;
+            document.getElementById('occ-post-custom-row').hidden = postTo !== 'custom';
+        });
+    });
+
+    document.getElementById('occ-save-edit-btn').addEventListener('click', async () => {
+        if (!occurrenceContext) return;
+        try {
+            const amountCents = window.BWMoney.toCents(document.getElementById('occ-amount').value || 0);
+            const payeeId = await resolvePayee(document.getElementById('occ-payee').value.trim());
+            const categoryName = document.getElementById('occ-category').value.trim();
+            let categoryId = null;
+            if (categoryName) {
+                const existing = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
+                if (!existing) throw new Error(`"${categoryName}" isn't an existing category — pick one from the list`);
+                categoryId = existing.id;
+            }
+            const scope = document.querySelector('input[name="occ-scope"]:checked').value;
+            await window.BWApi.apiFetch(`/api/schedules/${occurrenceContext.schedule.id}/occurrence`, {
+                method: 'PUT',
+                body: {
+                    occurrenceDate: occurrenceContext.date.toISOString(),
+                    scope,
+                    count: Number(document.getElementById('occ-scope-count-input').value) || 1,
+                    amountCents,
+                    category: categoryId,
+                    payee: payeeId,
+                    notes: document.getElementById('occ-notes').value.trim()
+                }
+            });
+            closeOccurrenceModal();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
+
+    function occScopeDescription() {
+        const scope = document.querySelector('input[name="occ-scope"]:checked').value;
+        if (scope === 'single') return 'this occurrence';
+        if (scope === 'forever') return 'this and every occurrence after it';
+        return `this and the next ${Number(document.getElementById('occ-scope-count-input').value) || 1} occurrences`;
+    }
+
+    document.getElementById('occ-delete-occ-btn').addEventListener('click', async () => {
+        if (!occurrenceContext) return;
+        if (!confirm(`Delete ${occScopeDescription()}? This can't be undone — they'll never be posted or shown as upcoming again.`)) return;
+        try {
+            const scope = document.querySelector('input[name="occ-scope"]:checked').value;
+            await window.BWApi.apiFetch(`/api/schedules/${occurrenceContext.schedule.id}/occurrence`, {
+                method: 'PUT',
+                body: {
+                    occurrenceDate: occurrenceContext.date.toISOString(),
+                    scope,
+                    count: Number(document.getElementById('occ-scope-count-input').value) || 1,
+                    skip: true
+                }
+            });
+            closeOccurrenceModal();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
+
+    document.getElementById('occ-delete-schedule-btn').addEventListener('click', async () => {
+        if (!occurrenceContext) return;
+        if (!confirm(`Delete the schedule "${occurrenceContext.schedule.name}" entirely? This can't be undone — every future occurrence goes with it (past posted transactions are unaffected).`)) return;
+        try {
+            await window.BWApi.apiFetch(`/api/schedules/${occurrenceContext.schedule.id}`, { method: 'DELETE' });
+            closeOccurrenceModal();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
+
+    document.getElementById('occ-post-btn').addEventListener('click', async () => {
+        if (!occurrenceContext) return;
+        try {
+            const postTo = document.querySelector('input[name="occ-post-to"]:checked').value;
+            await window.BWApi.apiFetch(`/api/schedules/${occurrenceContext.schedule.id}/post`, {
+                method: 'POST',
+                body: {
+                    occurrenceDate: occurrenceContext.date.toISOString(),
+                    postTo,
+                    customDate: postTo === 'custom' ? document.getElementById('occ-post-custom-date').value : undefined
+                }
+            });
+            closeOccurrenceModal();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
 
     // null means "no limit" — the default, so existing registers keep
     // showing full history until a user opts into a rolling window.

@@ -1,57 +1,45 @@
 (function () {
-    const grid = document.getElementById('accounts-grid');
-    if (!grid) return;
+    const tbody = document.getElementById('accounts-tbody');
+    if (!tbody) return;
     const errorBox = document.getElementById('accounts-error');
     const form = document.getElementById('account-form');
     let editingId = null;
-    let accountsCache = [];
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
         errorBox.hidden = false;
     }
 
-    function accountCard(account) {
-        const el = document.createElement('div');
-        el.className = 'stat-card';
-        el.draggable = true;
-        el.dataset.dragId = account.id;
+    function accountRow(account) {
+        const tr = document.createElement('tr');
         const balanceClass = account.balanceCents < 0 ? 'money-negative' : 'money-positive';
-        el.innerHTML = `
-            <div style="display:flex;align-items:flex-start;gap:6px;">
-                <span class="drag-handle">⠿</span>
-                <a href="/accounts/${account.id}" draggable="false" style="text-decoration:none;color:inherit;display:block;flex:1;min-width:0;">
-                    <div class="stat-label">${account.name}${account.closed ? ' (closed)' : ''}</div>
-                    <div class="stat-value money ${balanceClass}">${window.BWMoney.formatCents(account.balanceCents)}</div>
-                    <div class="muted" style="font-size:0.8rem;margin-top:4px;text-transform:capitalize;">${account.type}${account.onBudget ? '' : ' &middot; off budget'}</div>
-                </a>
-            </div>
-            <div class="btn-row" style="margin-top:10px;">
-                <button type="button" class="btn btn-secondary btn-sm" data-edit>Edit</button>
-            </div>
+        tr.innerHTML = `
+            <td><a href="/accounts/${account.id}" class="link-plain">${account.name}${account.closed ? ' (closed)' : ''}</a></td>
+            <td style="text-transform:capitalize;">${account.type}</td>
+            <td class="money ${balanceClass}">${window.BWMoney.formatCents(account.balanceCents)}</td>
+            <td>${account.onBudget ? 'Yes' : 'No'}</td>
+            <td class="row-actions">
+                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
+                <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
+            </td>
         `;
-        el.querySelector('[data-edit]').addEventListener('click', () => startEdit(account));
-        return el;
+        tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(account));
+        tr.querySelector('[data-delete]').addEventListener('click', () => openDeleteModal(account));
+        return tr;
     }
 
     async function load() {
         try {
             const { accounts } = await window.BWApi.apiFetch('/api/accounts');
-            accountsCache = accounts;
-            grid.innerHTML = '';
-            document.getElementById('accounts-hint').hidden = accounts.length < 2;
+            tbody.innerHTML = '';
             if (accounts.length === 0) {
-                grid.innerHTML = '<div class="empty-state">No accounts yet — add one above.</div>';
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No accounts yet — add one above.</td></tr>';
                 return;
             }
-            accounts.forEach(a => grid.appendChild(accountCard(a)));
-            window.BWDragReorder.makeSortable(grid, async (ids) => {
-                try {
-                    await Promise.all(ids.map((id, i) => window.BWApi.apiFetch(`/api/accounts/${id}`, { method: 'PUT', body: { sortOrder: ids.length - i } })));
-                } catch (err) {
-                    showError(err);
-                }
-            });
+            // Already alphabetical from the server (services/database/accounts.js
+            // sorts by name) — sorted again here defensively in case the list
+            // ever gets assembled/merged client-side some other way.
+            accounts.sort((a, b) => a.name.localeCompare(b.name)).forEach(a => tbody.appendChild(accountRow(a)));
         } catch (err) {
             showError(err);
         }
@@ -112,6 +100,50 @@
             load();
         } catch (err) {
             showError(err);
+        }
+    });
+
+    // ── Delete confirmation — requires typing the account's exact name,
+    // since deleting one is permanent (and blocked server-side anyway if it
+    // still has transactions — see the 409 handling below).
+    let pendingDeleteAccount = null;
+    const overlay = document.getElementById('delete-account-overlay');
+    const confirmInput = document.getElementById('delete-account-confirm-input');
+    const confirmBtn = document.getElementById('delete-account-confirm-btn');
+
+    function openDeleteModal(account) {
+        pendingDeleteAccount = account;
+        document.getElementById('delete-account-warning').textContent =
+            `You are about to permanently delete "${account.name}".`;
+        document.getElementById('delete-account-name-hint').textContent = account.name;
+        confirmInput.value = '';
+        confirmBtn.disabled = true;
+        overlay.hidden = false;
+        confirmInput.focus();
+    }
+
+    function closeDeleteModal() {
+        pendingDeleteAccount = null;
+        overlay.hidden = true;
+    }
+
+    confirmInput.addEventListener('input', () => {
+        confirmBtn.disabled = !pendingDeleteAccount || confirmInput.value !== pendingDeleteAccount.name;
+    });
+
+    document.getElementById('delete-account-cancel-btn').addEventListener('click', closeDeleteModal);
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeDeleteModal();
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+        if (!pendingDeleteAccount || confirmInput.value !== pendingDeleteAccount.name) return;
+        try {
+            await window.BWApi.apiFetch(`/api/accounts/${pendingDeleteAccount.id}`, { method: 'DELETE' });
+            closeDeleteModal();
+            load();
+        } catch (err) {
+            document.getElementById('delete-account-warning').textContent = err.message || 'Could not delete this account.';
         }
     });
 

@@ -49,7 +49,30 @@
         </div>
     </div>
 
-    <p class="muted" id="accounts-hint" style="font-size:0.85rem;" hidden>Drag a card by its handle (⠿) to reorder accounts.</p>
-    <div class="card-grid" id="accounts-grid"></div>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr><th>Name</th><th>Type</th><th>Balance</th><th>On budget</th><th></th></tr>
+            </thead>
+            <tbody id="accounts-tbody"></tbody>
+        </table>
+    </div>
 </main>
-<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/accounts.js'] }) %>
+
+<div class="modal-overlay" id="delete-account-overlay" hidden>
+    <div class="modal-card">
+        <h3>Delete account</h3>
+        <p id="delete-account-warning" class="form-error"></p>
+        <p>This <strong>cannot be undone</strong>. To confirm, type the account's name below:</p>
+        <p class="muted" id="delete-account-name-hint" style="font-weight:600;"></p>
+        <div class="form-group">
+            <input type="text" id="delete-account-confirm-input" autocomplete="off">
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-danger" id="delete-account-confirm-btn" disabled>Delete account</button>
+            <button type="button" class="btn btn-secondary" id="delete-account-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<%- include('../components/footer', { pageScripts: ['/js/accounts.js'] }) %>

@@ -1,7 +1,7 @@
 const Account = require('../../models/account');
 const Transaction = require('../../models/transaction');
 
-const list = () => Account.find().sort({ sortOrder: 1, name: 1 }).exec();
+const list = () => Account.find().sort({ name: 1 }).exec();
 const findById = (id) => Account.findById(id).exec();
 const create = (data) => Account.create(data);
 const update = (id, data) => Account.findByIdAndUpdate(id, data, { new: true, runValidators: true }).exec();

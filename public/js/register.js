@@ -233,8 +233,8 @@
     // ── Upcoming (scheduled) transaction rows ────────────────────────
     // Read-only preview rows, not real Transactions — no drag id, no
     // edit/delete. Their Balance is a projection (see loadUpcomingRows),
-    // clearly marked with "~" since it's an estimate, not the real thing
-    // computeRunningBalances produces for actual transactions.
+    // marked as an estimate via the cell's title tooltip rather than an
+    // inline character, since a "~" read like a stray minus sign at a glance.
     function upcomingRow(occurrence) {
         const s = occurrence.schedule;
         const tr = document.createElement('tr');
@@ -250,7 +250,7 @@
             <td class="wrap" data-col="notes">${s.notes || ''}</td>
             <td data-col="tags"></td>
             <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents)}</td>
-            <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">~${window.BWMoney.formatCents(occurrence.projectedBalanceCents)}</td>
+            <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents)}</td>
             <td><span class="badge" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">Scheduled</span></td>
             <td data-col="cleared"></td>
         `;

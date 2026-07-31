@@ -62,16 +62,19 @@ main {
     padding: 32px 0 64px;
 }
 
-// :not(.btn) so link-coloring never competes with a button variant's own
-// color (e.g. .btn-primary's white text) — the plain element+attribute
-// selector below would otherwise outrank a bare .btn-primary class by
-// specificity in dark mode, which is what made the hero's "Get started"
-// button unreadable there.
-a:not(.btn) {
+// :where() so this plain-link color carries ZERO specificity — it must
+// never be able to outrank a component's own color rule (.btn-primary,
+// .nav-link(.active), .nav-logo, .admin-tile, ...), no matter how few
+// classes that rule has. An un-:where()'d `a`/`[data-theme='dark'] a`
+// selector picks up just enough specificity from the extra element
+// selector to beat a single-class rule once attribute/class counts tie —
+// that's what made the hero's "Get started" button (and, once "fixed" with
+// a one-off :not(.btn), the active nav item in dark mode) unreadable.
+:where(a) {
     color: $teal-dark;
 }
 
-[data-theme='dark'] a:not(.btn) {
+:where([data-theme='dark'] a) {
     color: color.adjust($teal, $lightness: 20%);
 }
 

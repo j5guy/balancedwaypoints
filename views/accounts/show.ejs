@@ -35,9 +35,17 @@
             <label for="txn-is-transfer">This is a transfer to another account</label>
         </div>
 
-        <div class="form-group" id="txn-category-group">
-            <label for="txn-category">Category</label>
-            <select id="txn-category"><option value="">— none —</option></select>
+        <div class="form-row" id="txn-category-group">
+            <div class="form-group">
+                <label for="txn-category">Category</label>
+                <input type="text" id="txn-category" list="category-options" placeholder="Category name">
+                <datalist id="category-options"></datalist>
+            </div>
+            <div class="form-group">
+                <label for="txn-category-new-group">Group (for a new category)</label>
+                <select id="txn-category-new-group"><option value="">— pick a group —</option></select>
+                <p class="form-hint">Only used if "Category" above doesn't match an existing one — it'll be created in this group.</p>
+            </div>
         </div>
 
         <div class="form-group" id="txn-transfer-group" hidden>
@@ -79,11 +87,23 @@
         </div>
     </div>
 
-    <p class="muted" id="register-hint" style="font-size:0.85rem;" hidden>Drag a row by its handle (⠿) to reorder the register. This only changes the display order — the Balance column always follows the transaction dates, not the row order.</p>
+    <p class="muted" id="register-hint" style="font-size:0.85rem;" hidden>Drag a row by its handle (⠿) to reorder the register — the Balance column recalculates from the new order, top to bottom.</p>
     <div class="table-wrap">
-        <table class="data-table">
+        <table class="data-table register-table">
+            <colgroup>
+                <col style="width:28px">
+                <col style="width:100px">
+                <col style="width:160px">
+                <col style="width:140px">
+                <col>
+                <col style="width:150px">
+                <col style="width:100px">
+                <col style="width:100px">
+                <col style="width:96px">
+                <col style="width:36px">
+            </colgroup>
             <thead>
-                <tr><th></th><th>Date</th><th>Payee</th><th>Category</th><th class="wrap">Notes</th><th>Tags</th><th>Cleared</th><th>Amount</th><th>Balance</th><th></th></tr>
+                <tr><th></th><th>Date</th><th>Payee</th><th>Category</th><th class="wrap">Notes</th><th>Tags</th><th>Amount</th><th>Balance</th><th></th><th title="Cleared">✓</th></tr>
             </thead>
             <tbody id="register-tbody"></tbody>
         </table>

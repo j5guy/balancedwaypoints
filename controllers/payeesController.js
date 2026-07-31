@@ -5,7 +5,10 @@ function serialize(payee) {
         id: payee._id,
         name: payee.name,
         transferAccount: payee.transferAccount ? payee.transferAccount._id || payee.transferAccount : null,
-        defaultCategory: payee.defaultCategory ? payee.defaultCategory._id || payee.defaultCategory : null
+        defaultCategory: payee.defaultCategory ? payee.defaultCategory._id || payee.defaultCategory : null,
+        address: payee.address || '',
+        phone: payee.phone || '',
+        accountNumber: payee.accountNumber || ''
     };
 }
 
@@ -17,10 +20,17 @@ async function list(req, res) {
 async function create(req, res) {
     const name = String((req.body || {}).name || '').trim();
     if (!name) return res.status(400).json({ error: 'name is required' });
-    const { transferAccount, defaultCategory } = req.body || {};
+    const { transferAccount, defaultCategory, address, phone, accountNumber } = req.body || {};
 
     try {
-        const payee = await payees.create({ name, transferAccount: transferAccount || null, defaultCategory: defaultCategory || null });
+        const payee = await payees.create({
+            name,
+            transferAccount: transferAccount || null,
+            defaultCategory: defaultCategory || null,
+            address: address || '',
+            phone: phone || '',
+            accountNumber: accountNumber || ''
+        });
         res.status(201).json(serialize(payee));
     } catch (err) {
         if (err.code === 11000) return res.status(409).json({ error: 'A payee with that name already exists' });
@@ -29,11 +39,14 @@ async function create(req, res) {
 }
 
 async function update(req, res) {
-    const { name, transferAccount, defaultCategory } = req.body || {};
+    const { name, transferAccount, defaultCategory, address, phone, accountNumber } = req.body || {};
     const data = {};
     if (name !== undefined) data.name = String(name).trim();
     if (transferAccount !== undefined) data.transferAccount = transferAccount || null;
     if (defaultCategory !== undefined) data.defaultCategory = defaultCategory || null;
+    if (address !== undefined) data.address = address;
+    if (phone !== undefined) data.phone = phone;
+    if (accountNumber !== undefined) data.accountNumber = accountNumber;
 
     try {
         const payee = await payees.update(req.params.id, data);

@@ -6,9 +6,11 @@
 
     let accounts = [];
     let categories = [];
+    let categoryGroups = [];
     let payees = [];
     let editingId = null;
     let startingBalanceCents = 0;
+    let transactionsById = new Map();
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -16,18 +18,23 @@
     }
     function clearError() { errorBox.hidden = true; }
 
+    // Only used by the splits editor now — the main category field is a
+    // text input + datalist (see resolveCategory) so a new category can be
+    // created directly from the transaction form.
     function categoryOptionsHtml() {
         return '<option value="">— none —</option>' + categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     }
 
     async function loadReferenceData() {
-        const [accountsRes, categoriesRes, payeesRes] = await Promise.all([
+        const [accountsRes, categoriesRes, categoryGroupsRes, payeesRes] = await Promise.all([
             window.BWApi.apiFetch('/api/accounts'),
             window.BWApi.apiFetch('/api/categories'),
+            window.BWApi.apiFetch('/api/category-groups'),
             window.BWApi.apiFetch('/api/payees')
         ]);
         accounts = accountsRes.accounts;
         categories = categoriesRes.categories;
+        categoryGroups = categoryGroupsRes.categoryGroups;
         payees = payeesRes.payees;
 
         const account = accounts.find(a => a.id === accountId);
@@ -39,30 +46,64 @@
             balEl.classList.add(account.balanceCents < 0 ? 'money-negative' : 'money-positive');
         }
 
-        document.getElementById('txn-category').innerHTML = categoryOptionsHtml();
+        document.getElementById('category-options').innerHTML = categories.map(c => `<option value="${c.name}">`).join('');
+        document.getElementById('txn-category-new-group').innerHTML = '<option value="">— pick a group —</option>' +
+            categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
         document.getElementById('txn-transfer-account').innerHTML = accounts
             .filter(a => a.id !== accountId)
             .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
         document.getElementById('payee-options').innerHTML = payees.map(p => `<option value="${p.name}">`).join('');
     }
 
-    // Running balance always follows true chronological (date) order,
-    // independent of the manual drag-and-drop display order below — a
-    // balance that jumped around with a manual reorder wouldn't mean
-    // anything. createdAt is the tiebreak for same-day transactions.
-    function computeRunningBalances(transactions) {
-        const chronological = [...transactions].sort((a, b) => {
-            const byDate = new Date(a.date) - new Date(b.date);
-            if (byDate !== 0) return byDate;
-            return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
-        });
+    // Resolves a typed category name to an id, creating the category (in the
+    // group picked in the "new category" select) if it doesn't exist yet —
+    // same pattern as resolvePayee/resolveTags below.
+    async function resolveCategory(name, groupId) {
+        if (!name) return null;
+        const existing = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+        if (existing) return existing.id;
+        if (!groupId) throw new Error(`"${name}" isn't an existing category — pick a group to create it in`);
+        const created = await window.BWApi.apiFetch('/api/categories', { method: 'POST', body: { name, group: groupId } });
+        categories.push(created);
+        return created.id;
+    }
+
+    // Running balance follows the DISPLAY order (top-to-bottom, newest at
+    // top by default) rather than the transaction date — so dragging a row
+    // to a new position recalculates every balance between its old and new
+    // spot, same as physically re-ordering entries in a paper ledger would.
+    // orderedTransactions must already be in top-to-bottom display order;
+    // the bottom-most row is treated as "earliest" and accumulates up from
+    // the account's starting balance.
+    function computeRunningBalances(orderedTransactions) {
         let running = startingBalanceCents;
         const balanceById = new Map();
-        chronological.forEach(t => {
+        for (let i = orderedTransactions.length - 1; i >= 0; i--) {
+            const t = orderedTransactions[i];
             running += t.amountCents;
             balanceById.set(t.id, running);
-        });
+        }
         return balanceById;
+    }
+
+    // Re-derives balances from the register's current on-screen row order
+    // (after a drag-and-drop reorder) and patches each row's balance cell in
+    // place — no re-fetch needed, since a drag already leaves the DOM in the
+    // new order (see dragReorder.js's live insertBefore during dragover).
+    function refreshBalanceDisplay() {
+        const tbody = document.getElementById('register-tbody');
+        const rows = [...tbody.querySelectorAll('tr[data-drag-id]')];
+        const orderedTransactions = rows.map(tr => transactionsById.get(tr.dataset.dragId)).filter(Boolean);
+        const balanceById = computeRunningBalances(orderedTransactions);
+        rows.forEach(tr => {
+            const t = transactionsById.get(tr.dataset.dragId);
+            if (!t) return;
+            const cell = tr.querySelector('.js-balance-cell');
+            const balanceCents = balanceById.get(t.id);
+            cell.textContent = window.BWMoney.formatCents(balanceCents);
+            cell.classList.remove('money-positive', 'money-negative');
+            cell.classList.add(balanceCents < 0 ? 'money-negative' : 'money-positive');
+        });
     }
 
     function transactionRow(t, balanceCents) {
@@ -72,6 +113,7 @@
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
         const amountClass = t.amountCents < 0 ? 'money-negative' : 'money-positive';
         const balanceClass = balanceCents < 0 ? 'money-negative' : 'money-positive';
+        const isCleared = t.cleared !== 'pending';
         tr.innerHTML = `
             <td class="drag-handle">⠿</td>
             <td>${new Date(t.date).toLocaleDateString()}</td>
@@ -79,22 +121,46 @@
             <td>${category}</td>
             <td class="wrap">${t.notes || ''}</td>
             <td>${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
-            <td>${t.cleared}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(t.amountCents)}</td>
-            <td class="money ${balanceClass}">${window.BWMoney.formatCents(balanceCents)}</td>
+            <td class="money js-balance-cell ${balanceClass}">${window.BWMoney.formatCents(balanceCents)}</td>
             <td class="row-actions">
                 <button type="button" class="btn btn-secondary btn-sm" data-edit>Edit</button>
                 <button type="button" class="btn btn-danger btn-sm" data-delete>Delete</button>
             </td>
+            <td>
+                <button type="button" class="cleared-toggle ${isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off'}"
+                        data-cleared-toggle title="${isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared'}">${isCleared ? '✓' : '✕'}</button>
+            </td>
         `;
         tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(t));
         tr.querySelector('[data-delete]').addEventListener('click', () => deleteTransaction(t.id));
+        tr.querySelector('[data-cleared-toggle]').addEventListener('click', () => toggleCleared(t));
         return tr;
+    }
+
+    // Cleared is binary in this UI (a checkmark or an x) — toggling never
+    // sets 'reconciled', only flips between 'pending' and 'cleared'. Updates
+    // the button in place rather than reloading the whole register.
+    async function toggleCleared(t) {
+        const next = t.cleared === 'pending' ? 'cleared' : 'pending';
+        try {
+            const updated = await window.BWApi.apiFetch(`/api/transactions/${t.id}`, { method: 'PUT', body: { cleared: next } });
+            t.cleared = updated.cleared;
+            const btn = document.querySelector(`tr[data-drag-id="${t.id}"] [data-cleared-toggle]`);
+            const isCleared = t.cleared !== 'pending';
+            btn.textContent = isCleared ? '✓' : '✕';
+            btn.title = isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared';
+            btn.classList.toggle('cleared-toggle-on', isCleared);
+            btn.classList.toggle('cleared-toggle-off', !isCleared);
+        } catch (err) {
+            showError(err);
+        }
     }
 
     async function loadTransactions() {
         try {
             const { transactions } = await window.BWApi.apiFetch(`/api/transactions?account=${accountId}`);
+            transactionsById = new Map(transactions.map(t => [t.id, t]));
             const tbody = document.getElementById('register-tbody');
             tbody.innerHTML = '';
             document.getElementById('register-hint').hidden = transactions.length < 2;
@@ -104,13 +170,6 @@
             }
             const balanceById = computeRunningBalances(transactions);
             transactions.forEach(t => tbody.appendChild(transactionRow(t, balanceById.get(t.id))));
-            window.BWDragReorder.makeSortable(tbody, async (ids) => {
-                try {
-                    await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids } });
-                } catch (err) {
-                    showError(err);
-                }
-            });
         } catch (err) {
             showError(err);
         }
@@ -236,7 +295,8 @@
         } else {
             document.getElementById('splits-editor').hidden = true;
             document.getElementById('txn-category-group').hidden = false;
-            document.getElementById('txn-category').value = t.category ? t.category.id : '';
+            document.getElementById('txn-category').value = t.category ? t.category.name : '';
+            document.getElementById('txn-category-new-group').value = '';
         }
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -251,6 +311,7 @@
         document.getElementById('txn-tags').value = '';
         document.getElementById('txn-cleared').checked = false;
         document.getElementById('txn-category').value = '';
+        document.getElementById('txn-category-new-group').value = '';
         document.getElementById('txn-is-transfer').checked = false;
         document.getElementById('txn-transfer-group').hidden = true;
         document.getElementById('txn-category-group').hidden = false;
@@ -283,10 +344,14 @@
                 const splits = document.getElementById('splits-editor').hidden ? [] : readSplits();
                 const payeeId = await resolvePayee(document.getElementById('txn-payee').value.trim());
                 const tagIds = await resolveTags(document.getElementById('txn-tags').value);
+                const categoryId = splits.length ? null : await resolveCategory(
+                    document.getElementById('txn-category').value.trim(),
+                    document.getElementById('txn-category-new-group').value
+                );
                 const body = {
                     account: accountId, date, amountCents,
                     payee: payeeId,
-                    category: splits.length ? null : (document.getElementById('txn-category').value || null),
+                    category: categoryId,
                     splits,
                     cleared: document.getElementById('txn-cleared').checked ? 'cleared' : 'pending',
                     tags: tagIds,
@@ -320,5 +385,18 @@
     (async function init() {
         await loadReferenceData();
         await loadTransactions();
+
+        // Registered once against the tbody element itself (its identity
+        // never changes across reloads — only its innerHTML is replaced),
+        // so this doesn't stack a duplicate listener on every reload.
+        const tbody = document.getElementById('register-tbody');
+        window.BWDragReorder.makeSortable(tbody, async (ids) => {
+            refreshBalanceDisplay();
+            try {
+                await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids } });
+            } catch (err) {
+                showError(err);
+            }
+        });
     })();
 })();

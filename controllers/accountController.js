@@ -40,7 +40,8 @@ function serializeAccount(user) {
             from: smtp.from || null,
             hasPassword: !!(smtp.passIv && smtp.passCiphertext)
         },
-        weeklyReportEmail: !!(user.preferences && user.preferences.weeklyReportEmail)
+        weeklyReportEmail: !!(user.preferences && user.preferences.weeklyReportEmail),
+        themeColors: user.themeColors
     };
 }
 

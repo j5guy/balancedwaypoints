@@ -15,5 +15,39 @@
     </script>
     <% const cssVersion = (typeof buildInfo !== 'undefined' && buildInfo) ? (buildInfo.version + (buildInfo.commit ? '-' + buildInfo.commit : '')) : Date.now(); %>
     <link rel="stylesheet" href="/css/main.css?v=<%= cssVersion %>">
+    <%
+        // Every themeColors field maps 1:1 to a CSS custom property (see
+        // utils/themeColorFields.js — the canonical list models/user.js,
+        // controllers/authController.js, and this share). Passed in via
+        // res.locals (server.js) rather than require()'d directly here —
+        // untested whether a compiled EJS template has `require` in scope,
+        // and this file renders on every single page, so that's not a risk
+        // worth taking.
+        const THEME_COLOR_FIELDS = (typeof themeColorFields !== 'undefined' && themeColorFields) || [];
+        function themeOverrideDeclarations(colors) {
+            if (!colors) return '';
+            let declarations = '';
+            THEME_COLOR_FIELDS.forEach(function (entry) {
+                const key = entry[0];
+                const cssVar = entry[1];
+                const value = colors[key];
+                if (!value) return;
+                declarations += cssVar + ': ' + value + ';\n';
+            });
+            return declarations;
+        }
+        const lightDeclarations = themeOverrideDeclarations((typeof themeColors !== 'undefined' && themeColors && themeColors.light) || null);
+        const darkDeclarations = themeOverrideDeclarations((typeof themeColors !== 'undefined' && themeColors && themeColors.dark) || null);
+    %>
+    <% if (lightDeclarations || darkDeclarations) { %>
+    <style nonce="<%= cspNonce %>">
+    <% if (lightDeclarations) { %>
+    [data-theme='light'] { <%- lightDeclarations %> }
+    <% } %>
+    <% if (darkDeclarations) { %>
+    [data-theme='dark'] { <%- darkDeclarations %> }
+    <% } %>
+    </style>
+    <% } %>
 </head>
 <body>

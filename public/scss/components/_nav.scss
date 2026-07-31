@@ -51,8 +51,7 @@
     }
 }
 
-.btn-nav-logout,
-.btn-nav-create {
+.btn-nav-logout {
     background: transparent;
     border: none;
     font: inherit;
@@ -63,6 +62,23 @@
 
     &:hover {
         background: $bg-hover;
+    }
+}
+
+// A solid CTA pill, not a plain nav link — was previously merged with
+// .btn-nav-logout's transparent/plain-text styling above, which made this
+// render as low-contrast text with no background instead of a visible
+// button (this is what made "Get started" hard to see before login).
+.btn-nav-create {
+    background: $accent;
+    color: #fff !important;
+    padding: 8px 16px;
+    border-radius: $radius-full;
+    text-decoration: none;
+    font-weight: 500;
+
+    &:hover {
+        filter: brightness(0.92);
     }
 }
 

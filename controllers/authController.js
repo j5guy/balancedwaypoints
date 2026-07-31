@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const usersDb = require('../services/database/users');
 const { adminEmail, signupAllowlist } = require('../config/config');
 const { resolveLdapConfig, authenticateLdap } = require('../config/ldapAuth');
+const THEME_COLOR_FIELDS = require('../utils/themeColorFields');
 const logger = require('../utils/logger');
 
 const BCRYPT_ROUNDS = 12;
@@ -11,6 +12,11 @@ function establishSession(req, user) {
     req.session.email = user.email;
     req.session.displayName = user.displayName;
     req.session.isAdmin = user.isAdmin;
+    // Denormalized into the session so views/components/head.ejs can apply
+    // it on every page render without a DB round-trip — see server.js's
+    // res.locals.themeColors. Kept in sync on save below whenever it changes,
+    // so an edit takes effect immediately rather than waiting for next login.
+    req.session.themeColors = user.themeColors;
 }
 
 function isAllowedToSignUp(email) {
@@ -152,14 +158,41 @@ function me(req, res) {
 async function getPreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
-    res.json(user.preferences);
+    res.json({
+        registerColumns: user.preferences.registerColumns,
+        upcomingSchedules: user.preferences.upcomingSchedules,
+        weeklyReportEmail: user.preferences.weeklyReportEmail,
+        notifyEmail: user.notifyEmail,
+        themeColors: user.themeColors
+    });
+}
+
+// Only null/undefined/empty-string values are treated as "reset to
+// default" — anything else must look like a hex color, so a stray typo in
+// a color field can't inject arbitrary CSS into the <style> block
+// views/components/head.ejs builds from this (it interpolates the value
+// directly, unescaped, since a real hex color needs no escaping).
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+
+function sanitizeThemeColorGroup(input, existing) {
+    const result = {};
+    for (const [key] of THEME_COLOR_FIELDS) {
+        result[key] = existing[key];
+        if (!(key in (input || {}))) continue;
+        const value = input[key];
+        if (!value) result[key] = null;
+        else if (HEX_COLOR_RE.test(value)) result[key] = value;
+        // Silently ignored if it's neither empty nor a valid hex color —
+        // the color <input> in the UI can't produce anything else anyway.
+    }
+    return result;
 }
 
 async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { registerColumns, upcomingSchedules, weeklyReportEmail, notifyEmail } = req.body || {};
+    const { registerColumns, upcomingSchedules, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
     if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
@@ -169,16 +202,30 @@ async function updatePreferences(req, res) {
     // card's fields (see controllers/accountController.js for those) — it
     // shouldn't require a valid mail server to already be configured.
     if (notifyEmail !== undefined) user.notifyEmail = String(notifyEmail).toLowerCase().trim() || null;
+    if (themeColors) {
+        if (themeColors.light) user.themeColors.light = sanitizeThemeColorGroup(themeColors.light, user.themeColors.light);
+        if (themeColors.dark) user.themeColors.dark = sanitizeThemeColorGroup(themeColors.dark, user.themeColors.dark);
+        user.markModified('themeColors');
+    }
     // Mutating a nested schema object's properties directly (rather than
     // replacing it wholesale) doesn't always get picked up by Mongoose's
     // change tracking — belt-and-suspenders so the save below actually persists it.
     user.markModified('preferences');
     await user.save();
-    res.json({
-        registerColumns: user.preferences.registerColumns,
-        upcomingSchedules: user.preferences.upcomingSchedules,
-        weeklyReportEmail: user.preferences.weeklyReportEmail,
-        notifyEmail: user.notifyEmail
+
+    // Denormalized copy in the session (see establishSession) needs
+    // refreshing too, or a theme-color change wouldn't actually render
+    // until the next login.
+    req.session.themeColors = user.themeColors;
+    req.session.save((err) => {
+        if (err) logger.error('Session save error: ' + err.message);
+        res.json({
+            registerColumns: user.preferences.registerColumns,
+            upcomingSchedules: user.preferences.upcomingSchedules,
+            weeklyReportEmail: user.preferences.weeklyReportEmail,
+            notifyEmail: user.notifyEmail,
+            themeColors: user.themeColors
+        });
     });
 }
 

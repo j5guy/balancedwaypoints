@@ -17,6 +17,7 @@ const logger = require('./utils/logger');
 const mongooseConnect = require('./config/mongoose');
 const sessionConfig = require('./middleware/session');
 const buildInfo = require('./utils/buildInfo');
+const themeColorFields = require('./utils/themeColorFields');
 const startScheduler = require('./services/schedules/scheduler');
 
 // Database
@@ -75,6 +76,7 @@ app.use((req, res, next) => {
     res.locals.isAuthenticated = !!req.session.userId;
     res.locals.isAdmin = !!req.session.isAdmin;
     res.locals.themeColors = req.session.themeColors || null;
+    res.locals.themeColorFields = themeColorFields;
     next();
 });
 

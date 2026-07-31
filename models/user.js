@@ -65,19 +65,41 @@ const userSchema = new mongoose.Schema({
         passIv: { type: String, default: null },
         passCiphertext: { type: String, default: null }
     },
-    // Per-theme overrides for a curated set of CSS custom properties (see
-    // public/scss/layout/_base.scss). null/unset means "use the theme
-    // default" — never store the app's hardcoded default hex here.
+    // Per-theme overrides for every CSS custom property the app defines
+    // (see public/scss/layout/_base.scss's :root/[data-theme] blocks —
+    // these field names match those variables 1:1, camelCased). null/unset
+    // means "use the theme default" — never store the app's hardcoded
+    // default hex here. See views/components/head.ejs for how these get
+    // turned into an actual CSS override, and controllers/authController.js's
+    // THEME_COLOR_FIELDS for the canonical field list both share.
     themeColors: {
         light: {
-            text: { type: String, default: null },
-            bg: { type: String, default: null },
-            accent: { type: String, default: null }
+            bgBase: { type: String, default: null },
+            bgSecondary: { type: String, default: null },
+            bgCard: { type: String, default: null },
+            bgHover: { type: String, default: null },
+            border: { type: String, default: null },
+            borderLight: { type: String, default: null },
+            textPrimary: { type: String, default: null },
+            textSecondary: { type: String, default: null },
+            textMuted: { type: String, default: null },
+            accent: { type: String, default: null },
+            navBg: { type: String, default: null },
+            navText: { type: String, default: null }
         },
         dark: {
-            text: { type: String, default: null },
-            bg: { type: String, default: null },
-            accent: { type: String, default: null }
+            bgBase: { type: String, default: null },
+            bgSecondary: { type: String, default: null },
+            bgCard: { type: String, default: null },
+            bgHover: { type: String, default: null },
+            border: { type: String, default: null },
+            borderLight: { type: String, default: null },
+            textPrimary: { type: String, default: null },
+            textSecondary: { type: String, default: null },
+            textMuted: { type: String, default: null },
+            accent: { type: String, default: null },
+            navBg: { type: String, default: null },
+            navText: { type: String, default: null }
         }
     },
     // Register display preferences — persist per-user (not per-browser) so

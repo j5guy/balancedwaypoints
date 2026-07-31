@@ -62,11 +62,16 @@ main {
     padding: 32px 0 64px;
 }
 
-a {
+// :not(.btn) so link-coloring never competes with a button variant's own
+// color (e.g. .btn-primary's white text) — the plain element+attribute
+// selector below would otherwise outrank a bare .btn-primary class by
+// specificity in dark mode, which is what made the hero's "Get started"
+// button unreadable there.
+a:not(.btn) {
     color: $teal-dark;
 }
 
-[data-theme='dark'] a {
+[data-theme='dark'] a:not(.btn) {
     color: color.adjust($teal, $lightness: 20%);
 }
 

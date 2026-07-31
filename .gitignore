@@ -1,0 +1,13 @@
+.claude*
+.claude/*
+.vscode*
+.vscode/*
+node_modules/
+.env
+.deploy-state.json
+certs/
+logs/
+public/css/main.css
+*.log
+public/uploads/*
+!public/uploads/.gitkeep

@@ -1,0 +1,26 @@
+<nav class="nav">
+    <div class="nav-brand">
+        <a href="/" class="nav-logo">Balanced Waypoints</a>
+    </div>
+    <div class="nav-links">
+        <% if (locals.isAuthenticated) { %>
+            <a href="/budget" class="nav-link<%= locals.path && locals.path.startsWith('/budget') ? ' active' : '' %>">Budget</a>
+            <a href="/accounts" class="nav-link<%= locals.path && locals.path.startsWith('/accounts') ? ' active' : '' %>">Accounts</a>
+            <a href="/payees" class="nav-link<%= locals.path && locals.path.startsWith('/payees') ? ' active' : '' %>">Payees</a>
+            <a href="/rules" class="nav-link<%= locals.path && locals.path.startsWith('/rules') ? ' active' : '' %>">Rules</a>
+            <a href="/schedules" class="nav-link<%= locals.path && locals.path.startsWith('/schedules') ? ' active' : '' %>">Schedules</a>
+            <a href="/imports" class="nav-link<%= locals.path && locals.path.startsWith('/imports') ? ' active' : '' %>">Import</a>
+            <a href="/reports" class="nav-link<%= locals.path && locals.path.startsWith('/reports') ? ' active' : '' %>">Reports</a>
+            <% if (locals.isAdmin) { %>
+                <a href="/admin" class="nav-link<%= locals.path && locals.path.startsWith('/admin') ? ' active' : '' %>">Admin</a>
+            <% } %>
+            <form id="logout-form" action="/api/auth/logout" method="POST" class="inline-form">
+                <button type="submit" class="btn-nav-logout">Log out</button>
+            </form>
+        <% } else { %>
+            <a href="/auth/login" class="nav-link<%= locals.path === '/auth/login' ? ' active' : '' %>">Log in</a>
+            <a href="/auth/signup" class="nav-link btn-nav-create">Get started</a>
+        <% } %>
+        <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
+    </div>
+</nav>

@@ -1,0 +1,48 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-rules">
+    <div class="page-header">
+        <h1>Rules</h1>
+        <button type="button" class="btn btn-primary" id="new-rule-btn">Add rule</button>
+    </div>
+    <div id="rules-error" class="form-error" hidden></div>
+    <p class="muted">Rules run in priority order (lowest first) against new transactions during CSV/OFX import, and can be re-run on a single transaction from the register with "Suggest from rules".</p>
+
+    <div class="card" id="new-rule-form" hidden>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="rule-name">Name</label>
+                <input type="text" id="rule-name">
+            </div>
+            <div class="form-group">
+                <label for="rule-priority">Priority</label>
+                <input type="number" id="rule-priority" value="0">
+            </div>
+            <div class="form-group checkbox-row" style="align-self:flex-end;">
+                <input type="checkbox" id="rule-stop">
+                <label for="rule-stop">Stop processing further rules on match</label>
+            </div>
+        </div>
+
+        <h4>Conditions (all must match)</h4>
+        <div id="conditions-list"></div>
+        <button type="button" class="btn btn-secondary btn-sm" id="add-condition-btn">Add condition</button>
+
+        <h4>Actions</h4>
+        <div id="actions-list"></div>
+        <button type="button" class="btn btn-secondary btn-sm" id="add-action-btn">Add action</button>
+
+        <div class="btn-row" style="margin-top:16px;">
+            <button type="button" class="btn btn-primary" id="save-rule-btn">Save rule</button>
+            <button type="button" class="btn btn-secondary" id="cancel-rule-btn">Cancel</button>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th>Priority</th><th>Name</th><th class="wrap">Conditions</th><th class="wrap">Actions</th><th>Active</th><th></th></tr></thead>
+            <tbody id="rules-tbody"></tbody>
+        </table>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/rules.js'] }) %>

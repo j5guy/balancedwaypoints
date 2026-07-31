@@ -1,0 +1,25 @@
+@use '../abstracts/variables' as *;
+
+.page-landing .hero {
+    max-width: 640px;
+    margin: 64px auto;
+    text-align: center;
+}
+
+.hero-tagline {
+    font-size: 1.3rem;
+    color: $text-secondary;
+    margin-bottom: 12px;
+}
+
+.hero-mission {
+    color: $text-secondary;
+    line-height: 1.6;
+}
+
+.hero-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 24px;
+}

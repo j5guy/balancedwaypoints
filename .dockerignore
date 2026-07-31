@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.gitea
+.env
+.env.*
+!.env.example
+logs
+public/uploads
+public/css/main.css
+*.md

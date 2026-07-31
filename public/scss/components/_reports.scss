@@ -1,0 +1,102 @@
+@use '../abstracts/variables' as *;
+
+// Spending-by-category: a single ranked measure across categories, so every
+// bar shares one hue — identity comes from the label to its left, not from
+// color (see the dataviz guidance: color follows the entity's role, and a
+// ranked single-measure bar chart has only one role to encode).
+.bar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bar-list-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 90px;
+    align-items: center;
+    gap: 12px;
+}
+
+.bar-list-label {
+    font-size: 0.88rem;
+    color: $text-secondary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bar-list-track {
+    background: $bg-hover;
+    border-radius: $radius-sm;
+    height: 10px;
+    position: relative;
+}
+
+.bar-list-fill {
+    background: $accent;
+    height: 100%;
+    border-radius: $radius-sm;
+    min-width: 4px;
+}
+
+.bar-list-value {
+    text-align: right;
+    font-family: $font-mono;
+    font-size: 0.85rem;
+}
+
+// Income vs. expense: two series with real polarity around zero — a
+// diverging pair (green/red), not an arbitrary categorical choice, plus a
+// legend since there are 2 series.
+.diverging-legend {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    font-size: 0.82rem;
+    color: $text-secondary;
+
+    .legend-swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        margin-right: 6px;
+    }
+
+    .legend-income .legend-swatch { background: $money-positive; }
+    .legend-expense .legend-swatch { background: $money-negative; }
+}
+
+.diverging-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+
+    .diverging-track {
+        display: flex;
+        height: 10px;
+    }
+
+    .diverging-income-track,
+    .diverging-expense-track {
+        flex: 1;
+        display: flex;
+        background: $bg-hover;
+        border-radius: $radius-sm;
+        overflow: hidden;
+    }
+
+    .diverging-expense-track { justify-content: flex-end; }
+
+    .diverging-fill-income { background: $money-positive; border-radius: $radius-sm; }
+    .diverging-fill-expense { background: $money-negative; border-radius: $radius-sm; }
+}
+
+// Net worth trend: single series over time — one hue (accent), sparkline-style.
+.trend-sparkline {
+    width: 100%;
+    height: 120px;
+}

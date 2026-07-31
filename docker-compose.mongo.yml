@@ -1,0 +1,27 @@
+# Overlay adding a bundled MongoDB container. Only used when "Internal
+# MongoDB" is chosen in the setup wizard (or manually: docker compose
+# -f docker-compose.yml -f docker-compose.nginx.yml -f docker-compose.mongo.yml up -d --build).
+# mongoHost must be set to "mongo" in .env for the app to reach this.
+services:
+  mongo:
+    # MongoDB 5.0+ (and 4.4.19+) require ARMv8.2-A, which pre-Pi-5 hardware
+    # doesn't implement — the setup wizard detects this and sets MONGO_IMAGE
+    # to an older tag automatically; override yourself here (or in .env) if
+    # needed — see .env.example.
+    image: ${MONGO_IMAGE:-mongo:7}
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping')\" || mongo --quiet --eval \"db.adminCommand('ping')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

@@ -1,0 +1,9 @@
+# Overlay for pulling a pre-built image instead of building from source —
+# manual only (docker compose -f docker-compose.yml -f docker-compose.pull.yml
+# pull, then ... up -d); the guided setup wizard always builds locally.
+#
+# No default here — this project doesn't publish a pre-built image itself.
+# Set BALANCEDWAYPOINTS_IMAGE in .env to wherever you build/push your own.
+services:
+  app:
+    image: ${BALANCEDWAYPOINTS_IMAGE}

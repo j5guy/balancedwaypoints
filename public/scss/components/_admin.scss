@@ -1,0 +1,32 @@
+@use '../abstracts/variables' as *;
+
+.admin-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.admin-tile {
+    display: block;
+    background: $bg-card;
+    border: 1px solid $border;
+    border-radius: $radius-lg;
+    padding: 20px;
+    text-decoration: none;
+    color: $text-primary;
+
+    &:hover {
+        border-color: $accent;
+    }
+
+    h3 {
+        margin: 0 0 6px;
+        font-size: 1.05rem;
+    }
+
+    p {
+        margin: 0;
+        color: $text-muted;
+        font-size: 0.88rem;
+    }
+}

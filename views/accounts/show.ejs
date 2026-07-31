@@ -1,0 +1,91 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-register" data-account-id="<%= accountId %>">
+    <div class="page-header">
+        <h1 id="account-name">Register</h1>
+        <div class="stat-card" style="padding:10px 18px;">
+            <div class="stat-label">Balance</div>
+            <div class="stat-value money" id="account-balance">—</div>
+        </div>
+    </div>
+    <div id="register-error" class="form-error" hidden></div>
+
+    <div class="card">
+        <h3 id="txn-form-title">New transaction</h3>
+        <input type="hidden" id="txn-id">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="txn-date">Date</label>
+                <input type="date" id="txn-date">
+            </div>
+            <div class="form-group">
+                <label for="txn-payee">Payee</label>
+                <input type="text" id="txn-payee" list="payee-options" placeholder="Payee name">
+                <datalist id="payee-options"></datalist>
+            </div>
+            <div class="form-group">
+                <label for="txn-amount">Amount</label>
+                <input type="number" id="txn-amount" step="0.01" placeholder="-45.00">
+                <p class="form-hint">Negative for money out, positive for money in.</p>
+            </div>
+        </div>
+
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="txn-is-transfer">
+            <label for="txn-is-transfer">This is a transfer to another account</label>
+        </div>
+
+        <div class="form-group" id="txn-category-group">
+            <label for="txn-category">Category</label>
+            <select id="txn-category"><option value="">— none —</option></select>
+        </div>
+
+        <div class="form-group" id="txn-transfer-group" hidden>
+            <label for="txn-transfer-account">Transfer to</label>
+            <select id="txn-transfer-account"></select>
+        </div>
+
+        <div class="form-group">
+            <div class="btn-row">
+                <button type="button" class="btn btn-secondary btn-sm" id="toggle-splits-btn">Split into categories</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="suggest-rules-btn">Suggest from rules</button>
+            </div>
+        </div>
+
+        <div id="splits-editor" hidden>
+            <div id="splits-list"></div>
+            <button type="button" class="btn btn-secondary btn-sm" id="add-split-btn">Add split line</button>
+            <p class="form-hint">Split amounts must add up to the total amount above.</p>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="txn-tags">Tags</label>
+                <input type="text" id="txn-tags" placeholder="comma, separated, tags">
+            </div>
+            <div class="form-group">
+                <label for="txn-notes">Notes</label>
+                <input type="text" id="txn-notes">
+            </div>
+            <div class="form-group checkbox-row" style="align-self:flex-end;">
+                <input type="checkbox" id="txn-cleared">
+                <label for="txn-cleared">Cleared</label>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-txn-btn">Save transaction</button>
+            <button type="button" class="btn btn-secondary" id="cancel-txn-btn" hidden>Cancel edit</button>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr><th>Date</th><th>Payee</th><th>Category</th><th class="wrap">Notes</th><th>Tags</th><th>Cleared</th><th>Amount</th><th></th></tr>
+            </thead>
+            <tbody id="register-tbody"></tbody>
+        </table>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/register.js'] }) %>

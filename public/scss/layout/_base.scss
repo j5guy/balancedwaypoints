@@ -1,0 +1,119 @@
+@use 'sass:color';
+@use '../abstracts/variables' as *;
+
+:root,
+[data-theme='light'] {
+    --bg-base: #{$paper};
+    --bg-secondary: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --bg-hover: #ECEAE3;
+    --border: #DEDBD1;
+    --border-light: #EAE7DE;
+    --text-primary: #{$ink};
+    --text-secondary: #{color.adjust($ink, $lightness: 25%)};
+    --text-muted: #{$muted-gray};
+
+    --accent: #{$teal};
+    --nav-bg: #FFFFFF;
+    --nav-text: #{color.adjust($ink, $lightness: 15%)};
+}
+
+[data-theme='dark'] {
+    --bg-base: #171B1C;
+    --bg-secondary: #1D2224;
+    --bg-card: #212728;
+    --bg-hover: #2A3132;
+    --border: #343C3E;
+    --border-light: #2A3132;
+    --text-primary: #EDEFEE;
+    --text-secondary: #C7CDCB;
+    --text-muted: #8D9698;
+
+    --accent: #{color.adjust($teal, $lightness: 18%)};
+    --nav-bg: #212728;
+    --nav-text: #C7CDCB;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: $font-family;
+    background: $bg-base;
+    color: $text-primary;
+    line-height: 1.5;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+main {
+    flex: 1;
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+}
+
+a {
+    color: $teal-dark;
+}
+
+[data-theme='dark'] a {
+    color: color.adjust($teal, $lightness: 20%);
+}
+
+h1, h2, h3 {
+    color: $text-primary;
+    line-height: 1.25;
+}
+
+.muted {
+    color: $text-muted;
+}
+
+.site-footer {
+    text-align: center;
+    padding: 24px;
+    color: $text-muted;
+    font-size: 0.85rem;
+}
+
+.inline-form {
+    display: inline;
+}
+
+.money {
+    font-family: $font-mono;
+    font-variant-numeric: tabular-nums;
+}
+
+.money-positive {
+    color: $money-positive;
+}
+
+.money-negative {
+    color: $money-negative;
+}
+
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: $text-muted;
+}

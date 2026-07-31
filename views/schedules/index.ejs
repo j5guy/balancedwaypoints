@@ -1,0 +1,75 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-schedules">
+    <div class="page-header">
+        <h1>Schedules</h1>
+        <button type="button" class="btn btn-primary" id="new-schedule-btn">Add schedule</button>
+    </div>
+    <div id="schedules-error" class="form-error" hidden></div>
+
+    <div class="card" id="new-schedule-form" hidden>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sched-name">Name</label>
+                <input type="text" id="sched-name" placeholder="Rent, Netflix, Paycheck...">
+            </div>
+            <div class="form-group">
+                <label for="sched-account">Account</label>
+                <select id="sched-account"></select>
+            </div>
+            <div class="form-group">
+                <label for="sched-amount">Amount</label>
+                <input type="number" id="sched-amount" step="0.01" placeholder="-1200.00">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sched-category">Category</label>
+                <select id="sched-category"><option value="">— none —</option></select>
+            </div>
+            <div class="form-group">
+                <label for="sched-next-date">Next date</label>
+                <input type="date" id="sched-next-date">
+            </div>
+            <div class="form-group">
+                <label for="sched-end-date">End date (optional)</label>
+                <input type="date" id="sched-end-date">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sched-interval">Repeat every</label>
+                <input type="number" id="sched-interval" value="1" min="1">
+            </div>
+            <div class="form-group">
+                <label for="sched-unit">Unit</label>
+                <select id="sched-unit">
+                    <option value="days">Day(s)</option>
+                    <option value="weeks">Week(s)</option>
+                    <option value="months" selected>Month(s)</option>
+                    <option value="years">Year(s)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="sched-reminder">Remind days before</label>
+                <input type="number" id="sched-reminder" value="3" min="0">
+            </div>
+        </div>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="sched-auto-enter">
+            <label for="sched-auto-enter">Auto-enter into the register when due (otherwise just a reminder)</label>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-schedule-btn">Save</button>
+            <button type="button" class="btn btn-secondary" id="cancel-schedule-btn">Cancel</button>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th>Name</th><th>Account</th><th>Amount</th><th>Category</th><th>Next date</th><th>Repeats</th><th>Auto-enter</th><th></th></tr></thead>
+            <tbody id="schedules-tbody"></tbody>
+        </table>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/schedules.js'] }) %>

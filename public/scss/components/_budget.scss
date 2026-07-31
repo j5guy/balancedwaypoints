@@ -1,0 +1,112 @@
+@use '../abstracts/variables' as *;
+
+.rta-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-radius: $radius-lg;
+    margin-bottom: 24px;
+    background: $accent;
+    color: #fff;
+
+    &.rta-negative {
+        background: $red;
+    }
+
+    .rta-label {
+        font-size: 0.85rem;
+        opacity: 0.85;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .rta-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        font-family: $font-mono;
+    }
+}
+
+.month-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+
+    .month-label {
+        font-weight: 600;
+        min-width: 140px;
+        text-align: center;
+    }
+}
+
+.budget-group {
+    margin-bottom: 24px;
+
+    .budget-group-title {
+        font-size: 0.85rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: $text-muted;
+        margin: 0 0 8px 4px;
+    }
+}
+
+.budget-row {
+    display: grid;
+    grid-template-columns: 1fr 120px 120px 120px;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid $border-light;
+
+    input[type='number'] {
+        text-align: right;
+    }
+
+    .balance-cell {
+        text-align: right;
+        font-family: $font-mono;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: $radius-sm;
+
+        &.balance-positive {
+            color: $money-positive;
+        }
+
+        &.balance-negative {
+            color: $money-negative;
+            background: $red-dim;
+        }
+    }
+}
+
+.budget-row-head {
+    display: grid;
+    grid-template-columns: 1fr 120px 120px 120px;
+    gap: 12px;
+    padding: 0 14px 6px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: $text-muted;
+    text-align: right;
+
+    span:first-child {
+        text-align: left;
+    }
+}
+
+.split-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+
+    select, input {
+        flex: 1;
+    }
+}

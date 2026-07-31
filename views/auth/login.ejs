@@ -1,0 +1,23 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-auth">
+    <div class="auth-card">
+        <h1>Log in</h1>
+        <div id="login-error" class="form-error" hidden></div>
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" id="login-submit">Log in</button>
+        </form>
+        <p class="form-hint">
+            Need an account? <a href="/auth/signup">Sign up</a>
+        </p>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/auth.js'] }) %>

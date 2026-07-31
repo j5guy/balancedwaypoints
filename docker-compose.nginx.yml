@@ -1,0 +1,16 @@
+# Bundled nginx sidecar, terminating TLS for the app.
+services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    env_file:
+      - .env
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-5570}:${NGINX_HTTPS_PORT:-5570}"
+    volumes:
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${SSL_CERT_FILE:-./certs/cert.pem}:/etc/nginx/certs/server.pem:ro
+      - ${SSL_KEY_FILE:-./certs/cert.key}:/etc/nginx/certs/server.key:ro

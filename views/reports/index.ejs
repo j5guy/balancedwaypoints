@@ -1,0 +1,47 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-reports">
+    <div class="page-header">
+        <h1>Reports</h1>
+    </div>
+    <div id="reports-error" class="form-error" hidden></div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="report-from">From</label>
+            <input type="date" id="report-from">
+        </div>
+        <div class="form-group">
+            <label for="report-to">To</label>
+            <input type="date" id="report-to">
+        </div>
+        <div class="form-group" style="align-self:flex-end;">
+            <button type="button" class="btn btn-primary" id="run-report-btn">Update reports</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Spending by category</h3>
+        <div class="bar-list" id="spending-bar-list"></div>
+    </div>
+
+    <div class="card">
+        <h3>Income vs. expense</h3>
+        <div class="diverging-legend">
+            <span class="legend-income"><span class="legend-swatch"></span>Income</span>
+            <span class="legend-expense"><span class="legend-swatch"></span>Expense</span>
+        </div>
+        <div id="income-expense-list"></div>
+    </div>
+
+    <div class="card">
+        <h3>Net worth (last 12 months)</h3>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Month</th><th>Net worth</th></tr></thead>
+                <tbody id="net-worth-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/reports.js'] }) %>

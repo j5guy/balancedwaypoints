@@ -1,0 +1,41 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-imports">
+    <div class="page-header">
+        <h1>Import</h1>
+    </div>
+    <div id="import-error" class="form-error" hidden></div>
+
+    <div class="card">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="import-account">Account</label>
+                <select id="import-account"></select>
+            </div>
+            <div class="form-group">
+                <label for="import-format">Format</label>
+                <select id="import-format">
+                    <option value="csv">CSV (bank export)</option>
+                    <option value="ofx">OFX / QFX</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="import-file">File</label>
+                <input type="file" id="import-file" accept=".csv,.ofx,.qfx">
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary" id="preview-btn">Preview</button>
+    </div>
+
+    <div id="preview-section" hidden>
+        <p id="preview-summary" class="muted"></p>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th></th><th>Date</th><th>Payee</th><th>Amount</th><th class="wrap">Notes</th><th>Category</th></tr></thead>
+                <tbody id="preview-tbody"></tbody>
+            </table>
+        </div>
+        <button type="button" class="btn btn-primary" id="commit-btn" style="margin-top:16px;">Import selected</button>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/imports.js'] }) %>

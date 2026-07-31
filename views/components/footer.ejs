@@ -1,0 +1,15 @@
+<footer class="site-footer">
+    <p>
+        Balanced Waypoints
+        <span class="muted">v<%= locals.buildInfo ? buildInfo.version : '' %><%= (locals.buildInfo && buildInfo.commit) ? ' (' + buildInfo.commit + ')' : '' %></span>
+    </p>
+</footer>
+<script src="/js/money.js" nonce="<%= cspNonce %>"></script>
+<script src="/js/apiClient.js" nonce="<%= cspNonce %>"></script>
+<script src="/js/nav.js" nonce="<%= cspNonce %>"></script>
+<script src="/js/theme.js" nonce="<%= cspNonce %>"></script>
+<% if (locals.pageScripts) { locals.pageScripts.forEach(function (src) { %>
+<script src="<%= src %>" nonce="<%= cspNonce %>"></script>
+<% }); } %>
+</body>
+</html>

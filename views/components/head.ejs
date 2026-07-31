@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> — Balanced Waypoints</title>
+    <script nonce="<%= cspNonce %>">
+        (function () {
+            var t = localStorage.getItem('theme');
+            if (t !== 'light' && t !== 'dark') {
+                t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+    <% const cssVersion = (typeof buildInfo !== 'undefined' && buildInfo) ? (buildInfo.version + (buildInfo.commit ? '-' + buildInfo.commit : '')) : Date.now(); %>
+    <link rel="stylesheet" href="/css/main.css?v=<%= cssVersion %>">
+</head>
+<body>

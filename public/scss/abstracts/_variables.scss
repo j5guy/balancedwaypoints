@@ -1,0 +1,52 @@
+// ─── Brand Palette ───────────────────────────────────────────────
+// Fixed literal colors (used with rgba()/color.adjust(), which need real
+// Sass colors, not CSS custom properties).
+$teal:        #1B6E6E;
+$teal-dark:   #124F4F;
+$paper:       #F6F5F1;
+$gold:        #E3A93A;
+$ink:         #22282A;
+$muted-gray:  #666F72;
+
+$red:     #B5433A;
+$red-dim: rgba($red, 0.14);
+$green:   #2E8B57;
+$green-dim: rgba($green, 0.14);
+
+// ─── Theme-dependent colors ──────────────────────────────────────
+// CSS custom properties (see :root / [data-theme] in layout/_base.scss) so
+// the theme can be switched at runtime without recompiling.
+$bg-base:       var(--bg-base);
+$bg-secondary:  var(--bg-secondary);
+$bg-card:       var(--bg-card);
+$bg-hover:      var(--bg-hover);
+
+$border:        var(--border);
+$border-light:  var(--border-light);
+
+$text-primary:   var(--text-primary);
+$text-secondary: var(--text-secondary);
+$text-muted:     var(--text-muted);
+
+// User-overridable brand accent (buttons/positive figures).
+$accent:         var(--accent);
+
+$nav-bg:         var(--nav-bg);
+$nav-text:       var(--nav-text);
+
+// Money-specific semantic colors — separate from $green/$red above so a
+// future per-user override wouldn't need to touch every callsite.
+$money-positive: $green;
+$money-negative: $red;
+
+// ─── Typography ──────────────────────────────────────────────────
+$font-family-serif: Georgia, 'Times New Roman', serif;
+$font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+$font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+
+// ─── Spacing & Radii ─────────────────────────────────────────────
+$radius-sm:  6px;
+$radius-md:  10px;
+$radius-lg:  16px;
+$radius-xl:  28px;
+$radius-full: 9999px;

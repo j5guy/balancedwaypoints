@@ -1,0 +1,38 @@
+name: Automatically Push Updates to Balanced Waypoints Node JS Containers
+
+env:
+  NODEJS_NAME: balancedwaypoints
+  WEB_NAME: balancedwaypoints
+  WEB_DIR: /var/www/html/${{ env.WEB_NAME }}
+  REPO_URL: git@gitea.pinkham.lan:/web/${{ env.WEB_NAME }}.git
+  DOCKER_DIR: /opt/${{ env.WEB_NAME }}
+  IMAGE: gitea.pinkham.lan/web/balancedwaypoints/balancedwaypoints-test
+
+on:
+  push:
+    branches:
+      - test
+
+jobs:
+  repo-updates:
+    runs-on: web-test
+    steps:
+      - name: Clone or Pull Latest Code
+        run: |
+          if [ -d "${{ env.WEB_DIR }}/.git" ]; then
+            git -C "${{ env.WEB_DIR }}" pull
+          else
+            mkdir -p "${{ env.WEB_DIR }}"
+            git clone -b test "${{ env.REPO_URL }}" "${{ env.WEB_DIR }}"
+          fi
+
+      - name: Install NPM Packages
+        run: "npm install"
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Compile CSS
+        run: "npx sass public/scss/main.scss public/css/main.css"
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Restart Node.js server
+        run: "systemctl restart ${{ env.NODEJS_NAME }}"

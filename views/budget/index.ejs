@@ -1,0 +1,45 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-budget">
+    <div class="page-header">
+        <h1>Budget</h1>
+        <button type="button" class="btn btn-secondary btn-sm" id="new-group-btn">Add category group</button>
+    </div>
+    <div id="budget-error" class="form-error" hidden></div>
+
+    <div class="month-nav">
+        <button type="button" class="btn btn-secondary btn-sm" id="prev-month-btn">&larr;</button>
+        <div class="month-label" id="month-label"></div>
+        <button type="button" class="btn btn-secondary btn-sm" id="next-month-btn">&rarr;</button>
+    </div>
+
+    <div class="rta-banner" id="rta-banner">
+        <div>
+            <div class="rta-label">Ready to Assign</div>
+            <div class="rta-value" id="rta-value">$0.00</div>
+        </div>
+    </div>
+
+    <div class="card" id="new-group-form" hidden>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="group-name">Group name</label>
+                <input type="text" id="group-name">
+            </div>
+            <div class="form-group checkbox-row" style="align-self:flex-end;">
+                <input type="checkbox" id="group-is-income">
+                <label for="group-is-income">Income group (excluded from budgeting)</label>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-group-btn">Save</button>
+            <button type="button" class="btn btn-secondary" id="cancel-group-btn">Cancel</button>
+        </div>
+    </div>
+
+    <div class="budget-row-head">
+        <span>Category</span><span>Assigned</span><span>Activity</span><span>Available</span>
+    </div>
+    <div id="budget-groups"></div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/budget.js'] }) %>

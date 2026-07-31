@@ -1,0 +1,5 @@
+v0.1.0
+------
+Initial release: accounts, transactions (splits/transfers), payees, category
+groups/categories, tags, envelope budgeting, rules, schedules, CSV/OFX
+import, and reports.

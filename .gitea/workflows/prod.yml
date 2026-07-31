@@ -1,0 +1,81 @@
+name: Automatically Push Updates to Balanced Waypoints Node JS Containers
+
+env:
+  NODEJS_NAME: balancedwaypoints
+  WEB_NAME: balancedwaypoints
+  WEB_DIR: /var/www/html/${{ env.WEB_NAME }}
+  REPO_URL: git@gitea.pinkham.lan:/web/${{ env.WEB_NAME }}.git
+  GITEA_HOST: gitea.pinkham.lan
+  GITEA_REPO: web/balancedwaypoints
+  GITHUB_REPO: github.com/j5guy/balancedwaypoints.git
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  repo-updates:
+    runs-on: web-prod
+    steps:
+      - name: Clone or Pull Latest Code
+        run: |
+          if [ -d "${{ env.WEB_DIR }}/.git" ]; then
+            git -C "${{ env.WEB_DIR }}" pull
+          else
+            mkdir -p "${{ env.WEB_DIR }}"
+            git clone "${{ env.REPO_URL }}" "${{ env.WEB_DIR }}"
+          fi
+
+      - name: Install NPM Packages
+        run: "npm install"
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Compile CSS
+        run: "npx sass public/scss/main.scss public/css/main.css"
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Restart Node.js server
+        run: "systemctl restart ${{ env.NODEJS_NAME }}"
+
+      - name: Push master to GitHub
+        run: git push --force "https://x-access-token:${{ secrets.REMOTE_REPO_TOKEN }}@${{ env.GITHUB_REPO }}" HEAD:master
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Read Version from package.json
+        run: |
+          VERSION=$(grep '"version"' package.json | head -1 | sed -E 's/.*"version": *"([^"]+)".*/\1/')
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Create GitHub Release
+        run: |
+          TAG="v${{ env.VERSION }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.REMOTE_REPO_TOKEN }}" \
+            "https://api.github.com/repos/j5guy/balancedwaypoints/releases/tags/$TAG")
+          if [ "$STATUS" = "200" ]; then
+            echo "GitHub release $TAG already exists — skipping (bump the version in package.json to publish a new one)."
+          else
+            curl -sf -X POST \
+              -H "Authorization: Bearer ${{ secrets.REMOTE_REPO_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/j5guy/balancedwaypoints/releases" \
+              -d "{\"tag_name\":\"$TAG\",\"target_commitish\":\"master\",\"name\":\"$TAG\",\"generate_release_notes\":true}"
+          fi
+
+      - name: Create Gitea Release
+        run: |
+          TAG="v${{ env.VERSION }}"
+          STATUS=$(curl -sk -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.DOCKER_GITEA_TOKEN }}" \
+            "https://${{ env.GITEA_HOST }}/api/v1/repos/${{ env.GITEA_REPO }}/releases/tags/$TAG")
+          if [ "$STATUS" = "200" ]; then
+            echo "Gitea release $TAG already exists — skipping (bump the version in package.json to publish a new one)."
+          else
+            curl -skf -X POST \
+              -H "Authorization: token ${{ secrets.DOCKER_GITEA_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "https://${{ env.GITEA_HOST }}/api/v1/repos/${{ env.GITEA_REPO }}/releases" \
+              -d "{\"tag_name\":\"$TAG\",\"target_commitish\":\"master\",\"name\":\"$TAG\"}"
+          fi

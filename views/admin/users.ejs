@@ -1,0 +1,17 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-admin-users">
+    <div class="page-header">
+        <h1>Users</h1>
+    </div>
+    <div id="users-error" class="form-error" hidden></div>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr><th>Email</th><th>Name</th><th>Admin</th><th>Last login</th><th></th></tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+        </table>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/admin.js'] }) %>

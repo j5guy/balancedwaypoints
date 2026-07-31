@@ -10,6 +10,7 @@
     let payees = [];
     let editingId = null;
     let startingBalanceCents = 0;
+    let currentBalanceCents = 0;
     let transactionsById = new Map();
     let preferences = null;
 
@@ -51,6 +52,7 @@
         document.getElementById('account-name').textContent = account ? account.name : 'Register';
         if (account) {
             startingBalanceCents = account.startingBalanceCents;
+            currentBalanceCents = account.balanceCents;
             const balEl = document.getElementById('account-balance');
             balEl.textContent = window.BWMoney.formatCents(account.balanceCents);
             balEl.classList.add(account.balanceCents < 0 ? 'money-negative' : 'money-positive');
@@ -230,26 +232,54 @@
 
     // ── Upcoming (scheduled) transaction rows ────────────────────────
     // Read-only preview rows, not real Transactions — no drag id, no
-    // edit/delete, and no effect on the Balance column (see
-    // computeRunningBalances, which only ever sees real transactions).
-    function upcomingRow(s) {
+    // edit/delete. Their Balance is a projection (see loadUpcomingRows),
+    // clearly marked with "~" since it's an estimate, not the real thing
+    // computeRunningBalances produces for actual transactions.
+    function upcomingRow(occurrence) {
+        const s = occurrence.schedule;
         const tr = document.createElement('tr');
         tr.className = 'upcoming-row';
         const category = s.category ? s.category.name : (s.splits && s.splits.length ? 'Split' : '');
         const amountClass = s.amountCents < 0 ? 'money-negative' : 'money-positive';
+        const balanceClass = occurrence.projectedBalanceCents < 0 ? 'money-negative' : 'money-positive';
         tr.innerHTML = `
             <td></td>
-            <td data-col="date">${new Date(s.nextDate).toLocaleDateString()}</td>
+            <td data-col="date">${occurrence.date.toLocaleDateString()}</td>
             <td data-col="payee">${s.payee ? s.payee.name : ''}</td>
             <td data-col="category">${category}</td>
             <td class="wrap" data-col="notes">${s.notes || ''}</td>
             <td data-col="tags"></td>
             <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents)}</td>
-            <td class="money" data-col="balance">—</td>
-            <td><span class="badge" title="From schedule &quot;${s.name}&quot; — not a real transaction yet">Scheduled</span></td>
+            <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">~${window.BWMoney.formatCents(occurrence.projectedBalanceCents)}</td>
+            <td><span class="badge" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">Scheduled</span></td>
             <td data-col="cleared"></td>
         `;
         return tr;
+    }
+
+    // A schedule's own nextDate is only its NEXT single occurrence — to show
+    // every occurrence out to the configured cutoff (e.g. 6 monthly
+    // occurrences over a 6-month window), each one has to be projected
+    // forward using the same interval math the server's auto-enter job uses
+    // (services/schedules/nextOccurrence.js) until it passes the cutoff (or
+    // the schedule's own endDate, if it has one).
+    function projectOccurrences(schedule, cutoff) {
+        const occurrences = [];
+        let date = new Date(schedule.nextDate);
+        const endDate = schedule.endDate ? new Date(schedule.endDate) : null;
+        let guard = 0;
+        while (date <= cutoff && (!endDate || date <= endDate) && guard < 500) {
+            occurrences.push({ schedule, date: new Date(date) });
+            guard++;
+            const next = new Date(date);
+            const { unit, interval } = schedule.frequency;
+            if (unit === 'days') next.setUTCDate(next.getUTCDate() + interval);
+            else if (unit === 'weeks') next.setUTCDate(next.getUTCDate() + interval * 7);
+            else if (unit === 'months') next.setUTCMonth(next.getUTCMonth() + interval);
+            else if (unit === 'years') next.setUTCFullYear(next.getUTCFullYear() + interval);
+            date = next;
+        }
+        return occurrences;
     }
 
     async function loadUpcomingRows() {
@@ -261,10 +291,24 @@
             if (unit === 'months') cutoff.setMonth(cutoff.getMonth() + amount);
             else cutoff.setDate(cutoff.getDate() + amount);
 
-            return schedules
-                .filter(s => s.active && s.account === accountId && new Date(s.nextDate) <= cutoff)
-                .sort((a, b) => new Date(a.nextDate) - new Date(b.nextDate))
-                .map(upcomingRow);
+            let occurrences = schedules
+                .filter(s => s.active && s.account === accountId)
+                .flatMap(s => projectOccurrences(s, cutoff));
+
+            // Nearest-first to accumulate a projected balance outward from
+            // the account's real current balance...
+            occurrences.sort((a, b) => a.date - b.date);
+            let running = currentBalanceCents;
+            occurrences.forEach((o) => {
+                running += o.schedule.amountCents;
+                o.projectedBalanceCents = running;
+            });
+
+            // ...then furthest-first for display, so the projection reads
+            // top-to-bottom the same "newest first" way the rest of the
+            // register does, landing right above today's real transactions.
+            occurrences.sort((a, b) => b.date - a.date);
+            return occurrences.map(upcomingRow);
         } catch (err) {
             showError(err);
             return [];

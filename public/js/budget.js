@@ -83,14 +83,56 @@
         return div;
     }
 
+    // Income categories aren't budgetable (no assign/activity/balance
+    // columns apply — see services/budget/envelope.js), so this is a much
+    // simpler read-mostly list: just names, plus the same "+ category" add
+    // affordance the budgetable groups get. No drag-reorder here — ordering
+    // income categories isn't worth the complexity for a secondary list.
+    function incomeGroupSection(group, categoriesInGroup) {
+        const section = document.createElement('div');
+        section.className = 'budget-group';
+        section.innerHTML = `
+            <div class="budget-group-title">
+                ${group.name}
+                <button type="button" class="btn btn-secondary btn-sm" data-add-category style="margin-left:8px;">+ category</button>
+            </div>
+            <div class="income-category-list"></div>
+        `;
+        const list = section.querySelector('.income-category-list');
+        if (categoriesInGroup.length === 0) {
+            list.innerHTML = '<div class="muted" style="padding:6px 14px;">No categories yet.</div>';
+        } else {
+            categoriesInGroup.forEach((c) => {
+                const row = document.createElement('div');
+                row.style.padding = '8px 14px';
+                row.style.borderBottom = '1px solid var(--border-light)';
+                row.textContent = c.name;
+                list.appendChild(row);
+            });
+        }
+        section.querySelector('[data-add-category]').addEventListener('click', async () => {
+            const name = prompt(`New income category name in "${group.name}":`);
+            if (!name || !name.trim()) return;
+            try {
+                await window.BWApi.apiFetch('/api/categories', { method: 'POST', body: { name: name.trim(), group: group.id } });
+                render();
+            } catch (err) {
+                showError(err);
+            }
+        });
+        return section;
+    }
+
     async function render() {
         document.getElementById('month-label').textContent = monthLabel(month);
         try {
-            const [summary, groupsRes] = await Promise.all([
+            const [summary, groupsRes, categoriesRes] = await Promise.all([
                 window.BWApi.apiFetch(`/api/budgets/${month}`),
-                window.BWApi.apiFetch('/api/category-groups')
+                window.BWApi.apiFetch('/api/category-groups'),
+                window.BWApi.apiFetch('/api/categories')
             ]);
             groups = groupsRes.categoryGroups;
+            const categories = categoriesRes.categories;
 
             const rtaEl = document.getElementById('rta-value');
             const banner = document.getElementById('rta-banner');
@@ -101,18 +143,28 @@
             const budgetGroups = groups.filter(g => !g.isIncome).sort((a, b) => a.sortOrder - b.sortOrder);
             if (budgetGroups.length === 0) {
                 container.innerHTML = '<div class="empty-state">No category groups yet — add one above.</div>';
-                return;
+            } else {
+                budgetGroups.forEach(group => {
+                    const rows = summary.categories.filter(c => c.category.group === group.id);
+                    container.appendChild(groupSection(group, rows));
+                });
+                window.BWDragReorder.makeSortable(container, async (ids) => {
+                    try {
+                        await Promise.all(ids.map((id, i) => window.BWApi.apiFetch(`/api/category-groups/${id}`, { method: 'PUT', body: { sortOrder: ids.length - i } })));
+                    } catch (err) {
+                        showError(err);
+                    }
+                });
             }
-            budgetGroups.forEach(group => {
-                const rows = summary.categories.filter(c => c.category.group === group.id);
-                container.appendChild(groupSection(group, rows));
-            });
-            window.BWDragReorder.makeSortable(container, async (ids) => {
-                try {
-                    await Promise.all(ids.map((id, i) => window.BWApi.apiFetch(`/api/category-groups/${id}`, { method: 'PUT', body: { sortOrder: ids.length - i } })));
-                } catch (err) {
-                    showError(err);
-                }
+
+            const incomeSection = document.getElementById('income-section');
+            const incomeContainer = document.getElementById('income-groups');
+            const incomeGroups = groups.filter(g => g.isIncome).sort((a, b) => a.sortOrder - b.sortOrder);
+            incomeSection.hidden = incomeGroups.length === 0;
+            incomeContainer.innerHTML = '';
+            incomeGroups.forEach(group => {
+                const cats = categories.filter(c => c.group === group.id);
+                incomeContainer.appendChild(incomeGroupSection(group, cats));
             });
         } catch (err) {
             showError(err);

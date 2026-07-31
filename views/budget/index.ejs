@@ -42,5 +42,15 @@
         <span>Category</span><span>Assigned</span><span>Activity</span><span>Available</span>
     </div>
     <div id="budget-groups"></div>
+
+    <div id="income-section" hidden>
+        <h3 style="margin-top:32px;">Income</h3>
+        <p class="muted" style="font-size:0.85rem;">
+            Income categories aren't budgeted against — money you receive already counts toward Ready to
+            Assign the moment it posts to an on-budget account, so there's nothing to assign here. This is
+            just where they're listed and managed.
+        </p>
+        <div id="income-groups"></div>
+    </div>
 </main>
 <%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/budget.js'] }) %>

@@ -164,6 +164,7 @@ async function getPreferences(req, res) {
     res.json({
         homeDashboard: user.preferences.homeDashboard,
         registerSort: user.preferences.registerSort,
+        registerMask: user.preferences.registerMask,
         registerColumns: user.preferences.registerColumns,
         upcomingSchedules: user.preferences.upcomingSchedules,
         registerHistory: user.preferences.registerHistory,
@@ -198,9 +199,10 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { homeDashboard, registerSort, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
+    const { homeDashboard, registerSort, registerMask, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
     if (['budget', 'accounts'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
     if (['newest', 'oldest', 'manual'].includes(registerSort)) user.preferences.registerSort = registerSort;
+    if (registerMask) Object.assign(user.preferences.registerMask, registerMask);
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
     if (registerHistory) Object.assign(user.preferences.registerHistory, registerHistory);
@@ -232,6 +234,7 @@ async function updatePreferences(req, res) {
         res.json({
             homeDashboard: user.preferences.homeDashboard,
             registerSort: user.preferences.registerSort,
+            registerMask: user.preferences.registerMask,
             registerColumns: user.preferences.registerColumns,
             upcomingSchedules: user.preferences.upcomingSchedules,
             registerHistory: user.preferences.registerHistory,

@@ -8,10 +8,26 @@
                 <div class="stat-label">Balance</div>
                 <div class="stat-value money" id="account-balance">—</div>
             </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="toggle-mask-btn" title="Hide amounts/balances">🙈 Mask</button>
             <button type="button" class="btn btn-secondary btn-sm" id="toggle-settings-btn" title="Table settings">⚙ Table settings</button>
         </div>
     </div>
     <div id="register-error" class="form-error" hidden></div>
+
+    <div class="card" id="mask-panel" hidden>
+        <h3>Mask sensitive values</h3>
+        <p class="form-hint">Replaces amounts with a fixed placeholder — it never reveals how many digits the real
+        number has, so someone glancing at your screen can't even guess the magnitude. Saved to your account, applies
+        everywhere you view this (or any) register.</p>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="mask-amount">
+            <label for="mask-amount">Mask the Amount column</label>
+        </div>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="mask-balance">
+            <label for="mask-balance">Mask the Balance column (and the account balance above)</label>
+        </div>
+    </div>
 
     <div class="card" id="settings-panel" hidden>
         <h3>Table settings</h3>

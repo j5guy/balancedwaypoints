@@ -19,6 +19,7 @@
     };
     const DEFAULT_PREFERENCES = {
         registerSort: 'newest',
+        registerMask: { amount: false, balance: false },
         registerColumns: { date: true, payee: true, category: true, notes: true, tags: true, amount: true, balance: true, cleared: true },
         upcomingSchedules: { enabled: false, amount: 14, unit: 'days' },
         registerHistory: { enabled: false, amount: 3, unit: 'months' }
@@ -37,6 +38,17 @@
         return '<option value="">— none —</option>' + categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     }
 
+    // Shared by loadReferenceData (initial load) and the mask toggle
+    // (instant re-render, no re-fetch needed since currentBalanceCents is
+    // already known).
+    function renderAccountBalance() {
+        const masked = preferences.registerMask && preferences.registerMask.balance;
+        const balEl = document.getElementById('account-balance');
+        balEl.textContent = window.BWMoney.formatCents(currentBalanceCents, masked);
+        balEl.classList.remove('money-positive', 'money-negative', 'money-masked');
+        balEl.classList.add(masked ? 'money-masked' : (currentBalanceCents < 0 ? 'money-negative' : 'money-positive'));
+    }
+
     async function loadReferenceData() {
         const [accountsRes, categoriesRes, categoryGroupsRes, payeesRes] = await Promise.all([
             window.BWApi.apiFetch('/api/accounts'),
@@ -53,9 +65,7 @@
         document.getElementById('account-name').textContent = account ? account.name : 'Register';
         if (account) {
             currentBalanceCents = account.balanceCents;
-            const balEl = document.getElementById('account-balance');
-            balEl.textContent = window.BWMoney.formatCents(account.balanceCents);
-            balEl.classList.add(account.balanceCents < 0 ? 'money-negative' : 'money-positive');
+            renderAccountBalance();
         }
 
         document.getElementById('category-options').innerHTML = categories.map(c => `<option value="${c.name}">`).join('');
@@ -121,9 +131,10 @@
             if (!t) return;
             const cell = tr.querySelector('.js-balance-cell');
             const balanceCents = balanceById.get(t.id);
-            cell.textContent = window.BWMoney.formatCents(balanceCents);
-            cell.classList.remove('money-positive', 'money-negative');
-            cell.classList.add(balanceCents < 0 ? 'money-negative' : 'money-positive');
+            const masked = preferences.registerMask && preferences.registerMask.balance;
+            cell.textContent = window.BWMoney.formatCents(balanceCents, masked);
+            cell.classList.remove('money-positive', 'money-negative', 'money-masked');
+            cell.classList.add(masked ? 'money-masked' : (balanceCents < 0 ? 'money-negative' : 'money-positive'));
         });
     }
 
@@ -136,8 +147,10 @@
         tr.draggable = true;
         tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
-        const amountClass = t.amountCents < 0 ? 'money-negative' : 'money-positive';
-        const balanceClass = balanceCents < 0 ? 'money-negative' : 'money-positive';
+        const maskAmount = preferences.registerMask && preferences.registerMask.amount;
+        const maskBalance = preferences.registerMask && preferences.registerMask.balance;
+        const amountClass = maskAmount ? 'money-masked' : (t.amountCents < 0 ? 'money-negative' : 'money-positive');
+        const balanceClass = maskBalance ? 'money-masked' : (balanceCents < 0 ? 'money-negative' : 'money-positive');
         const isCleared = t.cleared !== 'pending';
         tr.innerHTML = `
             <td class="drag-handle" title="Drag to reorder">⠿</td>
@@ -146,8 +159,8 @@
             <td class="editable-cell" data-col="category">${category}</td>
             <td class="wrap editable-cell" data-col="notes">${t.notes || ''}</td>
             <td class="editable-cell" data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
-            <td class="money editable-cell ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents)}</td>
-            <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents)}</td>
+            <td class="money editable-cell ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents, maskAmount)}</td>
+            <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents, maskBalance)}</td>
             <td data-col="cleared">
                 <button type="button" class="cleared-toggle ${isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off'}"
                         data-cleared-toggle title="${isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared'}">${isCleared ? '✓' : '✕'}</button>
@@ -330,9 +343,36 @@
         `).join('');
     }
 
+    // ── Mask amounts/balances (privacy toggle) ───────────────────────
+    document.getElementById('toggle-mask-btn').addEventListener('click', () => {
+        const panel = document.getElementById('mask-panel');
+        if (!panel.hidden) { panel.hidden = true; return; }
+        document.getElementById('settings-panel').hidden = true;
+        document.getElementById('mask-amount').checked = !!(preferences.registerMask && preferences.registerMask.amount);
+        document.getElementById('mask-balance').checked = !!(preferences.registerMask && preferences.registerMask.balance);
+        panel.hidden = false;
+    });
+
+    async function saveMaskPreference() {
+        const registerMask = {
+            amount: document.getElementById('mask-amount').checked,
+            balance: document.getElementById('mask-balance').checked
+        };
+        try {
+            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerMask } });
+            renderAccountBalance();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    }
+    document.getElementById('mask-amount').addEventListener('change', saveMaskPreference);
+    document.getElementById('mask-balance').addEventListener('change', saveMaskPreference);
+
     document.getElementById('toggle-settings-btn').addEventListener('click', () => {
         const panel = document.getElementById('settings-panel');
         if (!panel.hidden) { panel.hidden = true; return; }
+        document.getElementById('mask-panel').hidden = true;
         renderColumnToggles();
         document.getElementById('pref-register-sort').value = preferences.registerSort || 'newest';
         document.getElementById('pref-show-upcoming').checked = preferences.upcomingSchedules.enabled;
@@ -383,8 +423,10 @@
         const tr = document.createElement('tr');
         tr.className = 'upcoming-row';
         const category = s.category ? s.category.name : (s.splits && s.splits.length ? 'Split' : '');
-        const amountClass = s.amountCents < 0 ? 'money-negative' : 'money-positive';
-        const balanceClass = occurrence.projectedBalanceCents < 0 ? 'money-negative' : 'money-positive';
+        const maskAmount = preferences.registerMask && preferences.registerMask.amount;
+        const maskBalance = preferences.registerMask && preferences.registerMask.balance;
+        const amountClass = maskAmount ? 'money-masked' : (s.amountCents < 0 ? 'money-negative' : 'money-positive');
+        const balanceClass = maskBalance ? 'money-masked' : (occurrence.projectedBalanceCents < 0 ? 'money-negative' : 'money-positive');
         tr.innerHTML = `
             <td></td>
             <td data-col="date">${window.BWDate.formatDate(occurrence.date)}</td>
@@ -392,8 +434,8 @@
             <td data-col="category">${category}</td>
             <td class="wrap" data-col="notes">${s.notes || ''}</td>
             <td data-col="tags"></td>
-            <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents)}</td>
-            <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents)}</td>
+            <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents, maskAmount)}</td>
+            <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents, maskBalance)}</td>
             <td data-col="cleared"></td>
             <td class="row-actions">
                 <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>

@@ -112,6 +112,13 @@ const userSchema = new mongoose.Schema({
         // How the register orders its rows — see services/database/transactions.js's
         // SORTS. 'manual' follows the drag-and-drop sortOrder instead of date.
         registerSort: { type: String, enum: ['newest', 'oldest', 'manual'], default: 'newest' },
+        // Redacts amount/balance display in the register (public/js/register.js)
+        // behind a fixed-width placeholder — e.g. for screen-sharing. Never
+        // affects what's stored/computed, only what's rendered.
+        registerMask: {
+            amount: { type: Boolean, default: false },
+            balance: { type: Boolean, default: false }
+        },
         registerColumns: {
             date: { type: Boolean, default: true },
             payee: { type: Boolean, default: true },

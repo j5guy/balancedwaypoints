@@ -3,15 +3,21 @@ const Transaction = require('../../models/transaction');
 
 const populateOpts = ['payee', 'category', 'tags', 'splits.category'];
 
-// 'newest'/'oldest' sort strictly by date — a batch import (or any other
-// bulk create) assigns sortOrder by insertion order, not by the date on
-// each row, so sorting by sortOrder here would scramble a register that
-// was imported out of chronological order. 'manual' is the drag-and-drop
-// override (see models/transaction.js's sortOrder) for anyone who wants a
-// hand-arranged order instead of a date sort.
+// 'newest'/'oldest' sort strictly by date FIRST — a batch import (or any
+// other bulk create) assigns sortOrder by insertion order, not by the date
+// on each row, so leading with sortOrder here would scramble a register
+// that was imported out of chronological order. sortOrder only comes in as
+// the tiebreaker for same-date rows, where it reflects the order they were
+// entered/imported in (see models/transaction.js's default and
+// controllers/importController.js's commit(), which assigns strictly
+// decreasing values matching the CSV's own row order) — same direction in
+// both modes (descending = earliest-entered-or-imported-of-that-day shown
+// first) so a same-day cluster reads the same way regardless of which end
+// of the date range you're sorting from. 'manual' is the drag-and-drop
+// override for anyone who wants a fully hand-arranged order instead.
 const SORTS = {
-    newest: { date: -1, createdAt: -1 },
-    oldest: { date: 1, createdAt: 1 },
+    newest: { date: -1, sortOrder: -1, createdAt: -1 },
+    oldest: { date: 1, sortOrder: -1, createdAt: -1 },
     manual: { sortOrder: -1, date: -1, createdAt: -1 }
 };
 

@@ -48,6 +48,21 @@ async function commit(req, res) {
     if (!accountId) return res.status(400).json({ error: 'accountId is required' });
     if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'rows must be a non-empty array' });
 
+    // Every imported row would otherwise get the schema's default sortOrder
+    // (Date.now() at the moment it's created) — since this loop creates rows
+    // sequentially, that default increases with processing order, which is
+    // backwards from what services/database/transactions.js's SORTS wants
+    // for a same-date tiebreak (descending = earliest-in-the-batch shown
+    // first). Assigning a strictly decreasing value up front, matching the
+    // rows' own order (already the CSV's file order — see
+    // services/import/dedupe.js's order-preserving filter), fixes that:
+    // same-date rows now display in the same order they were in the file,
+    // regardless of overall sort direction. Only relative order among rows
+    // sharing the same date ever actually matters here (see the SORTS
+    // comment), so a single shared, strictly-decreasing counter for the
+    // whole batch is enough — no need to reset it per date.
+    let sortOrder = Date.now();
+
     let created = 0;
     for (const row of rows) {
         const payee = row.payeeName ? await payeesDb.findOrCreateByName(row.payeeName) : null;
@@ -71,7 +86,8 @@ async function commit(req, res) {
             cleared: 'cleared',
             tags: tags.filter(Boolean).map(t => t._id),
             notes: row.notes || '',
-            importedId: row.importedId || null
+            importedId: row.importedId || null,
+            sortOrder: sortOrder--
         });
         created++;
     }

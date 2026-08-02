@@ -1,6 +1,7 @@
 v0.4.2
 ------
 Masking Buttons for Amount and Balance for Privacy if Sharing
+Fixing Bug in the Import Controller that imported things in the wrong order
 
 v0.4.1
 ------

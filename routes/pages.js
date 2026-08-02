@@ -3,7 +3,7 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 
 router.get('/', (req, res) => {
-    if (req.session.userId) return res.redirect('/budget');
+    if (req.session.userId) return res.redirect(req.session.homeDashboard === 'accounts' ? '/accounts' : '/budget');
     res.render('index', { title: 'Welcome' });
 });
 

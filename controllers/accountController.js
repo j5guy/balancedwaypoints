@@ -41,6 +41,7 @@ function serializeAccount(user) {
             hasPassword: !!(smtp.passIv && smtp.passCiphertext)
         },
         weeklyReportEmail: !!(user.preferences && user.preferences.weeklyReportEmail),
+        homeDashboard: (user.preferences && user.preferences.homeDashboard) || 'budget',
         themeColors: user.themeColors
     };
 }

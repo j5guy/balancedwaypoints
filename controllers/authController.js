@@ -17,6 +17,9 @@ function establishSession(req, user) {
     // res.locals.themeColors. Kept in sync on save below whenever it changes,
     // so an edit takes effect immediately rather than waiting for next login.
     req.session.themeColors = user.themeColors;
+    // Denormalized so routes/pages.js's '/' redirect doesn't need a DB
+    // round-trip either — kept in sync in updatePreferences below.
+    req.session.homeDashboard = user.preferences.homeDashboard;
 }
 
 function isAllowedToSignUp(email) {
@@ -159,6 +162,7 @@ async function getPreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
     res.json({
+        homeDashboard: user.preferences.homeDashboard,
         registerColumns: user.preferences.registerColumns,
         upcomingSchedules: user.preferences.upcomingSchedules,
         registerHistory: user.preferences.registerHistory,
@@ -193,7 +197,8 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
+    const { homeDashboard, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
+    if (['budget', 'accounts'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
     if (registerHistory) Object.assign(user.preferences.registerHistory, registerHistory);
@@ -219,9 +224,11 @@ async function updatePreferences(req, res) {
     // refreshing too, or a theme-color change wouldn't actually render
     // until the next login.
     req.session.themeColors = user.themeColors;
+    req.session.homeDashboard = user.preferences.homeDashboard;
     req.session.save((err) => {
         if (err) logger.error('Session save error: ' + err.message);
         res.json({
+            homeDashboard: user.preferences.homeDashboard,
             registerColumns: user.preferences.registerColumns,
             upcomingSchedules: user.preferences.upcomingSchedules,
             registerHistory: user.preferences.registerHistory,

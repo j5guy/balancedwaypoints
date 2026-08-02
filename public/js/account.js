@@ -113,6 +113,7 @@
     function applyAccount(account) {
         document.getElementById('account-email').textContent = account.email;
         document.getElementById('account-auth-source').textContent = account.authSource === 'ldap' ? 'LDAP' : 'Local account';
+        document.getElementById('home-dashboard').value = account.homeDashboard || 'budget';
         document.getElementById('notify-email').value = account.notifyEmail || '';
         document.getElementById('weekly-report-email').checked = account.weeklyReportEmail;
 
@@ -137,6 +138,18 @@
     }
 
     buildThemeFieldsUI();
+
+    document.getElementById('save-general-btn').addEventListener('click', async () => {
+        try {
+            await window.BWApi.apiFetch('/api/auth/preferences', {
+                method: 'PUT',
+                body: { homeDashboard: document.getElementById('home-dashboard').value }
+            });
+            showSuccess('General settings saved.');
+        } catch (err) {
+            showError(err);
+        }
+    });
 
     document.getElementById('save-notifications-btn').addEventListener('click', async () => {
         try {

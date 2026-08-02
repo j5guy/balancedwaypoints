@@ -106,6 +106,9 @@ const userSchema = new mongoose.Schema({
     // they follow whoever's logged in across devices. Applied on every
     // account's register page (see accounts/show.ejs + public/js/register.js).
     preferences: {
+        // Which page '/' redirects to after login (routes/pages.js). More
+        // options (e.g. a configurable dashboard) may join this enum later.
+        homeDashboard: { type: String, enum: ['budget', 'accounts'], default: 'budget' },
         registerColumns: {
             date: { type: Boolean, default: true },
             payee: { type: Boolean, default: true },

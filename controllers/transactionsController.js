@@ -35,8 +35,8 @@ function validateSplits(amountCents, splits) {
 }
 
 async function list(req, res) {
-    const { account, category, tag, payee, from, to, limit } = req.query;
-    const items = await transactions.list({ account, category, tag, payee, from, to, limit: limit ? Number(limit) : undefined });
+    const { account, category, tag, payee, from, to, limit, sort } = req.query;
+    const items = await transactions.list({ account, category, tag, payee, from, to, limit: limit ? Number(limit) : undefined, sort });
     res.json({ transactions: items.map(serialize) });
 }
 

@@ -121,6 +121,24 @@ table.register-table {
     }
 }
 
+// Click-to-edit register cells (see public/js/register.js's startCellEdit).
+// Only date/payee/category/notes/tags/amount are editable this way —
+// cleared has its own toggle button and balance is always computed.
+.editable-cell {
+    cursor: text;
+
+    &:hover {
+        box-shadow: inset 0 0 0 1px $border;
+    }
+
+    input, select {
+        width: 100%;
+        font-size: inherit;
+        font-family: inherit;
+        padding: 2px 4px;
+    }
+}
+
 .upcoming-row {
     font-style: italic;
     color: $text-muted;

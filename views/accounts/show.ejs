@@ -17,6 +17,14 @@
         <h3>Table settings</h3>
         <p class="form-hint">Saved to your account — applies to every register you view, on any device.</p>
         <div class="form-group">
+            <label for="pref-register-sort">Sort by</label>
+            <select id="pref-register-sort" style="max-width:240px;">
+                <option value="newest">Date, newest first</option>
+                <option value="oldest">Date, oldest first</option>
+                <option value="manual">Manual (drag to reorder)</option>
+            </select>
+        </div>
+        <div class="form-group">
             <label>Columns to show</label>
             <div class="form-row" id="column-toggle-list"></div>
         </div>

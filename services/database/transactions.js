@@ -3,7 +3,19 @@ const Transaction = require('../../models/transaction');
 
 const populateOpts = ['payee', 'category', 'tags', 'splits.category'];
 
-const list = ({ account, category, tag, payee, from, to, limit } = {}) => {
+// 'newest'/'oldest' sort strictly by date — a batch import (or any other
+// bulk create) assigns sortOrder by insertion order, not by the date on
+// each row, so sorting by sortOrder here would scramble a register that
+// was imported out of chronological order. 'manual' is the drag-and-drop
+// override (see models/transaction.js's sortOrder) for anyone who wants a
+// hand-arranged order instead of a date sort.
+const SORTS = {
+    newest: { date: -1, createdAt: -1 },
+    oldest: { date: 1, createdAt: 1 },
+    manual: { sortOrder: -1, date: -1, createdAt: -1 }
+};
+
+const list = ({ account, category, tag, payee, from, to, limit, sort } = {}) => {
     const query = {};
     if (account) query.account = account;
     if (category) query.$or = [{ category }, { 'splits.category': category }];
@@ -14,9 +26,7 @@ const list = ({ account, category, tag, payee, from, to, limit } = {}) => {
         if (from) query.date.$gte = new Date(from);
         if (to) query.date.$lte = new Date(to);
     }
-    // sortOrder first — the manual drag-and-drop override (see models/transaction.js)
-    // — falling back to date/createdAt for anything that's never been dragged.
-    let cursor = Transaction.find(query).sort({ sortOrder: -1, date: -1, createdAt: -1 }).populate(populateOpts);
+    let cursor = Transaction.find(query).sort(SORTS[sort] || SORTS.newest).populate(populateOpts);
     if (limit) cursor = cursor.limit(limit);
     return cursor.exec();
 };

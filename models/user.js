@@ -109,6 +109,9 @@ const userSchema = new mongoose.Schema({
         // Which page '/' redirects to after login (routes/pages.js). More
         // options (e.g. a configurable dashboard) may join this enum later.
         homeDashboard: { type: String, enum: ['budget', 'accounts'], default: 'budget' },
+        // How the register orders its rows — see services/database/transactions.js's
+        // SORTS. 'manual' follows the drag-and-drop sortOrder instead of date.
+        registerSort: { type: String, enum: ['newest', 'oldest', 'manual'], default: 'newest' },
         registerColumns: {
             date: { type: Boolean, default: true },
             payee: { type: Boolean, default: true },

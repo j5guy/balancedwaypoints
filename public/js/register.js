@@ -18,6 +18,7 @@
         tags: 'Tags', amount: 'Amount', balance: 'Balance', cleared: 'Cleared'
     };
     const DEFAULT_PREFERENCES = {
+        registerSort: 'newest',
         registerColumns: { date: true, payee: true, category: true, notes: true, tags: true, amount: true, balance: true, cleared: true },
         upcomingSchedules: { enabled: false, amount: 14, unit: 'days' },
         registerHistory: { enabled: false, amount: 3, unit: 'months' }
@@ -82,18 +83,19 @@
         return created.id;
     }
 
-    // Running balance follows the DISPLAY order (top-to-bottom, newest at
-    // top by default) rather than the transaction date — so dragging a row
-    // to a new position recalculates every balance between its old and new
-    // spot, same as physically re-ordering entries in a paper ledger would.
-    // orderedTransactions must already be in top-to-bottom display order.
-    // Seeded from the account's real CURRENT balance and walked newest
-    // (top) to oldest (bottom), subtracting each transaction's own amount
-    // to step to the balance just before it — rather than seeding from the
+    // Walks `orderedTransactions` newest-first, seeded from the account's
+    // real CURRENT balance and subtracting each transaction's own amount to
+    // step to the balance just before it — rather than seeding from the
     // starting balance and walking the other way — so this stays correct
-    // even when the register's history is limited to a rolling window
-    // (see the registerHistory preference) and the oldest loaded row isn't
-    // actually the account's first-ever transaction.
+    // even when the register's history is limited to a rolling window (see
+    // the registerHistory preference) and the oldest loaded row isn't
+    // actually the account's first-ever transaction. Callers decide what
+    // "newest-first" means for the input order: for the 'manual' sort mode
+    // that's the drag-and-drop DISPLAY order (so dragging a row recalculates
+    // every balance between its old and new spot, same as physically
+    // re-ordering entries in a paper ledger would); for date-based sort
+    // modes it's always by date regardless of how rows are displayed — see
+    // loadTransactions' balanceOrder.
     function computeRunningBalances(orderedTransactions) {
         let running = currentBalanceCents;
         const balanceById = new Map();
@@ -126,21 +128,22 @@
     }
 
     function transactionRow(t, balanceCents) {
+        const manualSort = preferences.registerSort === 'manual';
         const tr = document.createElement('tr');
-        tr.draggable = true;
+        tr.draggable = manualSort;
         tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
         const amountClass = t.amountCents < 0 ? 'money-negative' : 'money-positive';
         const balanceClass = balanceCents < 0 ? 'money-negative' : 'money-positive';
         const isCleared = t.cleared !== 'pending';
         tr.innerHTML = `
-            <td class="drag-handle">⠿</td>
-            <td data-col="date">${new Date(t.date).toLocaleDateString()}</td>
-            <td data-col="payee">${t.payee ? t.payee.name : ''}</td>
-            <td data-col="category">${category}</td>
-            <td class="wrap" data-col="notes">${t.notes || ''}</td>
-            <td data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
-            <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents)}</td>
+            <td class="drag-handle" title="${manualSort ? 'Drag to reorder' : 'Switch to manual sort (Table settings) to drag-reorder'}">${manualSort ? '⠿' : ''}</td>
+            <td class="editable-cell" data-col="date">${new Date(t.date).toLocaleDateString()}</td>
+            <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
+            <td class="editable-cell" data-col="category">${category}</td>
+            <td class="wrap editable-cell" data-col="notes">${t.notes || ''}</td>
+            <td class="editable-cell" data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
+            <td class="money editable-cell ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents)}</td>
             <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents)}</td>
             <td data-col="cleared">
                 <button type="button" class="cleared-toggle ${isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off'}"
@@ -154,7 +157,127 @@
         tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(t));
         tr.querySelector('[data-delete]').addEventListener('click', () => deleteTransaction(t.id));
         tr.querySelector('[data-cleared-toggle]').addEventListener('click', () => toggleCleared(t));
+        tr.querySelectorAll('.editable-cell').forEach((td) => {
+            td.addEventListener('click', () => startCellEdit(tr, td, t));
+        });
         return tr;
+    }
+
+    // ── Click-to-edit register cells ─────────────────────────────────
+    // Click any editable cell (date/payee/category/notes/tags/amount) to
+    // turn it into an inline input, spreadsheet-style — commits on Enter or
+    // blur, cancels on Escape. Payee/category reuse the same #payee-options
+    // / #category-options <datalist> the quick-add row and full form use,
+    // for live suggestions from past entries.
+    let editingCell = null;
+
+    // Field values land in an HTML attribute (value="...") below, unlike
+    // the rest of this file which sets .value as a DOM property — a stray
+    // `"` in a note or payee name (plausible from a CSV import) could
+    // otherwise break out of the attribute and inject markup.
+    function escapeAttr(str) {
+        return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+
+    function cellInputHtml(col, t) {
+        switch (col) {
+            case 'date': return `<input type="date" value="${new Date(t.date).toISOString().slice(0, 10)}">`;
+            case 'payee': return `<input type="text" list="payee-options" value="${escapeAttr(t.payee ? t.payee.name : '')}">`;
+            case 'category': return `<input type="text" list="category-options" value="${escapeAttr(t.category ? t.category.name : '')}">`;
+            case 'notes': return `<input type="text" value="${escapeAttr(t.notes || '')}">`;
+            case 'tags': return `<input type="text" value="${escapeAttr((t.tags || []).map(tag => tag.name).join(', '))}">`;
+            case 'amount': return `<input type="number" step="0.01" value="${(t.amountCents / 100).toFixed(2)}">`;
+            default: return null;
+        }
+    }
+
+    // Resolves the input's raw value to the partial PUT body for this
+    // column — same name-to-id resolution (creating a payee/tag if it's
+    // new) the full form and quick-add row use. Category is deliberately
+    // NOT auto-created here — there's no room in a single cell to also pick
+    // a category group, so an unrecognized name throws (same message
+    // resolveCategory always gives), same as if you'd left the group picker
+    // blank in the full form.
+    async function resolveCellValue(col, rawValue) {
+        switch (col) {
+            case 'date': {
+                if (!rawValue) throw new Error('Date is required');
+                return { date: rawValue };
+            }
+            case 'payee': return { payee: await resolvePayee(rawValue.trim()) };
+            case 'category': return { category: await resolveCategory(rawValue.trim(), null) };
+            case 'notes': return { notes: rawValue };
+            case 'tags': return { tags: await resolveTags(rawValue) };
+            case 'amount': {
+                const amountCents = window.BWMoney.toCents(rawValue || 0);
+                if (!amountCents) throw new Error('Amount is required');
+                return { amountCents };
+            }
+            default: return {};
+        }
+    }
+
+    function startCellEdit(tr, td, t) {
+        if (editingCell) return;
+        if (t.transferId) {
+            alert("Transfers can't be edited directly — delete and recreate the transfer instead.");
+            return;
+        }
+        const col = td.dataset.col;
+        if (col === 'category' && t.splits && t.splits.length) {
+            alert('This transaction uses split categories — use the full form (✎) to edit them.');
+            return;
+        }
+        const html = cellInputHtml(col, t);
+        if (!html) return;
+
+        const originalHtml = td.innerHTML;
+        // Dragging is only wired up in manual sort mode (see transactionRow),
+        // but an ancestor's draggable="true" still intercepts mousedown
+        // inside a plain text input and breaks click-to-place-cursor/select —
+        // suspend it for the duration of this edit.
+        const wasDraggable = tr.draggable;
+        tr.draggable = false;
+        td.innerHTML = html;
+        const input = td.querySelector('input');
+        input.focus();
+        if (input.type !== 'date') input.select();
+
+        // Clears editingCell (so the blur commit() fires below can't re-enter)
+        // BEFORE touching the DOM — replacing td's innerHTML destroys the
+        // still-focused input, which fires a synchronous blur, which would
+        // otherwise re-invoke commit() with editingCell still truthy.
+        function exit() {
+            editingCell = null;
+            tr.draggable = wasDraggable;
+        }
+        function cancel() {
+            if (!editingCell) return;
+            exit();
+            td.innerHTML = originalHtml;
+        }
+        async function commit() {
+            if (!editingCell) return;
+            const rawValue = input.value;
+            try {
+                const body = await resolveCellValue(col, rawValue);
+                exit(); // resolveCellValue's own network calls shouldn't re-enter commit/cancel
+                await window.BWApi.apiFetch(`/api/transactions/${t.id}`, { method: 'PUT', body });
+                await loadReferenceData();
+                await loadTransactions();
+            } catch (err) {
+                exit();
+                td.innerHTML = originalHtml;
+                showError(err);
+            }
+        }
+
+        editingCell = { cancel, commit };
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        });
+        input.addEventListener('blur', () => commit());
     }
 
     // Cleared is binary in this UI (a checkmark or an x) — toggling never
@@ -208,6 +331,7 @@
         const panel = document.getElementById('settings-panel');
         if (!panel.hidden) { panel.hidden = true; return; }
         renderColumnToggles();
+        document.getElementById('pref-register-sort').value = preferences.registerSort || 'newest';
         document.getElementById('pref-show-upcoming').checked = preferences.upcomingSchedules.enabled;
         document.getElementById('pref-upcoming-amount').value = preferences.upcomingSchedules.amount;
         document.getElementById('pref-upcoming-unit').value = preferences.upcomingSchedules.unit;
@@ -220,6 +344,7 @@
         document.getElementById('settings-panel').hidden = true;
     });
     document.getElementById('save-settings-btn').addEventListener('click', async () => {
+        const registerSort = document.getElementById('pref-register-sort').value;
         const registerColumns = {};
         document.querySelectorAll('.col-toggle-checkbox').forEach((cb) => { registerColumns[cb.dataset.colKey] = cb.checked; });
         const upcomingSchedules = {
@@ -233,7 +358,7 @@
             unit: document.getElementById('pref-history-unit').value
         };
         try {
-            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerColumns, upcomingSchedules, registerHistory } });
+            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerSort, registerColumns, upcomingSchedules, registerHistory } });
             applyColumnPreferences();
             document.getElementById('settings-panel').hidden = true;
             await loadTransactions();
@@ -466,12 +591,13 @@
     async function loadTransactions() {
         try {
             const from = historyFromDate();
-            const url = `/api/transactions?account=${accountId}` + (from ? `&from=${from.toISOString()}` : '');
+            const sort = preferences.registerSort || 'newest';
+            const url = `/api/transactions?account=${accountId}&sort=${sort}` + (from ? `&from=${from.toISOString()}` : '');
             const { transactions } = await window.BWApi.apiFetch(url);
             transactionsById = new Map(transactions.map(t => [t.id, t]));
             const tbody = document.getElementById('register-tbody');
             tbody.innerHTML = '';
-            document.getElementById('register-hint').hidden = transactions.length < 2;
+            document.getElementById('register-hint').hidden = sort !== 'manual' || transactions.length < 2;
 
             const upcomingRows = await loadUpcomingRows();
             upcomingRows.forEach(row => tbody.appendChild(row));
@@ -482,7 +608,12 @@
                 }
                 return;
             }
-            const balanceById = computeRunningBalances(transactions);
+            // Balance math always walks newest-to-oldest by date regardless
+            // of display order — 'manual' is the one exception, where the
+            // drag-and-drop order itself defines the running balance (see
+            // computeRunningBalances' doc comment).
+            const balanceOrder = sort === 'manual' ? transactions : [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+            const balanceById = computeRunningBalances(balanceOrder);
             transactions.forEach(t => tbody.appendChild(transactionRow(t, balanceById.get(t.id))));
         } catch (err) {
             showError(err);

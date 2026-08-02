@@ -10,9 +10,17 @@
         errorBox.hidden = false;
     }
 
-    function categoryOptionsHtml(selectedId) {
-        return '<option value="">— none —</option>' + categories
-            .map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${c.name}</option>`).join('');
+    function categoryOptionsHtml(row) {
+        const options = ['<option value="">— none —</option>'].concat(
+            categories.map(c => `<option value="${c.id}" ${c.id === row.suggestedCategoryId ? 'selected' : ''}>${c.name}</option>`)
+        );
+        // Rules/existing categories didn't match, but the CSV named one —
+        // offer to create it (and its group) on commit.
+        if (row.categoryName && !row.suggestedCategoryId) {
+            const label = row.categoryGroupName ? `${row.categoryName} (${row.categoryGroupName})` : row.categoryName;
+            options.push(`<option value="new" selected>+ Create "${label}"</option>`);
+        }
+        return options.join('');
     }
 
     function previewRow(row, index) {
@@ -24,9 +32,11 @@
             <td>${row.suggestedPayeeName || row.payeeName || ''}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(row.amountCents)}</td>
             <td class="wrap">${row.notes || ''}</td>
-            <td><select class="preview-category">${categoryOptionsHtml(row.suggestedCategoryId)}</select></td>
+            <td><select class="preview-category">${categoryOptionsHtml(row)}</select></td>
         `;
         tr.dataset.index = index;
+        if (row.categoryName) tr.dataset.categoryName = row.categoryName;
+        if (row.categoryGroupName) tr.dataset.categoryGroupName = row.categoryGroupName;
         return tr;
     }
 
@@ -70,13 +80,17 @@
         document.querySelectorAll('#preview-tbody tr').forEach(tr => {
             if (!tr.querySelector('[data-include]').checked) return;
             const row = previewRows[Number(tr.dataset.index)];
+            const categoryValue = tr.querySelector('.preview-category').value;
+            const creatingCategory = categoryValue === 'new';
             rows.push({
                 date: row.date,
                 payeeName: row.suggestedPayeeName || row.payeeName,
                 amountCents: row.amountCents,
                 notes: row.notes,
                 importedId: row.importedId,
-                categoryId: tr.querySelector('.preview-category').value || null,
+                categoryId: creatingCategory ? null : (categoryValue || null),
+                categoryName: creatingCategory ? tr.dataset.categoryName : undefined,
+                categoryGroupName: creatingCategory ? tr.dataset.categoryGroupName : undefined,
                 tagNames: row.suggestedTagNames || []
             });
         });

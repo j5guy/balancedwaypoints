@@ -10,6 +10,24 @@ const findById = (id) => Category.findById(id).populate('group').exec();
 const create = (data) => Category.create(data);
 const update = (id, data) => Category.findByIdAndUpdate(id, data, { new: true, runValidators: true }).exec();
 
+const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// The uniqueness index is per-group, so the lookup needs a groupId — callers
+// (e.g. CSV import) resolve/create the group first via categoryGroups.findOrCreateByName.
+const findOrCreateByName = async (name, groupId) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed || !groupId) return null;
+    const nameMatch = new RegExp(`^${escapeRegExp(trimmed)}$`, 'i');
+    const existing = await Category.findOne({ group: groupId, name: nameMatch }).exec();
+    if (existing) return existing;
+    try {
+        return await Category.create({ name: trimmed, group: groupId });
+    } catch (err) {
+        if (err.code === 11000) return Category.findOne({ group: groupId, name: nameMatch }).exec();
+        throw err;
+    }
+};
+
 const remove = async (id) => {
     const inUse = await Transaction.exists({ $or: [{ category: id }, { 'splits.category': id }] });
     if (inUse) return null;
@@ -41,4 +59,4 @@ const reassignAndRemove = async (id, toCategoryId) => {
     return Category.findByIdAndDelete(id).exec();
 };
 
-module.exports = { list, findById, create, update, remove, hasSplitReferences, reassignAndRemove };
+module.exports = { list, findById, create, update, remove, hasSplitReferences, reassignAndRemove, findOrCreateByName };

@@ -11,6 +11,8 @@ const AMOUNT_HEADERS = ['amount'];
 const DEBIT_HEADERS = ['debit', 'withdrawal', 'withdrawals'];
 const CREDIT_HEADERS = ['credit', 'deposit', 'deposits'];
 const NOTES_HEADERS = ['memo', 'notes', 'note'];
+const CATEGORY_HEADERS = ['category'];
+const CATEGORY_GROUP_HEADERS = ['category_group', 'category group', 'group'];
 
 function normalizeHeader(h) {
     return String(h || '').trim().toLowerCase();
@@ -51,6 +53,8 @@ function parseCsv(buffer, accountId) {
     const debitHeader = findHeader(headers, DEBIT_HEADERS);
     const creditHeader = findHeader(headers, CREDIT_HEADERS);
     const notesHeader = findHeader(headers, NOTES_HEADERS);
+    const categoryHeader = findHeader(headers, CATEGORY_HEADERS);
+    const categoryGroupHeader = findHeader(headers, CATEGORY_GROUP_HEADERS);
 
     if (!dateHeader) errors.push('Could not find a Date column');
     if (!amountHeader && !debitHeader && !creditHeader) errors.push('Could not find an Amount (or Debit/Credit) column');
@@ -81,6 +85,8 @@ function parseCsv(buffer, accountId) {
 
         const payeeName = payeeHeader ? String(record[payeeHeader] || '').trim() : '';
         const notes = notesHeader ? String(record[notesHeader] || '').trim() : '';
+        const categoryName = categoryHeader ? String(record[categoryHeader] || '').trim() : '';
+        const categoryGroupName = categoryGroupHeader ? String(record[categoryGroupHeader] || '').trim() : '';
         const isoDate = date.toISOString();
 
         rows.push({
@@ -88,6 +94,8 @@ function parseCsv(buffer, accountId) {
             payeeName,
             amountCents,
             notes,
+            categoryName,
+            categoryGroupName,
             importedId: csvImportedId(accountId, { date: isoDate, amountCents, payeeName })
         });
     });

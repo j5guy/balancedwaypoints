@@ -5,6 +5,8 @@ const transactionsDb = require('../services/database/transactions');
 const rulesDb = require('../services/database/rules');
 const payeesDb = require('../services/database/payees');
 const tagsDb = require('../services/database/tags');
+const categoriesDb = require('../services/database/categories');
+const categoryGroupsDb = require('../services/database/categoryGroups');
 const { applyRules } = require('../services/rules/applyRules');
 
 // Parses the uploaded file and returns rows enriched with a duplicate flag
@@ -23,16 +25,24 @@ async function preview(req, res) {
 
     const { newRows, duplicateCount } = await partitionNewRows(rows, transactionsDb);
     const activeRules = await rulesDb.findActive();
+    const allCategories = await categoriesDb.list({ includeArchived: true });
 
     const preview = await Promise.all(newRows.map(async (row) => {
         const suggestion = await applyRules(activeRules, { payee: row.payeeName, notes: row.notes, amountCents: row.amountCents });
-        return { ...row, suggestedCategoryId: suggestion.categoryId, suggestedPayeeName: suggestion.payeeName, suggestedTagNames: suggestion.tagNames };
+        // Rules take priority; if none matched, fall back to the CSV's own
+        // Category column when it names a category that already exists.
+        let suggestedCategoryId = suggestion.categoryId;
+        if (!suggestedCategoryId && row.categoryName) {
+            const match = allCategories.find(c => c.name.toLowerCase() === row.categoryName.toLowerCase());
+            if (match) suggestedCategoryId = match._id;
+        }
+        return { ...row, suggestedCategoryId, suggestedPayeeName: suggestion.payeeName, suggestedTagNames: suggestion.tagNames };
     }));
 
     res.json({ rows: preview, duplicateCount, errors });
 }
 
-// Body: { accountId, rows: [{ date, payeeName, amountCents, notes, importedId, categoryId, tagNames }] }
+// Body: { accountId, rows: [{ date, payeeName, amountCents, notes, importedId, categoryId, categoryName, categoryGroupName, tagNames }] }
 async function commit(req, res) {
     const { accountId, rows } = req.body || {};
     if (!accountId) return res.status(400).json({ error: 'accountId is required' });
@@ -43,12 +53,21 @@ async function commit(req, res) {
         const payee = row.payeeName ? await payeesDb.findOrCreateByName(row.payeeName) : null;
         const tags = await Promise.all((row.tagNames || []).map(name => tagsDb.findOrCreateByName(name)));
 
+        // No categoryId was picked (the CSV named a category that doesn't
+        // exist yet) — create the group and category on the fly.
+        let categoryId = row.categoryId || null;
+        if (!categoryId && row.categoryName) {
+            const group = await categoryGroupsDb.findOrCreateByName(row.categoryGroupName || 'Imported');
+            const category = group ? await categoriesDb.findOrCreateByName(row.categoryName, group._id) : null;
+            categoryId = category ? category._id : null;
+        }
+
         await transactionsDb.create({
             account: accountId,
             date: row.date,
             payee: payee ? payee._id : null,
             amountCents: Number(row.amountCents),
-            category: row.categoryId || null,
+            category: categoryId,
             cleared: 'cleared',
             tags: tags.filter(Boolean).map(t => t._id),
             notes: row.notes || '',

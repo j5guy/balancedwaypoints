@@ -128,16 +128,19 @@
     }
 
     function transactionRow(t, balanceCents) {
-        const manualSort = preferences.registerSort === 'manual';
         const tr = document.createElement('tr');
-        tr.draggable = manualSort;
+        // Dragging works regardless of sort mode — see the reorder handler
+        // in init() below, which switches the sort preference to 'manual'
+        // the moment a row actually gets dragged, so the new position
+        // sticks instead of snapping back to date order on next load.
+        tr.draggable = true;
         tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
         const amountClass = t.amountCents < 0 ? 'money-negative' : 'money-positive';
         const balanceClass = balanceCents < 0 ? 'money-negative' : 'money-positive';
         const isCleared = t.cleared !== 'pending';
         tr.innerHTML = `
-            <td class="drag-handle" title="${manualSort ? 'Drag to reorder' : 'Switch to manual sort (Table settings) to drag-reorder'}">${manualSort ? '⠿' : ''}</td>
+            <td class="drag-handle" title="Drag to reorder">⠿</td>
             <td class="editable-cell" data-col="date">${window.BWDate.formatDate(t.date)}</td>
             <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
             <td class="editable-cell" data-col="category">${category}</td>
@@ -597,7 +600,7 @@
             transactionsById = new Map(transactions.map(t => [t.id, t]));
             const tbody = document.getElementById('register-tbody');
             tbody.innerHTML = '';
-            document.getElementById('register-hint').hidden = sort !== 'manual' || transactions.length < 2;
+            document.getElementById('register-hint').hidden = transactions.length < 2;
 
             const upcomingRows = await loadUpcomingRows();
             upcomingRows.forEach(row => tbody.appendChild(row));
@@ -906,6 +909,17 @@
             refreshBalanceDisplay();
             try {
                 await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids } });
+                // A drag only "sticks" under manual sort (see
+                // services/database/transactions.js's SORTS) — date modes
+                // ignore sortOrder entirely, so without this the very next
+                // reload would snap the row straight back to its date
+                // position. Switching here, the moment a row actually gets
+                // dragged, is what lets drag-and-drop work from any sort mode.
+                if (preferences.registerSort !== 'manual') {
+                    preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerSort: 'manual' } });
+                    const sortSelect = document.getElementById('pref-register-sort');
+                    if (sortSelect) sortSelect.value = 'manual';
+                }
             } catch (err) {
                 showError(err);
             }

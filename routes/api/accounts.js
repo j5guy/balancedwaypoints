@@ -10,5 +10,6 @@ router.get('/:id', accountsController.get);
 router.post('/', accountsController.create);
 router.put('/:id', accountsController.update);
 router.delete('/:id', accountsController.remove);
+router.delete('/:id/force', accountsController.forceRemove);
 
 module.exports = router;

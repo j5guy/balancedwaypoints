@@ -67,4 +67,20 @@ async function remove(req, res) {
     res.status(204).end();
 }
 
-module.exports = { list, get, create, update, remove };
+// Deliberately separate from remove() above — this one deletes a closed
+// account along with every transaction (including its half of any
+// transfers) and schedule tied to it. Only reachable for accounts already
+// marked closed (see services/database/accounts.js's forceRemove), so an
+// active account can't be wiped by hitting the wrong endpoint.
+async function forceRemove(req, res) {
+    try {
+        const account = await accounts.forceRemove(req.params.id);
+        if (!account) return res.status(404).json({ error: 'Not found' });
+        res.status(204).end();
+    } catch (err) {
+        if (err instanceof accounts.ForceDeleteError) return res.status(400).json({ error: err.message });
+        throw err;
+    }
+}
+
+module.exports = { list, get, create, update, remove, forceRemove };

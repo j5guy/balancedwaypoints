@@ -72,6 +72,18 @@
             <button type="button" class="btn btn-danger" id="delete-account-confirm-btn" disabled>Delete account</button>
             <button type="button" class="btn btn-secondary" id="delete-account-cancel-btn">Cancel</button>
         </div>
+
+        <div id="delete-account-force-section" hidden>
+            <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+            <p class="form-error">
+                This account is closed. Force-deleting it permanently removes it
+                <strong>along with every transaction posted to it (including its half of any transfers) and every
+                schedule tied to it</strong> — not just the account record.
+            </p>
+            <div class="btn-row">
+                <button type="button" class="btn btn-danger" id="delete-account-force-btn" disabled>Force delete — remove account and all its records</button>
+            </div>
+        </div>
     </div>
 </div>
 

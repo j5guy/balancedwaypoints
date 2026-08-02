@@ -110,6 +110,8 @@
     const overlay = document.getElementById('delete-account-overlay');
     const confirmInput = document.getElementById('delete-account-confirm-input');
     const confirmBtn = document.getElementById('delete-account-confirm-btn');
+    const forceSection = document.getElementById('delete-account-force-section');
+    const forceBtn = document.getElementById('delete-account-force-btn');
 
     function openDeleteModal(account) {
         pendingDeleteAccount = account;
@@ -118,6 +120,11 @@
         document.getElementById('delete-account-name-hint').textContent = account.name;
         confirmInput.value = '';
         confirmBtn.disabled = true;
+        // Force-delete is only ever offered for accounts already marked
+        // closed — matches the server-side check in
+        // services/database/accounts.js's forceRemove.
+        forceSection.hidden = !account.closed;
+        forceBtn.disabled = true;
         overlay.hidden = false;
         confirmInput.focus();
     }
@@ -128,7 +135,9 @@
     }
 
     confirmInput.addEventListener('input', () => {
-        confirmBtn.disabled = !pendingDeleteAccount || confirmInput.value !== pendingDeleteAccount.name;
+        const matches = !!pendingDeleteAccount && confirmInput.value === pendingDeleteAccount.name;
+        confirmBtn.disabled = !matches;
+        forceBtn.disabled = !matches;
     });
 
     document.getElementById('delete-account-cancel-btn').addEventListener('click', closeDeleteModal);
@@ -144,6 +153,17 @@
             load();
         } catch (err) {
             document.getElementById('delete-account-warning').textContent = err.message || 'Could not delete this account.';
+        }
+    });
+
+    forceBtn.addEventListener('click', async () => {
+        if (!pendingDeleteAccount || confirmInput.value !== pendingDeleteAccount.name) return;
+        try {
+            await window.BWApi.apiFetch(`/api/accounts/${pendingDeleteAccount.id}/force`, { method: 'DELETE' });
+            closeDeleteModal();
+            load();
+        } catch (err) {
+            document.getElementById('delete-account-warning').textContent = err.message || 'Could not force-delete this account.';
         }
     });
 

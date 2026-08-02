@@ -23,7 +23,7 @@
             <td>${schedule.payee ? schedule.payee.name : ''}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(schedule.amountCents)}</td>
             <td>${schedule.category ? schedule.category.name : ''}</td>
-            <td>${new Date(schedule.nextDate).toLocaleDateString()}</td>
+            <td>${window.BWDate.formatDate(schedule.nextDate)}</td>
             <td>every ${schedule.frequency.interval} ${schedule.frequency.unit}</td>
             <td><input type="checkbox" data-auto-toggle ${schedule.autoEnter ? 'checked' : ''}></td>
             <td class="row-actions">
@@ -103,8 +103,8 @@
         document.getElementById('sched-amount').value = (schedule.amountCents / 100).toFixed(2);
         document.getElementById('sched-payee').value = schedule.payee ? schedule.payee.name : '';
         document.getElementById('sched-category').value = schedule.category ? schedule.category.id : '';
-        document.getElementById('sched-next-date').value = new Date(schedule.nextDate).toISOString().slice(0, 10);
-        document.getElementById('sched-end-date').value = schedule.endDate ? new Date(schedule.endDate).toISOString().slice(0, 10) : '';
+        document.getElementById('sched-next-date').value = window.BWDate.toDateInputValue(schedule.nextDate);
+        document.getElementById('sched-end-date').value = schedule.endDate ? window.BWDate.toDateInputValue(schedule.endDate) : '';
         document.getElementById('sched-interval').value = schedule.frequency.interval;
         document.getElementById('sched-unit').value = schedule.frequency.unit;
         document.getElementById('sched-reminder').value = schedule.reminderDaysBefore;

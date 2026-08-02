@@ -28,7 +28,7 @@
         const amountClass = row.amountCents < 0 ? 'money-negative' : 'money-positive';
         tr.innerHTML = `
             <td><input type="checkbox" data-include checked></td>
-            <td>${new Date(row.date).toLocaleDateString()}</td>
+            <td>${window.BWDate.formatDate(row.date)}</td>
             <td>${row.suggestedPayeeName || row.payeeName || ''}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(row.amountCents)}</td>
             <td class="wrap">${row.notes || ''}</td>

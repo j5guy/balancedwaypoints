@@ -138,7 +138,7 @@
         const isCleared = t.cleared !== 'pending';
         tr.innerHTML = `
             <td class="drag-handle" title="${manualSort ? 'Drag to reorder' : 'Switch to manual sort (Table settings) to drag-reorder'}">${manualSort ? '⠿' : ''}</td>
-            <td class="editable-cell" data-col="date">${new Date(t.date).toLocaleDateString()}</td>
+            <td class="editable-cell" data-col="date">${window.BWDate.formatDate(t.date)}</td>
             <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
             <td class="editable-cell" data-col="category">${category}</td>
             <td class="wrap editable-cell" data-col="notes">${t.notes || ''}</td>
@@ -181,7 +181,7 @@
 
     function cellInputHtml(col, t) {
         switch (col) {
-            case 'date': return `<input type="date" value="${new Date(t.date).toISOString().slice(0, 10)}">`;
+            case 'date': return `<input type="date" value="${window.BWDate.toDateInputValue(t.date)}">`;
             case 'payee': return `<input type="text" list="payee-options" value="${escapeAttr(t.payee ? t.payee.name : '')}">`;
             case 'category': return `<input type="text" list="category-options" value="${escapeAttr(t.category ? t.category.name : '')}">`;
             case 'notes': return `<input type="text" value="${escapeAttr(t.notes || '')}">`;
@@ -384,7 +384,7 @@
         const balanceClass = occurrence.projectedBalanceCents < 0 ? 'money-negative' : 'money-positive';
         tr.innerHTML = `
             <td></td>
-            <td data-col="date">${occurrence.date.toLocaleDateString()}</td>
+            <td data-col="date">${window.BWDate.formatDate(occurrence.date)}</td>
             <td data-col="payee">${s.payee ? s.payee.name : ''}</td>
             <td data-col="category">${category}</td>
             <td class="wrap" data-col="notes">${s.notes || ''}</td>
@@ -445,7 +445,7 @@
     function openOccurrenceModal(occurrence) {
         occurrenceContext = occurrence;
         const s = occurrence.schedule;
-        document.getElementById('occ-modal-subtitle').textContent = `${s.name} — ${occurrence.date.toLocaleDateString()}`;
+        document.getElementById('occ-modal-subtitle').textContent = `${s.name} — ${window.BWDate.formatDate(occurrence.date)}`;
 
         const hasSplits = s.splits && s.splits.length > 0;
         document.getElementById('occ-edit-fields').hidden = hasSplits;
@@ -461,7 +461,7 @@
 
         document.querySelector('input[name="occ-post-to"][value="scheduled"]').checked = true;
         document.getElementById('occ-post-custom-row').hidden = true;
-        document.getElementById('occ-post-custom-date').value = new Date().toISOString().slice(0, 10);
+        document.getElementById('occ-post-custom-date').value = window.BWDate.todayDateInputValue();
 
         document.getElementById('occurrence-overlay').hidden = false;
     }
@@ -724,7 +724,7 @@
         editingId = t.id;
         document.getElementById('txn-form-card').hidden = false;
         document.getElementById('txn-form-title').textContent = 'Edit transaction';
-        document.getElementById('txn-date').value = new Date(t.date).toISOString().slice(0, 10);
+        document.getElementById('txn-date').value = window.BWDate.toDateInputValue(t.date);
         document.getElementById('txn-payee').value = t.payee ? t.payee.name : '';
         document.getElementById('txn-amount').value = (t.amountCents / 100).toFixed(2);
         document.getElementById('txn-notes').value = t.notes || '';
@@ -892,7 +892,7 @@
     });
 
     (async function init() {
-        document.getElementById('qa-date').value = new Date().toISOString().slice(0, 10);
+        document.getElementById('qa-date').value = window.BWDate.todayDateInputValue();
 
         await loadPreferences();
         await loadReferenceData();

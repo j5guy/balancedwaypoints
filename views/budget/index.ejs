@@ -11,6 +11,21 @@
         <button type="button" class="btn btn-secondary btn-sm" id="prev-month-btn">&larr;</button>
         <div class="month-label" id="month-label"></div>
         <button type="button" class="btn btn-secondary btn-sm" id="next-month-btn">&rarr;</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="toggle-copy-budget-btn" style="margin-left:12px;">Copy budget from…</button>
+    </div>
+
+    <div class="card" id="copy-budget-form" hidden>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="copy-budget-source">Copy assigned amounts from</label>
+                <input type="month" id="copy-budget-source">
+                <p class="form-hint">Replaces this month's assigned amount for every category that has one in the source month. Categories not assigned anything there are left as-is here.</p>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="copy-budget-confirm-btn">Copy</button>
+            <button type="button" class="btn btn-secondary" id="copy-budget-cancel-btn">Cancel</button>
+        </div>
     </div>
 
     <div class="rta-banner" id="rta-banner">

@@ -7,5 +7,6 @@ router.use(requireApiAuth);
 
 router.get('/:month', controller.getMonth);
 router.put('/:month/:categoryId', controller.assign);
+router.post('/:month/copy', controller.copyFrom);
 
 module.exports = router;

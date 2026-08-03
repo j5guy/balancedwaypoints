@@ -3,12 +3,13 @@ const incomeVsExpense = require('../services/reports/incomeVsExpense');
 const netWorth = require('../services/reports/netWorth');
 
 async function spending(req, res) {
-    const { from, to } = req.query;
-    const rows = await spendingByCategory({ from, to });
+    const { from, to, month } = req.query;
+    const rows = await spendingByCategory({ from, to, month });
     res.json({
         rows: rows.map(r => ({
             category: r.category ? { id: r.category._id, name: r.category.name } : null,
-            totalCents: r.totalCents
+            totalCents: r.totalCents,
+            assignedCents: r.assignedCents
         }))
     });
 }

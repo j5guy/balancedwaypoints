@@ -42,22 +42,38 @@
         errorBox.hidden = false;
     }
 
+    // Only present (non-null) when the viewed range is exactly one calendar
+    // month — see run()'s spendingParams — so budget-vs-actual coloring is
+    // never shown against a comparison that wouldn't actually mean anything.
+    function budgetFillClass(spentCents, assignedCents) {
+        const spent = Math.abs(spentCents);
+        if (spent === assignedCents) return 'bar-fill-on-budget';
+        return spent > assignedCents ? 'bar-fill-over-budget' : 'bar-fill-under-budget';
+    }
+
     function renderSpending(rows) {
         const list = document.getElementById('spending-bar-list');
+        const legend = document.getElementById('spending-legend');
         list.innerHTML = '';
         if (rows.length === 0) {
             list.innerHTML = '<div class="empty-state">No spending in this range.</div>';
+            legend.hidden = true;
             return;
         }
+        const hasBudgetData = rows.some(r => r.assignedCents !== null && r.assignedCents !== undefined);
+        legend.hidden = !hasBudgetData;
+
         const max = Math.max(...rows.map(r => Math.abs(r.totalCents)));
         rows.forEach(r => {
             const pct = max ? Math.max(4, Math.round((Math.abs(r.totalCents) / max) * 100)) : 4;
+            const hasBudget = r.assignedCents !== null && r.assignedCents !== undefined;
+            const fillClass = hasBudget ? budgetFillClass(r.totalCents, r.assignedCents) : '';
             const div = document.createElement('div');
             div.className = 'bar-list-row';
             div.innerHTML = `
                 <span class="bar-list-label">${r.category ? r.category.name : 'Uncategorized'}</span>
-                <span class="bar-list-track"><span class="bar-list-fill" style="width:${pct}%"></span></span>
-                <span class="bar-list-value money">${window.BWMoney.formatCents(r.totalCents)}</span>
+                <span class="bar-list-track"><span class="bar-list-fill ${fillClass}" style="width:${pct}%"></span></span>
+                <span class="bar-list-value money">${window.BWMoney.formatCents(r.totalCents)}${hasBudget ? ` <span class="muted" style="font-size:0.85em;">/ ${window.BWMoney.formatCents(r.assignedCents)} budgeted</span>` : ''}</span>
             `;
             list.appendChild(div);
         });
@@ -165,9 +181,21 @@
         if (from) params.set('from', from);
         if (to) params.set('to', to);
 
+        // Budget-vs-actual coloring only makes sense against one exact
+        // calendar month's assignedCents — only attach `month` when the
+        // currently selected range exactly bounds a single month (true for
+        // the month-nav arrows; a hand-picked custom range that doesn't line
+        // up with a whole month falls back to the plain ranked bars).
+        const spendingParams = new URLSearchParams(params);
+        if (from) {
+            const guessedMonth = from.slice(0, 7);
+            const bounds = monthBounds(guessedMonth);
+            if (from === bounds.from && to === bounds.to) spendingParams.set('month', guessedMonth);
+        }
+
         try {
             const [spending, incomeExpense, netWorth] = await Promise.all([
-                window.BWApi.apiFetch(`/api/reports/spending-by-category?${params}`),
+                window.BWApi.apiFetch(`/api/reports/spending-by-category?${spendingParams}`),
                 window.BWApi.apiFetch(`/api/reports/income-vs-expense?${params}`),
                 window.BWApi.apiFetch('/api/reports/net-worth?months=12')
             ]);

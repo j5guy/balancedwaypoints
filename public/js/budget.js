@@ -3,7 +3,7 @@
     if (!container) return;
     const errorBox = document.getElementById('budget-error');
 
-    let month = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+    let month = window.BWDate.todayDateInputValue().slice(0, 7); // 'YYYY-MM', local calendar day
     let groups = [];
     let allCategories = [];
 
@@ -198,6 +198,30 @@
 
     document.getElementById('prev-month-btn').addEventListener('click', () => { month = shiftMonth(month, -1); render(); });
     document.getElementById('next-month-btn').addEventListener('click', () => { month = shiftMonth(month, 1); render(); });
+
+    // ── Copy budget from another month ────────────────────────────
+    document.getElementById('toggle-copy-budget-btn').addEventListener('click', () => {
+        const form = document.getElementById('copy-budget-form');
+        if (!form.hidden) { form.hidden = true; return; }
+        document.getElementById('copy-budget-source').value = shiftMonth(month, -1);
+        form.hidden = false;
+    });
+    document.getElementById('copy-budget-cancel-btn').addEventListener('click', () => {
+        document.getElementById('copy-budget-form').hidden = true;
+    });
+    document.getElementById('copy-budget-confirm-btn').addEventListener('click', async () => {
+        const fromMonth = document.getElementById('copy-budget-source').value;
+        if (!fromMonth) return;
+        if (fromMonth === month) return showError(new Error("Source month can't be the same as the month you're viewing"));
+        if (!confirm(`Copy assigned amounts from ${monthLabel(fromMonth)} into ${monthLabel(month)}? This overwrites this month's assigned amount for any category that has one in ${monthLabel(fromMonth)}.`)) return;
+        try {
+            await window.BWApi.apiFetch(`/api/budgets/${month}/copy`, { method: 'POST', body: { fromMonth } });
+            document.getElementById('copy-budget-form').hidden = true;
+            render();
+        } catch (err) {
+            showError(err);
+        }
+    });
 
     document.getElementById('new-group-btn').addEventListener('click', () => {
         document.getElementById('new-group-form').hidden = !document.getElementById('new-group-form').hidden;

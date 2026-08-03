@@ -35,4 +35,19 @@ async function assign(req, res) {
     res.json(serializeSummary(summary));
 }
 
-module.exports = { getMonth, assign };
+// Bulk "copy last month's budget" (or any other month) — one assignedCents
+// value per category, copied as-is rather than merged/added, same as if
+// you'd retyped each one by hand.
+async function copyFrom(req, res) {
+    const { month } = req.params;
+    const { fromMonth } = req.body || {};
+    if (!MONTH_RE.test(month)) return res.status(400).json({ error: 'month must be in YYYY-MM format' });
+    if (!MONTH_RE.test(fromMonth)) return res.status(400).json({ error: 'fromMonth must be in YYYY-MM format' });
+    if (fromMonth === month) return res.status(400).json({ error: "fromMonth can't be the same as month" });
+
+    await categoryBudgetsDb.copyMonth(fromMonth, month);
+    const summary = await envelope.summary(month);
+    res.json(serializeSummary(summary));
+}
+
+module.exports = { getMonth, assign, copyFrom };

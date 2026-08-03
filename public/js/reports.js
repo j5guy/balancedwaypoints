@@ -42,15 +42,6 @@
         errorBox.hidden = false;
     }
 
-    // Only present (non-null) when the viewed range is exactly one calendar
-    // month — see run()'s spendingParams — so budget-vs-actual coloring is
-    // never shown against a comparison that wouldn't actually mean anything.
-    function budgetFillClass(spentCents, assignedCents) {
-        const spent = Math.abs(spentCents);
-        if (spent === assignedCents) return 'spend-bar-on-budget';
-        return spent > assignedCents ? 'spend-bar-over-budget' : 'spend-bar-under-budget';
-    }
-
     // Category names are user data (created via /api/categories), and they
     // land as SVG text content below — escape so a name containing "&" or
     // "<" can't break the markup this gets parsed as.
@@ -58,37 +49,77 @@
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    // Horizontal bar chart, one row per category, ranked longest-to-shortest
-    // (rows already arrive sorted that way from the server). Same hand-rolled
-    // SVG approach as buildIncomeExpenseSvg below — a fluid viewBox with no
-    // fixed pixel height, since the row count (and so the natural chart
-    // height) varies with however many categories had spending.
+    // Horizontal bar chart, one row per category. When a budget is present
+    // for a row (see run()'s spendingParams — only true for an exact
+    // calendar month), the bar itself becomes "percent of budget": the full
+    // bar width is the assigned amount, filled gold up to what's actually
+    // been spent, with the untouched remainder in green. Going over budget
+    // has no "remainder" to show, so it's just a full red bar instead. Rows
+    // with no budget fall back to the plain single-hue bar ranked against
+    // the other unbudgeted rows, same as before.
     function buildSpendingSvg(rows) {
-        const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r.totalCents)));
         const rowH = 32, barH = 16;
         const padTop = 6, padBottom = 6;
         const labelWidth = 150, valueWidth = 150;
         const width = 640;
         const barMaxWidth = width - labelWidth - valueWidth;
         const height = rows.length * rowH + padTop + padBottom;
+        const segmentGap = 2;
+
+        const noBudgetRows = rows.filter(r => r.assignedCents === null || r.assignedCents === undefined);
+        const maxAbsNoBudget = Math.max(1, ...noBudgetRows.map(r => Math.abs(r.totalCents)));
 
         const bars = rows.map((r, i) => {
             const spentAbs = Math.abs(r.totalCents);
-            const barWidth = Math.max(3, (spentAbs / maxAbs) * barMaxWidth);
+            const x = labelWidth;
             const y = padTop + i * rowH;
             const cy = y + barH / 2;
-            const hasBudget = r.assignedCents !== null && r.assignedCents !== undefined;
-            const fillClass = hasBudget ? budgetFillClass(r.totalCents, r.assignedCents) : 'spend-bar-default';
             const label = escapeXml(r.category ? r.category.name : 'Uncategorized');
-            const valueText = escapeXml(
-                window.BWMoney.formatCents(r.totalCents) + (hasBudget ? ` / ${window.BWMoney.formatCents(r.assignedCents)}` : '')
-            );
+            const hasBudget = r.assignedCents !== null && r.assignedCents !== undefined;
+
+            if (!hasBudget) {
+                const barWidth = Math.max(3, (spentAbs / maxAbsNoBudget) * barMaxWidth);
+                const valueText = escapeXml(window.BWMoney.formatCents(r.totalCents));
+                return `
+                    <text class="spend-bar-label" x="${labelWidth - 10}" y="${cy}" dominant-baseline="middle" text-anchor="end">${label}</text>
+                    <rect class="spend-bar-fill spend-bar-default" x="${x}" y="${y}" width="${barWidth}" height="${barH}" rx="3">
+                        <title>${label}: ${valueText}</title>
+                    </rect>
+                    <text class="spend-bar-value" x="${labelWidth + barMaxWidth + 8}" y="${cy}" dominant-baseline="middle" text-anchor="start">${valueText}</text>
+                `;
+            }
+
+            const budgetCents = r.assignedCents;
+            const overBudget = spentAbs > budgetCents;
+            const spentText = escapeXml(window.BWMoney.formatCents(r.totalCents));
+            const budgetText = escapeXml(window.BWMoney.formatCents(budgetCents));
+            const title = escapeXml(`${r.category ? r.category.name : 'Uncategorized'}: ${window.BWMoney.formatCents(r.totalCents)} of ${window.BWMoney.formatCents(budgetCents)} budgeted`);
+
+            let fillMarkup;
+            if (overBudget) {
+                fillMarkup = `<rect class="spend-bar-fill spend-bar-over" x="${x}" y="${y}" width="${barMaxWidth}" height="${barH}" rx="3"><title>${title}</title></rect>`;
+            } else {
+                const pct = budgetCents > 0 ? Math.min(1, spentAbs / budgetCents) : 1;
+                const rawSpentWidth = pct * barMaxWidth;
+                const hasRemainder = rawSpentWidth < barMaxWidth;
+                const gap = hasRemainder ? segmentGap : 0;
+                const spentWidth = Math.max(3, rawSpentWidth - gap / 2);
+                const remainingWidth = Math.max(0, barMaxWidth - spentWidth - gap / 2);
+                const clipId = `spend-clip-${i}`;
+                fillMarkup = `
+                    <clipPath id="${clipId}"><rect x="${x}" y="${y}" width="${barMaxWidth}" height="${barH}" rx="3"/></clipPath>
+                    <g clip-path="url(#${clipId})">
+                        <rect class="spend-bar-fill spend-bar-spent" x="${x}" y="${y}" width="${spentWidth}" height="${barH}"><title>${title}</title></rect>
+                        ${remainingWidth > 0 ? `<rect class="spend-bar-fill spend-bar-remaining" x="${x + spentWidth + gap}" y="${y}" width="${remainingWidth}" height="${barH}"><title>${title}</title></rect>` : ''}
+                    </g>
+                `;
+            }
+
             return `
                 <text class="spend-bar-label" x="${labelWidth - 10}" y="${cy}" dominant-baseline="middle" text-anchor="end">${label}</text>
-                <rect class="spend-bar-fill ${fillClass}" x="${labelWidth}" y="${y}" width="${barWidth}" height="${barH}" rx="3">
-                    <title>${label}: ${valueText}</title>
-                </rect>
-                <text class="spend-bar-value" x="${labelWidth + barMaxWidth + 8}" y="${cy}" dominant-baseline="middle" text-anchor="start">${valueText}</text>
+                ${fillMarkup}
+                <text class="spend-bar-value-inside" x="${x + 6}" y="${cy}" dominant-baseline="middle" text-anchor="start">${spentText}</text>
+                <text class="spend-bar-value" x="${labelWidth + barMaxWidth + 8}" y="${cy}" dominant-baseline="middle" text-anchor="start">${budgetText}</text>
             `;
         }).join('');
 

@@ -4,11 +4,12 @@
 // so every bar shares one hue — identity comes from the label to its left,
 // not color (see the dataviz guidance: a ranked single-measure bar chart
 // has only one role to encode). When the viewed range is exactly one
-// calendar month, though, each bar also encodes budget-vs-actual status
-// (see public/js/reports.js's budgetFillClass) — that's a second role
-// (spent relative to assigned), so it gets its own 3-way color scheme
-// instead of the single accent hue, same as income-vs-expense's diverging
-// pair gets its own colors instead of one.
+// calendar month, though, each bar becomes "percent of budget" instead: the
+// full bar width is the assigned amount, filled gold for what's been spent
+// and green for what's left — a status encoding (see
+// public/js/reports.js's buildSpendingSvg), not a ranked measure, so it gets
+// its own color scheme instead of the single accent hue, same as
+// income-vs-expense's diverging pair gets its own colors instead of one.
 //
 // Built as one SVG (public/js/reports.js's buildSpendingSvg) rather than a
 // list of divs — a fluid viewBox with no fixed pixel height, since a
@@ -36,17 +37,33 @@
     font-family: $font-mono;
 }
 
+// The actual-spend figure drawn inside the bar itself (see
+// public/js/reports.js's buildSpendingSvg) sits on top of a fixed brand
+// color (gold/green/red), not the theme's card background, so it needs its
+// own contrast rather than the theme-aware $text-primary the value-to-the-
+// right uses. A white halo (paint-order: stroke) keeps the dark ink legible
+// whichever of those fills — or how little of the gold segment — it lands on.
+.spend-bar-value-inside {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: $font-mono;
+    fill: $ink;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.8);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+}
+
 .spend-bar-default { fill: $accent; }
 
-// Budget-vs-actual variants (see public/js/reports.js's budgetFillClass) —
-// on-budget (spent exactly matches assigned) and over-budget map onto the
-// same green/red the rest of the app already uses for money going the
-// "right"/"wrong" direction; under-budget (unused headroom, not a problem)
-// gets the brand gold instead of a third arbitrary hue, so it doesn't read
-// as good (green) or bad (red) — just "different from both."
-.spend-bar-on-budget { fill: $money-positive; }
-.spend-bar-over-budget { fill: $money-negative; }
-.spend-bar-under-budget { fill: $gold; }
+// Percent-of-budget variants (see public/js/reports.js's buildSpendingSvg) —
+// gold for the portion actually spent, green for what's left of the budget.
+// Going over budget leaves nothing to show as "remaining," so it's just a
+// full bar in the same red the rest of the app uses for money going the
+// wrong direction.
+.spend-bar-spent { fill: $gold; }
+.spend-bar-remaining { fill: $money-positive; }
+.spend-bar-over { fill: $money-negative; }
 
 // Income vs. expense: two series with real polarity around zero — a
 // diverging pair (green/red) plus net as its own single-hue overlay (same
@@ -73,10 +90,10 @@
 
     // Reused as-is (generic legend-row styling, nothing income/expense
     // specific about the class itself) for the spending-by-category
-    // budget-status legend — see .spend-bar-on-budget and friends above.
-    .legend-on-budget .legend-swatch { background: $money-positive; }
+    // percent-of-budget legend — see .spend-bar-spent and friends above.
+    .legend-spent .legend-swatch { background: $gold; }
+    .legend-remaining .legend-swatch { background: $money-positive; }
     .legend-over-budget .legend-swatch { background: $money-negative; }
-    .legend-under-budget .legend-swatch { background: $gold; }
 }
 
 // The income-vs-expense SVG (built in public/js/reports.js) — a fluid

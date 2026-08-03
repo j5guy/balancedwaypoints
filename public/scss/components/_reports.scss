@@ -95,6 +95,26 @@
     .diverging-fill-expense { background: $money-negative; border-radius: $radius-sm; }
 }
 
+// The dollar-value line under each .diverging-row's bars — same grid so the
+// numbers land under their own bar. Income reads right-to-left (toward the
+// shared center) and expense left-to-right, mirroring how the bars
+// themselves grow toward each other.
+.diverging-values {
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr;
+    gap: 8px;
+    font-size: 0.78rem;
+    margin-bottom: 14px;
+
+    .money-positive,
+    .money-negative {
+        font-family: $font-mono;
+    }
+
+    .money-positive { text-align: right; }
+    .money-negative { text-align: left; }
+}
+
 // Net worth trend: single series over time — one hue (accent), sparkline-style.
 .trend-sparkline {
     width: 100%;

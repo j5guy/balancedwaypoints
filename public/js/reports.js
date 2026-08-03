@@ -48,6 +48,19 @@
                 <span class="diverging-expense-track"><span class="diverging-fill-expense" style="width:${expensePct}%"></span></span>
             `;
             container.appendChild(div);
+
+            // The bars alone only show relative proportion — this line puts
+            // the actual dollar totals underneath, colored to match their
+            // bar, so the chart is readable on its own instead of needing a
+            // hover/tooltip to know what a bar's length means.
+            const valuesDiv = document.createElement('div');
+            valuesDiv.className = 'diverging-values';
+            valuesDiv.innerHTML = `
+                <span></span>
+                <span class="money money-positive">${window.BWMoney.formatCents(r.incomeCents)}</span>
+                <span class="money money-negative">${window.BWMoney.formatCents(r.expenseCents)}</span>
+            `;
+            container.appendChild(valuesDiv);
         });
     }
 

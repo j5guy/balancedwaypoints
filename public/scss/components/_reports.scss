@@ -46,8 +46,9 @@
 }
 
 // Income vs. expense: two series with real polarity around zero — a
-// diverging pair (green/red), not an arbitrary categorical choice, plus a
-// legend since there are 2 series.
+// diverging pair (green/red) plus net as its own single-hue overlay (same
+// "one hue" convention the net-worth trend uses below), so a legend since
+// there are 3 series in play.
 .diverging-legend {
     display: flex;
     gap: 16px;
@@ -65,54 +66,40 @@
 
     .legend-income .legend-swatch { background: $money-positive; }
     .legend-expense .legend-swatch { background: $money-negative; }
+    .legend-net .legend-swatch { background: $accent; border-radius: $radius-full; }
 }
 
-.diverging-row {
-    display: grid;
-    grid-template-columns: 90px 1fr 1fr;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85rem;
-    margin-bottom: 6px;
+// The income-vs-expense SVG (built in public/js/reports.js) — a fluid
+// viewBox scales to the container's width via CSS, not fixed pixels, so it
+// stays readable whether the range covers 2 months or a full year.
+.ie-chart {
+    width: 100%;
 
-    .diverging-track {
-        display: flex;
-        height: 10px;
+    svg {
+        width: 100%;
+        height: 220px;
+        display: block;
     }
-
-    .diverging-income-track,
-    .diverging-expense-track {
-        flex: 1;
-        display: flex;
-        background: $bg-hover;
-        border-radius: $radius-sm;
-        overflow: hidden;
-    }
-
-    .diverging-expense-track { justify-content: flex-end; }
-
-    .diverging-fill-income { background: $money-positive; border-radius: $radius-sm; }
-    .diverging-fill-expense { background: $money-negative; border-radius: $radius-sm; }
 }
 
-// The dollar-value line under each .diverging-row's bars — same grid so the
-// numbers land under their own bar. Income reads right-to-left (toward the
-// shared center) and expense left-to-right, mirroring how the bars
-// themselves grow toward each other.
-.diverging-values {
-    display: grid;
-    grid-template-columns: 90px 1fr 1fr;
-    gap: 8px;
-    font-size: 0.78rem;
-    margin-bottom: 14px;
+.ie-bar-income { fill: $money-positive; }
+.ie-bar-expense { fill: $money-negative; }
+.ie-zero-line { stroke: $border; stroke-width: 1; }
 
-    .money-positive,
-    .money-negative {
-        font-family: $font-mono;
-    }
+.ie-net-line {
+    fill: none;
+    stroke: $accent;
+    stroke-width: 2;
+}
 
-    .money-positive { text-align: right; }
-    .money-negative { text-align: left; }
+.ie-net-dot {
+    fill: $accent;
+}
+
+.ie-month-label {
+    fill: $text-muted;
+    font-size: 9px;
+    font-family: $font-family;
 }
 
 // Net worth trend: single series over time — one hue (accent), sparkline-style.

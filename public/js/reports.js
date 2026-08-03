@@ -3,6 +3,40 @@
     if (!runBtn) return;
     const errorBox = document.getElementById('reports-error');
 
+    // Current calendar month by default ('YYYY-MM') — the arrows below step
+    // this and re-run automatically, same pattern as the Budget page. The
+    // From/To fields stay live the whole time too: typing a custom range
+    // and hitting "Use this range" runs that instead, independent of
+    // whatever month the arrows last landed on.
+    let month = window.BWDate.todayDateInputValue().slice(0, 7);
+
+    function monthLabel(m) {
+        const [year, mon] = m.split('-').map(Number);
+        return new Date(Date.UTC(year, mon - 1, 1)).toLocaleDateString(undefined, { year: 'numeric', month: 'long', timeZone: 'UTC' });
+    }
+
+    function shiftMonth(m, delta) {
+        const [year, mon] = m.split('-').map(Number);
+        const d = new Date(Date.UTC(year, mon - 1 + delta, 1));
+        return d.toISOString().slice(0, 7);
+    }
+
+    // Calendar-month bounds as 'YYYY-MM-DD' for the From/To date inputs —
+    // day 0 of the following month is the last day of this one.
+    function monthBounds(m) {
+        const [year, mon] = m.split('-').map(Number);
+        const from = new Date(Date.UTC(year, mon - 1, 1));
+        const to = new Date(Date.UTC(year, mon, 0));
+        return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+    }
+
+    function syncMonthControls() {
+        document.getElementById('report-month-label').textContent = monthLabel(month);
+        const { from, to } = monthBounds(month);
+        document.getElementById('report-from').value = from;
+        document.getElementById('report-to').value = to;
+    }
+
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
         errorBox.hidden = false;
@@ -29,44 +63,97 @@
         });
     }
 
+    // 'YYYY-MM' -> "Jan '26" — compact enough to fit as an axis label even
+    // with a year's worth of months in the chart at once.
+    function monthShortLabel(m) {
+        const [year, mon] = m.split('-').map(Number);
+        const label = new Date(Date.UTC(year, mon - 1, 1)).toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' });
+        return `${label} '${String(year).slice(2)}`;
+    }
+
+    // Hand-rolled SVG (no charting library — see dragReorder.js's own note
+    // on why this app avoids CDN/npm UI dependencies) rendering each month
+    // as a single two-tone column split at a zero baseline: the income
+    // portion rises above it, the expense portion drops below it, so a
+    // month's total bar length already reads as "how much moved" while the
+    // split point shows the balance between the two. Net is overlaid as its
+    // own line/dots in the accent color, same "single measure, one hue"
+    // convention the net-worth trend uses elsewhere on this page.
+    function buildIncomeExpenseSvg(rows) {
+        const maxCents = Math.max(1, ...rows.map(r => Math.max(r.incomeCents, Math.abs(r.expenseCents))));
+        const width = Math.max(rows.length * 64, 320);
+        const height = 220;
+        const padTop = 14, padBottom = 24, padSide = 12;
+        const chartHeight = height - padTop - padBottom;
+        const zeroY = padTop + chartHeight / 2;
+        const scale = (chartHeight / 2) / maxCents;
+        const bandWidth = (width - padSide * 2) / rows.length;
+        const barWidth = Math.min(36, bandWidth * 0.5);
+
+        const points = rows.map((r, i) => {
+            const netCents = r.incomeCents + r.expenseCents;
+            const cx = padSide + i * bandWidth + bandWidth / 2;
+            return `${cx},${zeroY - netCents * scale}`;
+        });
+
+        const bars = rows.map((r, i) => {
+            const netCents = r.incomeCents + r.expenseCents;
+            const x = padSide + i * bandWidth + (bandWidth - barWidth) / 2;
+            const incomeH = r.incomeCents * scale;
+            const expenseH = Math.abs(r.expenseCents) * scale;
+            const cx = padSide + i * bandWidth + bandWidth / 2;
+            return `
+                <rect class="ie-bar-income" x="${x}" y="${zeroY - incomeH}" width="${barWidth}" height="${incomeH}">
+                    <title>${r.month} income: ${window.BWMoney.formatCents(r.incomeCents)}</title>
+                </rect>
+                <rect class="ie-bar-expense" x="${x}" y="${zeroY}" width="${barWidth}" height="${expenseH}">
+                    <title>${r.month} expense: ${window.BWMoney.formatCents(r.expenseCents)}</title>
+                </rect>
+                <circle class="ie-net-dot" cx="${cx}" cy="${zeroY - netCents * scale}" r="3">
+                    <title>${r.month} net: ${window.BWMoney.formatCents(netCents)}</title>
+                </circle>
+                <text class="ie-month-label" x="${cx}" y="${height - 6}" text-anchor="middle">${monthShortLabel(r.month)}</text>
+            `;
+        }).join('');
+
+        return `
+            <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Monthly income, expense, and net">
+                <line class="ie-zero-line" x1="${padSide}" y1="${zeroY}" x2="${width - padSide}" y2="${zeroY}"></line>
+                ${bars}
+                <polyline class="ie-net-line" points="${points.join(' ')}"></polyline>
+            </svg>
+        `;
+    }
+
     function renderIncomeExpense(rows) {
-        const container = document.getElementById('income-expense-list');
-        container.innerHTML = '';
+        const chart = document.getElementById('income-expense-chart');
+        const tbody = document.getElementById('income-expense-tbody');
         if (rows.length === 0) {
-            container.innerHTML = '<div class="empty-state">No transactions in this range.</div>';
+            chart.innerHTML = '<div class="empty-state">No transactions in this range.</div>';
+            tbody.innerHTML = '';
             return;
         }
-        const max = Math.max(1, ...rows.map(r => Math.max(r.incomeCents, Math.abs(r.expenseCents))));
-        rows.forEach(r => {
-            const incomePct = Math.round((r.incomeCents / max) * 100);
-            const expensePct = Math.round((Math.abs(r.expenseCents) / max) * 100);
-            const div = document.createElement('div');
-            div.className = 'diverging-row';
-            div.innerHTML = `
-                <span>${r.month}</span>
-                <span class="diverging-income-track"><span class="diverging-fill-income" style="width:${incomePct}%"></span></span>
-                <span class="diverging-expense-track"><span class="diverging-fill-expense" style="width:${expensePct}%"></span></span>
+        // The chart reads left-to-right chronologically (oldest to newest —
+        // reversing a time series would be disorienting), but the table
+        // below it lists newest-first, matching the rest of the app's list
+        // conventions (register, etc.).
+        chart.innerHTML = buildIncomeExpenseSvg(rows);
+        tbody.innerHTML = [...rows].reverse().map((r) => {
+            const netCents = r.incomeCents + r.expenseCents;
+            return `
+                <tr>
+                    <td>${r.month}</td>
+                    <td class="money money-positive">${window.BWMoney.formatCents(r.incomeCents)}</td>
+                    <td class="money money-negative">${window.BWMoney.formatCents(r.expenseCents)}</td>
+                    <td class="money ${netCents < 0 ? 'money-negative' : 'money-positive'}">${window.BWMoney.formatCents(netCents)}</td>
+                </tr>
             `;
-            container.appendChild(div);
-
-            // The bars alone only show relative proportion — this line puts
-            // the actual dollar totals underneath, colored to match their
-            // bar, so the chart is readable on its own instead of needing a
-            // hover/tooltip to know what a bar's length means.
-            const valuesDiv = document.createElement('div');
-            valuesDiv.className = 'diverging-values';
-            valuesDiv.innerHTML = `
-                <span></span>
-                <span class="money money-positive">${window.BWMoney.formatCents(r.incomeCents)}</span>
-                <span class="money money-negative">${window.BWMoney.formatCents(r.expenseCents)}</span>
-            `;
-            container.appendChild(valuesDiv);
-        });
+        }).join('');
     }
 
     function renderNetWorth(rows) {
         const tbody = document.getElementById('net-worth-tbody');
-        tbody.innerHTML = rows.map(r => `
+        tbody.innerHTML = [...rows].reverse().map(r => `
             <tr><td>${r.month}</td><td class="money ${r.netWorthCents < 0 ? 'money-negative' : 'money-positive'}">${window.BWMoney.formatCents(r.netWorthCents)}</td></tr>
         `).join('');
     }
@@ -93,5 +180,17 @@
     }
 
     runBtn.addEventListener('click', run);
+    document.getElementById('prev-month-btn').addEventListener('click', () => {
+        month = shiftMonth(month, -1);
+        syncMonthControls();
+        run();
+    });
+    document.getElementById('next-month-btn').addEventListener('click', () => {
+        month = shiftMonth(month, 1);
+        syncMonthControls();
+        run();
+    });
+
+    syncMonthControls();
     run();
 })();

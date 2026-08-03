@@ -9,40 +9,34 @@
 // (spent relative to assigned), so it gets its own 3-way color scheme
 // instead of the single accent hue, same as income-vs-expense's diverging
 // pair gets its own colors instead of one.
-.bar-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+//
+// Built as one SVG (public/js/reports.js's buildSpendingSvg) rather than a
+// list of divs — a fluid viewBox with no fixed pixel height, since a
+// category list can be any length; width:100%/height:auto lets the browser
+// derive the rendered height from the viewBox's own aspect ratio.
+.spend-chart {
+    width: 100%;
+
+    svg {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
 }
 
-.bar-list-row {
-    display: grid;
-    grid-template-columns: 160px 1fr 90px;
-    align-items: center;
-    gap: 12px;
+.spend-bar-label {
+    font-size: 11px;
+    fill: $text-secondary;
+    font-family: $font-family;
 }
 
-.bar-list-label {
-    font-size: 0.88rem;
-    color: $text-secondary;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.spend-bar-value {
+    font-size: 11px;
+    fill: $text-primary;
+    font-family: $font-mono;
 }
 
-.bar-list-track {
-    background: $bg-hover;
-    border-radius: $radius-sm;
-    height: 10px;
-    position: relative;
-}
-
-.bar-list-fill {
-    background: $accent;
-    height: 100%;
-    border-radius: $radius-sm;
-    min-width: 4px;
-}
+.spend-bar-default { fill: $accent; }
 
 // Budget-vs-actual variants (see public/js/reports.js's budgetFillClass) —
 // on-budget (spent exactly matches assigned) and over-budget map onto the
@@ -50,15 +44,9 @@
 // "right"/"wrong" direction; under-budget (unused headroom, not a problem)
 // gets the brand gold instead of a third arbitrary hue, so it doesn't read
 // as good (green) or bad (red) — just "different from both."
-.bar-fill-on-budget { background: $money-positive; }
-.bar-fill-over-budget { background: $money-negative; }
-.bar-fill-under-budget { background: $gold; }
-
-.bar-list-value {
-    text-align: right;
-    font-family: $font-mono;
-    font-size: 0.85rem;
-}
+.spend-bar-on-budget { fill: $money-positive; }
+.spend-bar-over-budget { fill: $money-negative; }
+.spend-bar-under-budget { fill: $gold; }
 
 // Income vs. expense: two series with real polarity around zero — a
 // diverging pair (green/red) plus net as its own single-hue overlay (same
@@ -85,7 +73,7 @@
 
     // Reused as-is (generic legend-row styling, nothing income/expense
     // specific about the class itself) for the spending-by-category
-    // budget-status legend — see .bar-fill-on-budget and friends above.
+    // budget-status legend — see .spend-bar-on-budget and friends above.
     .legend-on-budget .legend-swatch { background: $money-positive; }
     .legend-over-budget .legend-swatch { background: $money-negative; }
     .legend-under-budget .legend-swatch { background: $gold; }

@@ -47,36 +47,64 @@
     // never shown against a comparison that wouldn't actually mean anything.
     function budgetFillClass(spentCents, assignedCents) {
         const spent = Math.abs(spentCents);
-        if (spent === assignedCents) return 'bar-fill-on-budget';
-        return spent > assignedCents ? 'bar-fill-over-budget' : 'bar-fill-under-budget';
+        if (spent === assignedCents) return 'spend-bar-on-budget';
+        return spent > assignedCents ? 'spend-bar-over-budget' : 'spend-bar-under-budget';
+    }
+
+    // Category names are user data (created via /api/categories), and they
+    // land as SVG text content below — escape so a name containing "&" or
+    // "<" can't break the markup this gets parsed as.
+    function escapeXml(str) {
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Horizontal bar chart, one row per category, ranked longest-to-shortest
+    // (rows already arrive sorted that way from the server). Same hand-rolled
+    // SVG approach as buildIncomeExpenseSvg below — a fluid viewBox with no
+    // fixed pixel height, since the row count (and so the natural chart
+    // height) varies with however many categories had spending.
+    function buildSpendingSvg(rows) {
+        const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r.totalCents)));
+        const rowH = 32, barH = 16;
+        const padTop = 6, padBottom = 6;
+        const labelWidth = 150, valueWidth = 150;
+        const width = 640;
+        const barMaxWidth = width - labelWidth - valueWidth;
+        const height = rows.length * rowH + padTop + padBottom;
+
+        const bars = rows.map((r, i) => {
+            const spentAbs = Math.abs(r.totalCents);
+            const barWidth = Math.max(3, (spentAbs / maxAbs) * barMaxWidth);
+            const y = padTop + i * rowH;
+            const cy = y + barH / 2;
+            const hasBudget = r.assignedCents !== null && r.assignedCents !== undefined;
+            const fillClass = hasBudget ? budgetFillClass(r.totalCents, r.assignedCents) : 'spend-bar-default';
+            const label = escapeXml(r.category ? r.category.name : 'Uncategorized');
+            const valueText = escapeXml(
+                window.BWMoney.formatCents(r.totalCents) + (hasBudget ? ` / ${window.BWMoney.formatCents(r.assignedCents)}` : '')
+            );
+            return `
+                <text class="spend-bar-label" x="${labelWidth - 10}" y="${cy}" dominant-baseline="middle" text-anchor="end">${label}</text>
+                <rect class="spend-bar-fill ${fillClass}" x="${labelWidth}" y="${y}" width="${barWidth}" height="${barH}" rx="3">
+                    <title>${label}: ${valueText}</title>
+                </rect>
+                <text class="spend-bar-value" x="${labelWidth + barMaxWidth + 8}" y="${cy}" dominant-baseline="middle" text-anchor="start">${valueText}</text>
+            `;
+        }).join('');
+
+        return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Spending by category">${bars}</svg>`;
     }
 
     function renderSpending(rows) {
-        const list = document.getElementById('spending-bar-list');
+        const chart = document.getElementById('spending-chart');
         const legend = document.getElementById('spending-legend');
-        list.innerHTML = '';
         if (rows.length === 0) {
-            list.innerHTML = '<div class="empty-state">No spending in this range.</div>';
+            chart.innerHTML = '<div class="empty-state">No spending in this range.</div>';
             legend.hidden = true;
             return;
         }
-        const hasBudgetData = rows.some(r => r.assignedCents !== null && r.assignedCents !== undefined);
-        legend.hidden = !hasBudgetData;
-
-        const max = Math.max(...rows.map(r => Math.abs(r.totalCents)));
-        rows.forEach(r => {
-            const pct = max ? Math.max(4, Math.round((Math.abs(r.totalCents) / max) * 100)) : 4;
-            const hasBudget = r.assignedCents !== null && r.assignedCents !== undefined;
-            const fillClass = hasBudget ? budgetFillClass(r.totalCents, r.assignedCents) : '';
-            const div = document.createElement('div');
-            div.className = 'bar-list-row';
-            div.innerHTML = `
-                <span class="bar-list-label">${r.category ? r.category.name : 'Uncategorized'}</span>
-                <span class="bar-list-track"><span class="bar-list-fill ${fillClass}" style="width:${pct}%"></span></span>
-                <span class="bar-list-value money">${window.BWMoney.formatCents(r.totalCents)}${hasBudget ? ` <span class="muted" style="font-size:0.85em;">/ ${window.BWMoney.formatCents(r.assignedCents)} budgeted</span>` : ''}</span>
-            `;
-            list.appendChild(div);
-        });
+        legend.hidden = !rows.some(r => r.assignedCents !== null && r.assignedCents !== undefined);
+        chart.innerHTML = buildSpendingSvg(rows);
     }
 
     // 'YYYY-MM' -> "Jan '26" — compact enough to fit as an axis label even

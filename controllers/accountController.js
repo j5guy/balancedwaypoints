@@ -3,6 +3,7 @@
 // ever touches req.session.userId's own document.
 const usersDb = require('../services/database/users');
 const { encrypt } = require('../utils/secretCrypto');
+const { generateApiKey } = require('../utils/apiKeyCrypto');
 const { resolveUserSmtp, testUserSmtp } = require('../services/mail/userMailer');
 
 const VALID_PORT = (port) => Number.isInteger(port) && port > 0 && port <= 65535;
@@ -42,7 +43,13 @@ function serializeAccount(user) {
         },
         weeklyReportEmail: !!(user.preferences && user.preferences.weeklyReportEmail),
         homeDashboard: (user.preferences && user.preferences.homeDashboard) || 'budget',
-        themeColors: user.themeColors
+        themeColors: user.themeColors,
+        apiKey: {
+            configured: !!(user.apiKey && user.apiKey.prefix),
+            prefix: (user.apiKey && user.apiKey.prefix) || null,
+            createdAt: (user.apiKey && user.apiKey.createdAt) || null,
+            lastUsedAt: (user.apiKey && user.apiKey.lastUsedAt) || null
+        }
     };
 }
 
@@ -117,4 +124,25 @@ async function testSmtp(req, res) {
     res.json(result);
 }
 
-module.exports = { getAccount, updateSmtp, clearSmtp, testSmtp };
+// Generates (or regenerates, invalidating whatever key existed before) this
+// user's read-only report API key — see models/user.js's apiKey field and
+// middleware/auth.js's requireApiKeyOrAuth. The raw key is returned here and
+// only here: it's hashed before being stored, so this is the one and only
+// chance to see/copy it.
+async function generateApiKeyForAccount(req, res) {
+    const { raw, hash, prefix } = generateApiKey();
+    const user = await usersDb.setApiKey(req.session.userId, { hash, prefix });
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    res.json({ ...serializeAccount(user), rawApiKey: raw });
+}
+
+async function revokeApiKeyForAccount(req, res) {
+    const user = await usersDb.clearApiKey(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    res.json(serializeAccount(user));
+}
+
+module.exports = {
+    getAccount, updateSmtp, clearSmtp, testSmtp,
+    generateApiKeyForAccount, revokeApiKeyForAccount
+};

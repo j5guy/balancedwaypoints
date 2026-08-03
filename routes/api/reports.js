@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../../controllers/reportsController');
-const { requireApiAuth } = require('../../middleware/auth');
+const { requireApiKeyOrAuth } = require('../../middleware/auth');
 
-router.use(requireApiAuth);
+router.use(requireApiKeyOrAuth);
 
 router.get('/spending-by-category', controller.spending);
 router.get('/income-vs-expense', controller.incomeExpense);

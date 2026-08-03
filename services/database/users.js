@@ -10,7 +10,20 @@ const create = (data) => User.create(data);
 const update = (id, data) => User.findByIdAndUpdate(id, data, { new: true, runValidators: true }).exec();
 const remove = (id) => User.findByIdAndDelete(id).exec();
 
+// See models/user.js's apiKey field / middleware/auth.js's requireApiKeyOrAuth.
+const findByApiKeyHash = (hash) => User.findOne({ 'apiKey.hash': hash }).exec();
+const setApiKey = (id, { hash, prefix }) => User.findByIdAndUpdate(id, {
+    apiKey: { hash, prefix, createdAt: new Date(), lastUsedAt: null }
+}, { new: true, runValidators: true }).exec();
+const clearApiKey = (id) => User.findByIdAndUpdate(id, {
+    apiKey: { hash: null, prefix: null, createdAt: null, lastUsedAt: null }
+}, { new: true, runValidators: true }).exec();
+// Fire-and-forget from the caller (a request shouldn't wait on this) — swallow
+// errors here so an unawaited rejection can't surface as an unhandled one.
+const touchApiKeyLastUsed = (id) => User.updateOne({ _id: id }, { $set: { 'apiKey.lastUsedAt': new Date() } }).exec().catch(() => {});
+
 module.exports = {
     count, findByEmail, findByEmailWithPassword, findById, findByLdapUsername,
-    list, create, update, remove
+    list, create, update, remove,
+    findByApiKeyHash, setApiKey, clearApiKey, touchApiKeyLastUsed
 };

@@ -102,6 +102,22 @@ const userSchema = new mongoose.Schema({
             navText: { type: String, default: null }
         }
     },
+    // Read-only API access for external tools (e.g. a Grafana Infinity
+    // datasource reading /api/reports/*) — see middleware/auth.js's
+    // requireApiKeyOrAuth and utils/apiKeyCrypto.js. `hash` is an HMAC-SHA256
+    // digest, not the key itself — bcrypt (this app's password convention)
+    // is deliberately not used here since its cost exists to blunt
+    // brute-forcing low-entropy human passwords, which doesn't apply to a
+    // random 256-bit token, and HMAC's determinism is what lets a request's
+    // key be looked up directly by hash instead of bcrypt-comparing against
+    // every user. `prefix` is safe to display in the UI — it's derived from
+    // the raw key but isn't the secret itself.
+    apiKey: {
+        hash: { type: String, default: null, select: false },
+        prefix: { type: String, default: null },
+        createdAt: { type: Date, default: null },
+        lastUsedAt: { type: Date, default: null }
+    },
     // Register display preferences — persist per-user (not per-browser) so
     // they follow whoever's logged in across devices. Applied on every
     // account's register page (see accounts/show.ejs + public/js/register.js).
@@ -149,5 +165,10 @@ const userSchema = new mongoose.Schema({
         weeklyReportEmail: { type: Boolean, default: false }
     }
 }, { timestamps: true });
+
+// Sparse since most users never generate a key — only indexes the docs that
+// actually have one, and is what makes requireApiKeyOrAuth's per-request
+// lookup (find the user by this exact hash) an indexed O(1) query.
+userSchema.index({ 'apiKey.hash': 1 }, { sparse: true });
 
 module.exports = mongoose.model('User', userSchema);

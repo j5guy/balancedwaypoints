@@ -32,6 +32,7 @@
             <div class="budget-group-title">
                 <span class="drag-handle">⠿</span>${group.name}
                 <button type="button" class="btn btn-secondary btn-sm" data-add-category style="margin-left:8px;">+ category</button>
+                <button type="button" class="icon-btn" data-delete-group title="Delete group" style="border:none;background:none;cursor:pointer;">🗑</button>
             </div>
             <div class="budget-group-rows"></div>
         `;
@@ -54,7 +55,22 @@
                 showError(err);
             }
         });
+        section.querySelector('[data-delete-group]').addEventListener('click', () => deleteGroup(group));
         return section;
+    }
+
+    // No confirmation modal (unlike deleting a category/account) — the
+    // server already refuses to delete a group that still has categories in
+    // it (see controllers/categoryGroupsController.js), so there's no
+    // cascading data loss to guard against here, just an empty group record.
+    async function deleteGroup(group) {
+        if (!confirm(`Delete the group "${group.name}"? It must be empty — move or delete its categories first.`)) return;
+        try {
+            await window.BWApi.apiFetch(`/api/category-groups/${group.id}`, { method: 'DELETE' });
+            render();
+        } catch (err) {
+            showError(err);
+        }
     }
 
     function categoryRow(row) {
@@ -99,6 +115,7 @@
             <div class="budget-group-title">
                 ${group.name}
                 <button type="button" class="btn btn-secondary btn-sm" data-add-category style="margin-left:8px;">+ category</button>
+                <button type="button" class="icon-btn" data-delete-group title="Delete group" style="border:none;background:none;cursor:pointer;">🗑</button>
             </div>
             <div class="income-category-list"></div>
         `;
@@ -124,6 +141,7 @@
                 showError(err);
             }
         });
+        section.querySelector('[data-delete-group]').addEventListener('click', () => deleteGroup(group));
         return section;
     }
 

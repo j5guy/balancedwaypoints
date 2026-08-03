@@ -125,9 +125,12 @@
         } else {
             categoriesInGroup.forEach((c) => {
                 const row = document.createElement('div');
-                row.style.padding = '8px 14px';
-                row.style.borderBottom = '1px solid var(--border-light)';
-                row.textContent = c.name;
+                row.style.cssText = 'padding:8px 14px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;';
+                row.innerHTML = `
+                    <span>${c.name}</span>
+                    <button type="button" class="icon-btn" data-delete-category title="Delete category" style="border:none;background:none;cursor:pointer;">🗑</button>
+                `;
+                row.querySelector('[data-delete-category]').addEventListener('click', () => openDeleteCategoryModal(c));
                 list.appendChild(row);
             });
         }

@@ -109,6 +109,18 @@
 #dashboard-widgets.align-center .widget { text-align: center; }
 #dashboard-widgets.align-right .widget { text-align: right; }
 
+// The Customize modal's "Totals & summaries" list of already-added widget
+// instances (public/js/dashboard.js's buildTotalsList) — a plain row, not
+// .checkbox-row, since there's no checkbox here, just a label + remove button.
+.widget-instance-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid $border-light;
+    font-size: 0.9rem;
+}
+
 .dashboard-range-nav {
     display: flex;
     align-items: center;

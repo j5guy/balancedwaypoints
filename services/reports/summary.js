@@ -4,12 +4,18 @@ const Transaction = require('../../models/transaction');
 // incomeVsExpense.js, just collapsed to one total instead of grouped by
 // month. Powers the dashboard's Summary/Total Income/Total Expense/Net
 // Budget widgets (and their Grafana equivalents) without a separate query
-// per widget.
-async function summary({ from, to }) {
+// per widget. `accountId` is optional — omitted means "every account" (the
+// dashboard's "All accounts" scope); the widget-instance model that carries
+// this is documented on models/user.js's preferences.dashboard.widgets.
+async function summary({ from, to, accountId }) {
     const dateFilter = {};
     if (from) dateFilter.$gte = new Date(from);
     if (to) dateFilter.$lte = new Date(to);
-    const match = { transferAccount: null, ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}) };
+    const match = {
+        transferAccount: null,
+        ...(accountId ? { account: accountId } : {}),
+        ...(Object.keys(dateFilter).length ? { date: dateFilter } : {})
+    };
 
     const [agg] = await Transaction.aggregate([
         { $match: match },

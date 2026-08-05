@@ -1,5 +1,14 @@
 const mongoose = require('mongoose');
 
+// One dashboard widget instance — see preferences.dashboard.widgets below
+// for the full explanation. `_id: false` since these are identified by
+// their own client-generated `id` field, not Mongo's.
+const dashboardWidgetSchema = new mongoose.Schema({
+    id: { type: String, required: true },
+    type: { type: String, required: true },
+    accountId: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
     email: {
         type: String,
@@ -163,12 +172,22 @@ const userSchema = new mongoose.Schema({
         // as per-schedule email alerts (see models/schedule.js's notifyByEmail).
         weeklyReportEmail: { type: Boolean, default: false },
         // The "Dashboard" page's (views/dashboard/index.ejs) widget picker —
-        // an ORDERED list of enabled widget-type strings (order = display
-        // order, absence = hidden), not x/y/w/h: the dashboard supports
+        // an ORDERED list of widget INSTANCES (order = display order,
+        // absence = hidden), not x/y/w/h: the dashboard supports
         // drag-to-reorder only, no free resize (see public/js/dashboard.js —
         // reorder uses the same native-HTML5-drag public/js/dragReorder.js
         // already used on Budget/Register, which needs no inline style
         // writes and so no CSP change, unlike a real resize grid would).
+        // Each instance has its own client-generated `id` (not Mongo's _id —
+        // simpler to keep stable across an unsaved reorder than round-
+        // tripping a server-assigned id) because the "totals" widget types
+        // (summary/totalIncome/totalExpense/netBudget) are repeatable: a
+        // household can add one per account plus an overall one, each
+        // independently scoped via `accountId` (null = all accounts). The
+        // trend widgets (netWorth/cashFlow) aren't account-scoped — their
+        // report endpoints only ever compute across the whole household —
+        // so the UI only ever lets those two exist as a single toggled
+        // instance, not added repeatedly.
         // Validated server-side against a fixed whitelist in
         // controllers/authController.js's updatePreferences before save,
         // same as themeColors below — Object.assign wouldn't merge an array
@@ -176,8 +195,15 @@ const userSchema = new mongoose.Schema({
         // merge the simpler boolean sub-objects above get.
         dashboard: {
             widgets: {
-                type: [String],
-                default: ['summary', 'totalIncome', 'totalExpense', 'netBudget', 'netWorth', 'cashFlow']
+                type: [dashboardWidgetSchema],
+                default: () => [
+                    { id: 'summary', type: 'summary', accountId: null },
+                    { id: 'totalIncome', type: 'totalIncome', accountId: null },
+                    { id: 'totalExpense', type: 'totalExpense', accountId: null },
+                    { id: 'netBudget', type: 'netBudget', accountId: null },
+                    { id: 'netWorth', type: 'netWorth', accountId: null },
+                    { id: 'cashFlow', type: 'cashFlow', accountId: null }
+                ]
             },
             dateRangePreset: {
                 type: String,

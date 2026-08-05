@@ -205,10 +205,38 @@ function sanitizeThemeColorGroup(input, existing) {
 const DASHBOARD_WIDGETS = ['summary', 'totalIncome', 'totalExpense', 'netBudget', 'netWorth', 'cashFlow'];
 const DASHBOARD_DATE_RANGES = ['month', 'last3', 'last6', 'last12', 'year', 'all'];
 const DASHBOARD_ALIGNS = ['left', 'center', 'right'];
+const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
+
+// Each widget instance is { id, type, accountId } — see models/user.js's
+// preferences.dashboard.widgets for why these are instances rather than a
+// plain type list (repeatable, per-account "totals" widgets). `id` just
+// needs to be a non-empty string (the client generates it; it's an opaque
+// drag-reorder/remove key, not something this needs to police the shape
+// of), `type` must be one of the known widget types, and `accountId` is
+// either a well-formed ObjectId string or null ("all accounts") — this
+// doesn't verify the account still exists, same light-touch validation
+// level as the rest of this file (a stale/deleted account id just makes
+// that one widget instance render empty, not a security concern in a
+// single-household app where account ids aren't secret).
+function sanitizeDashboardWidgets(input) {
+    const seenIds = new Set();
+    const widgets = [];
+    for (const w of input) {
+        if (!w || typeof w.id !== 'string' || !w.id || seenIds.has(w.id)) continue;
+        if (!DASHBOARD_WIDGETS.includes(w.type)) continue;
+        seenIds.add(w.id);
+        widgets.push({
+            id: w.id,
+            type: w.type,
+            accountId: typeof w.accountId === 'string' && OBJECT_ID_RE.test(w.accountId) ? w.accountId : null
+        });
+    }
+    return widgets;
+}
 
 function sanitizeDashboard(input, existing) {
     const widgets = Array.isArray(input.widgets)
-        ? [...new Set(input.widgets.filter(w => DASHBOARD_WIDGETS.includes(w)))]
+        ? sanitizeDashboardWidgets(input.widgets)
         : existing.widgets;
     const dateRangePreset = DASHBOARD_DATE_RANGES.includes(input.dateRangePreset)
         ? input.dateRangePreset

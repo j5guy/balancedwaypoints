@@ -6,24 +6,49 @@
     const monthNavEl = document.getElementById('dashboard-month-nav');
     const monthLabelEl = document.getElementById('dashboard-month-label');
 
-    // Every widget type the "Customize" checklist can offer — kept in sync
-    // with the server-side whitelist in controllers/authController.js's
-    // sanitizeDashboard, which is the one that actually enforces it; this
-    // list is just what the checklist UI renders.
-    const WIDGET_CATALOG = [
-        { type: 'summary', label: 'Summary Card' },
-        { type: 'totalIncome', label: 'Total Income' },
-        { type: 'totalExpense', label: 'Total Expense' },
-        { type: 'netBudget', label: 'Net Budget' },
+    // Net Worth/Cash Flow are whole-household only (their report endpoints
+    // have no account filter — netWorth.js/incomeVsExpense.js always sum
+    // every account), so they're a simple show/hide toggle: at most one
+    // instance. The "totals" widgets are backed by /api/reports/summary,
+    // which does accept an optional account filter — so those are
+    // repeatable: add one per account, plus an overall one, each its own
+    // instance. See models/user.js's preferences.dashboard.widgets for the
+    // full instance shape ({id, type, accountId}).
+    const SINGLETON_WIDGETS = [
         { type: 'netWorth', label: 'Net Worth Graph' },
         { type: 'cashFlow', label: 'Cash Flow Graph' }
     ];
-    const DEFAULT_WIDGETS = WIDGET_CATALOG.map(w => w.type);
+    const TOTALS_WIDGETS = [
+        { type: 'summary', label: 'Summary Card' },
+        { type: 'totalIncome', label: 'Total Income' },
+        { type: 'totalExpense', label: 'Total Expense' },
+        { type: 'netBudget', label: 'Net Budget' }
+    ];
+    const WIDGET_LABELS = Object.fromEntries([...SINGLETON_WIDGETS, ...TOTALS_WIDGETS].map(w => [w.type, w.label]));
+    const DEFAULT_WIDGETS = [
+        { id: 'summary', type: 'summary', accountId: null },
+        { id: 'totalIncome', type: 'totalIncome', accountId: null },
+        { id: 'totalExpense', type: 'totalExpense', accountId: null },
+        { id: 'netBudget', type: 'netBudget', accountId: null },
+        { id: 'netWorth', type: 'netWorth', accountId: null },
+        { id: 'cashFlow', type: 'cashFlow', accountId: null }
+    ];
 
     let currentWidgets = DEFAULT_WIDGETS;
     let dateRangePreset = 'month';
     let align = 'center';
     let month = window.BWDate.todayDateInputValue().slice(0, 7); // 'YYYY-MM', only used for the 'month' preset
+    let accounts = []; // loaded once in init() — {id, name, closed, ...}
+
+    function makeWidgetId(type) {
+        return `${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    }
+
+    function accountLabel(accountId) {
+        if (!accountId) return 'All accounts';
+        const account = accounts.find(a => a.id === accountId);
+        return account ? account.name : 'Unknown account';
+    }
 
     // Applies as a class on the container rather than per-widget — text-align
     // is inherited, so this one rule cascades down to every widget's heading,
@@ -97,10 +122,11 @@
         return 12;
     }
 
-    function rangeQuery(range) {
+    function rangeQuery(range, accountId) {
         const params = new URLSearchParams();
         if (range.from) params.set('from', range.from);
         if (range.to) params.set('to', range.to);
+        if (accountId) params.set('account', accountId);
         return params.toString();
     }
 
@@ -118,6 +144,15 @@
             });
         } catch (err) {
             showError(err);
+        }
+    }
+
+    async function loadAccounts() {
+        try {
+            const res = await window.BWApi.apiFetch('/api/accounts');
+            accounts = (res.accounts || []).filter(a => !a.closed);
+        } catch (err) {
+            accounts = [];
         }
     }
 
@@ -213,18 +248,23 @@
     // ── Widget builders — each returns a draggable .widget element, or null
     // for an unknown/removed widget type (defensive: a stored preference
     // could reference a type that no longer exists after a future change).
-    async function buildWidget(type) {
+    // `widget` is a full instance ({id, type, accountId}), not just a type
+    // string — the "totals" types render their account scope in the
+    // heading so multiple instances of the same type are distinguishable.
+    async function buildWidget(widget) {
+        const { id, type, accountId } = widget;
         const div = document.createElement('div');
         div.className = 'widget';
         div.draggable = true;
-        div.dataset.dragId = type;
+        div.dataset.dragId = id;
         const handle = '<span class="drag-handle">⠿</span>';
+        const scopeSuffix = TOTALS_WIDGETS.some(w => w.type === type) ? ` — ${accountLabel(accountId)}` : '';
 
         if (type === 'summary') {
             div.classList.add('widget-full');
-            const s = await window.BWApi.apiFetch(`/api/reports/summary?${rangeQuery(periodRange(dateRangePreset))}`);
+            const s = await window.BWApi.apiFetch(`/api/reports/summary?${rangeQuery(periodRange(dateRangePreset), accountId)}`);
             div.innerHTML = `
-                <div class="stat-label">${handle}Summary</div>
+                <div class="stat-label">${handle}Summary${scopeSuffix}</div>
                 <div class="widget-summary-grid">
                     <div><span class="stat-label">Income</span><div class="stat-value widget-summary-value money-positive">${window.BWMoney.formatCents(s.totalIncomeCents)}</div></div>
                     <div><span class="stat-label">Expense</span><div class="stat-value widget-summary-value money-negative">${window.BWMoney.formatCents(s.totalExpenseCents)}</div></div>
@@ -235,13 +275,13 @@
         }
 
         if (type === 'totalIncome' || type === 'totalExpense' || type === 'netBudget') {
-            const s = await window.BWApi.apiFetch(`/api/reports/summary?${rangeQuery(periodRange(dateRangePreset))}`);
+            const s = await window.BWApi.apiFetch(`/api/reports/summary?${rangeQuery(periodRange(dateRangePreset), accountId)}`);
             const config = {
                 totalIncome: { label: 'Total Income', value: s.totalIncomeCents, cls: 'money-positive' },
                 totalExpense: { label: 'Total Expense', value: s.totalExpenseCents, cls: 'money-negative' },
                 netBudget: { label: 'Net Budget', value: s.netCents, cls: s.netCents < 0 ? 'money-negative' : 'money-positive' }
             }[type];
-            div.innerHTML = `<div class="stat-label">${handle}${config.label}</div><div class="stat-value ${config.cls}">${window.BWMoney.formatCents(config.value)}</div>`;
+            div.innerHTML = `<div class="stat-label">${handle}${config.label}${scopeSuffix}</div><div class="stat-value ${config.cls}">${window.BWMoney.formatCents(config.value)}</div>`;
             return div;
         }
 
@@ -269,38 +309,91 @@
         widgetsContainer.innerHTML = '';
         elements.forEach(el => { if (el) widgetsContainer.appendChild(el); });
         window.BWDragReorder.makeSortable(widgetsContainer, async (ids) => {
-            currentWidgets = ids;
+            // ids are just the dragged data-drag-id (widget.id) strings —
+            // map back to the full instance objects in their new order.
+            currentWidgets = ids.map(id => currentWidgets.find(w => w.id === id)).filter(Boolean);
             await saveDashboardPrefs();
         });
     }
 
     // ── Customize modal ──────────────────────────────────────────────
+    // Edits happen on a draft copy so Cancel can discard them cleanly —
+    // otherwise an add/remove in the "totals" list would already have
+    // mutated currentWidgets before Save is ever clicked.
     const customizeOverlay = document.getElementById('customize-dashboard-overlay');
-    const checklistContainer = document.getElementById('widget-checklist');
+    const singletonChecklist = document.getElementById('singleton-widget-checklist');
+    const totalsListEl = document.getElementById('totals-widget-list');
+    const addWidgetType = document.getElementById('add-widget-type');
+    const addWidgetAccount = document.getElementById('add-widget-account');
     const alignSelect = document.getElementById('widget-align');
+    let draftWidgets = [];
 
-    function buildWidgetChecklist() {
-        checklistContainer.innerHTML = WIDGET_CATALOG.map(w => `
+    function buildSingletonChecklist() {
+        singletonChecklist.innerHTML = SINGLETON_WIDGETS.map(w => `
             <div class="checkbox-row form-group">
-                <input type="checkbox" id="widget-check-${w.type}" data-widget-type="${w.type}" ${currentWidgets.includes(w.type) ? 'checked' : ''}>
+                <input type="checkbox" id="widget-check-${w.type}" data-widget-type="${w.type}" ${draftWidgets.some(dw => dw.type === w.type) ? 'checked' : ''}>
                 <label for="widget-check-${w.type}">${w.label}</label>
             </div>
         `).join('');
     }
 
+    function buildTotalsList() {
+        const instances = draftWidgets.filter(w => TOTALS_WIDGETS.some(t => t.type === w.type));
+        if (instances.length === 0) {
+            totalsListEl.innerHTML = '<p class="muted" style="font-size:0.85rem;">None added yet.</p>';
+            return;
+        }
+        totalsListEl.innerHTML = instances.map(w => `
+            <div class="widget-instance-row">
+                <span>${WIDGET_LABELS[w.type]} — ${accountLabel(w.accountId)}</span>
+                <button type="button" class="icon-btn" data-remove-instance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+            </div>
+        `).join('');
+        totalsListEl.querySelectorAll('[data-remove-instance]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeInstance);
+                buildTotalsList();
+            });
+        });
+    }
+
+    function populateAccountSelect() {
+        addWidgetAccount.innerHTML = '<option value="">All accounts</option>' +
+            accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
     document.getElementById('customize-dashboard-btn').addEventListener('click', () => {
-        buildWidgetChecklist();
+        draftWidgets = currentWidgets.map(w => ({ ...w }));
+        buildSingletonChecklist();
+        populateAccountSelect();
+        buildTotalsList();
         alignSelect.value = align;
         customizeOverlay.hidden = false;
     });
     document.getElementById('cancel-widgets-btn').addEventListener('click', () => { customizeOverlay.hidden = true; });
     customizeOverlay.addEventListener('click', (e) => { if (e.target === customizeOverlay) customizeOverlay.hidden = true; });
 
+    document.getElementById('add-widget-btn').addEventListener('click', () => {
+        const type = addWidgetType.value;
+        const accountId = addWidgetAccount.value || null;
+        draftWidgets.push({ id: makeWidgetId(type), type, accountId });
+        buildTotalsList();
+    });
+
     document.getElementById('save-widgets-btn').addEventListener('click', async () => {
-        const checked = [...checklistContainer.querySelectorAll('input[type=checkbox]:checked')].map(el => el.dataset.widgetType);
-        // Keep whatever relative order was already on the dashboard for
-        // widgets that stay enabled; newly-checked ones land at the end.
-        currentWidgets = currentWidgets.filter(t => checked.includes(t)).concat(checked.filter(t => !currentWidgets.includes(t)));
+        const checkedSingletons = [...singletonChecklist.querySelectorAll('input[type=checkbox]:checked')].map(el => el.dataset.widgetType);
+        // Drop unchecked singletons; keep everything else (totals instances
+        // + still-checked singletons) in whatever order they're already in.
+        let widgets = draftWidgets.filter((w) => {
+            const isSingleton = SINGLETON_WIDGETS.some(s => s.type === w.type);
+            return !isSingleton || checkedSingletons.includes(w.type);
+        });
+        // Newly-checked singletons that weren't already present land at the end.
+        checkedSingletons.forEach((type) => {
+            if (!widgets.some(w => w.type === type)) widgets.push({ id: type, type, accountId: null });
+        });
+
+        currentWidgets = widgets;
         align = alignSelect.value;
         applyAlign();
         customizeOverlay.hidden = true;
@@ -328,6 +421,7 @@
 
     async function init() {
         try {
+            await loadAccounts();
             const prefs = await window.BWApi.apiFetch('/api/auth/preferences');
             const dash = prefs.dashboard || { widgets: DEFAULT_WIDGETS, dateRangePreset: 'month', align: 'center' };
             currentWidgets = dash.widgets && dash.widgets.length ? dash.widgets : DEFAULT_WIDGETS;

@@ -29,8 +29,8 @@ async function netWorthReport(req, res) {
 }
 
 async function summaryReport(req, res) {
-    const { from, to } = req.query;
-    const result = await summary({ from, to });
+    const { from, to, account } = req.query;
+    const result = await summary({ from, to, accountId: account || null });
     res.json(result);
 }
 

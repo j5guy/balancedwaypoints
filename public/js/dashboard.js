@@ -221,7 +221,7 @@
         const handle = '<span class="drag-handle">⠿</span>';
 
         if (type === 'summary') {
-            div.classList.add('widget-wide');
+            div.classList.add('widget-full');
             const s = await window.BWApi.apiFetch(`/api/reports/summary?${rangeQuery(periodRange(dateRangePreset))}`);
             div.innerHTML = `
                 <div class="stat-label">${handle}Summary</div>

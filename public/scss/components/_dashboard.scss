@@ -25,6 +25,14 @@
     grid-column: span 2;
 }
 
+// Full row width regardless of how many columns the auto-fill .card-grid
+// currently has (unlike .widget-wide's fixed span 2, which could still be
+// narrow on a wide screen with more columns) — used by the Summary widget,
+// whose three-value row needs all the room it can get.
+.widget-full {
+    grid-column: 1 / -1;
+}
+
 .widget-summary-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

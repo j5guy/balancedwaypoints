@@ -9,7 +9,7 @@
 
     function formatCents(cents, masked) {
         if (masked) return MASK_LABEL;
-        const value = (Math.abs(cents) / 100).toFixed(2);
+        const value = (Math.abs(cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const sign = cents < 0 ? '-' : '';
         return `${sign}$${value}`;
     }

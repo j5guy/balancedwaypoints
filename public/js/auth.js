@@ -21,11 +21,21 @@
 
     const ldapToggleRow = document.getElementById('ldap-toggle-row');
     if (ldapToggleRow) {
+        const toggleLink = document.getElementById('toggle-ldap-form-link');
         window.BWApi.apiFetch('/api/auth/ldap-status').then((status) => {
             ldapToggleRow.hidden = !status.enabled;
+            // When an admin's turned LDAP on, it becomes the primary login
+            // method (most likely how this household actually authenticates
+            // day to day) — local email/password is still one click away
+            // via the same toggle link, just no longer the default shown.
+            if (status.enabled) {
+                document.getElementById('login-form').hidden = true;
+                document.getElementById('ldap-login-form').hidden = false;
+                toggleLink.textContent = 'Log in with email instead';
+            }
         }).catch(() => { /* leave hidden — no LDAP option shown if this fails */ });
 
-        document.getElementById('toggle-ldap-form-link').addEventListener('click', (e) => {
+        toggleLink.addEventListener('click', (e) => {
             e.preventDefault();
             document.getElementById('login-form').hidden = !document.getElementById('login-form').hidden;
             const ldapForm = document.getElementById('ldap-login-form');

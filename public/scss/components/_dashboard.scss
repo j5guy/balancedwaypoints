@@ -128,6 +128,52 @@
     stroke-dasharray: 2 2;
 }
 
+// Native <details>/<summary> accordion for the Customize modal's three
+// widget-picker sections — no JS needed for expand/collapse (consistent
+// with this app's no-library-for-simple-interactions convention), and
+// keeping most sections collapsed by default is what actually keeps the
+// modal short; public/scss/components/_modal.scss's .modal-card scroll is
+// just the fallback for whatever's left over.
+.customize-section {
+    border-top: 1px solid $border-light;
+    padding: 12px 0;
+
+    &:first-of-type {
+        border-top: none;
+        padding-top: 0;
+    }
+
+    summary {
+        cursor: pointer;
+        font-weight: 600;
+        padding: 4px 0;
+        list-style: none;
+
+        &::-webkit-details-marker {
+            display: none;
+        }
+
+        // A plain triangle marker via ::before instead of the native one
+        // (hidden above) so it can be rotated on [open] with a transition,
+        // rather than the abrupt native disclosure-triangle swap.
+        &::before {
+            content: '▸';
+            display: inline-block;
+            margin-right: 6px;
+            color: $text-muted;
+            transition: transform 0.15s ease;
+        }
+    }
+
+    &[open] summary::before {
+        transform: rotate(90deg);
+    }
+
+    > *:not(summary):first-of-type {
+        margin-top: 10px;
+    }
+}
+
 // One class on the container rather than per-widget — text-align is
 // inherited, so it cascades to every widget's heading, stat values, and
 // summary-grid cells without a selector per element. Set from

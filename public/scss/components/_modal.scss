@@ -26,6 +26,12 @@
     padding: 24px;
     max-width: 440px;
     width: 100%;
+    // A modal with enough content (e.g. the Dashboard's Customize modal)
+    // could otherwise render taller than the viewport with no way to reach
+    // its own Save/Cancel buttons — this caps it to the visible area and
+    // scrolls internally instead.
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
 }
 
 .link-plain {

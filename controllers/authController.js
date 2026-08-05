@@ -7,6 +7,14 @@ const logger = require('../utils/logger');
 
 const BCRYPT_ROUNDS = 12;
 
+// ldapjs hands back a multi-valued directory attribute as an array
+// regardless of how many values it actually has (schema-dependent — many
+// directories don't declare mail/cn SINGLE-VALUE) — this normalizes either
+// shape to the one value callers actually want.
+function firstValue(v) {
+    return Array.isArray(v) ? v[0] : v;
+}
+
 function establishSession(req, user) {
     req.session.userId = user._id;
     req.session.email = user.email;
@@ -112,8 +120,12 @@ async function loginLdap(req, res) {
         // No guaranteed `mail` attribute in every directory — fall back to a
         // clearly-non-routable placeholder; the user sets a real notifyEmail
         // themselves from My Account before any email actually goes out.
-        const email = (entry.mail || `${username}@ldap.local`).toLowerCase();
-        const displayName = entry.displayName || entry.cn || username;
+        // ldapjs returns a multi-valued attribute (schema-dependent — e.g.
+        // OpenLDAP's mail/cn aren't SINGLE-VALUE) as an array even with just
+        // one value, so `.toLowerCase()` on a raw entry.mail would throw for
+        // those directories — firstValue unwraps that before use.
+        const email = (firstValue(entry.mail) || `${username}@ldap.local`).toLowerCase();
+        const displayName = firstValue(entry.displayName) || firstValue(entry.cn) || username;
 
         const emailConflict = await usersDb.findByEmail(email);
         if (emailConflict) {

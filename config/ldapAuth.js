@@ -72,6 +72,13 @@ function authenticateLdap(config, username, password) {
 
                     const userDn = entry.objectName || entry.dn;
                     const userClient = ldap.createClient({ url: config.url, tlsOptions: { rejectUnauthorized: false } });
+                    // Without this, a socket/TLS-level error on this second
+                    // client (as opposed to one passed into the bind()
+                    // callback below) has no listener to catch it — Node
+                    // throws synchronously on an unhandled EventEmitter
+                    // 'error', outside this Promise's executor, so it can't
+                    // be caught by loginLdap's try/catch either.
+                    userClient.on('error', (err) => reject(new Error('LDAP connection error: ' + err.message)));
                     userClient.bind(userDn, password, (userBindErr) => {
                         userClient.unbind(() => {});
                         if (userBindErr) return reject(new Error('Invalid username or password'));

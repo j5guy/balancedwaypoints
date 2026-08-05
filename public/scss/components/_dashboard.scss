@@ -30,6 +30,22 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
     margin-top: 8px;
+
+    // Grid items default to min-width:auto, meaning they won't shrink below
+    // their content's own intrinsic width — without this, a wide dollar
+    // amount pushes past its column instead of wrapping to fit it.
+    > div {
+        min-width: 0;
+    }
+}
+
+// .stat-value's normal 1.6rem (public/scss/components/_cards.scss) is sized
+// for one number filling a whole card — three side by side need to be
+// smaller to fit without overflowing their column, even with the summary
+// widget spanning two grid columns (.widget-wide).
+.widget-summary-value {
+    font-size: 1.1rem;
+    overflow-wrap: break-word;
 }
 
 .widget-chart {
@@ -37,17 +53,20 @@
 
     svg {
         width: 100%;
-        height: 100px;
+        height: 140px;
         display: block;
     }
 }
 
-.widget-chart-footer {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
-    color: $text-muted;
-    margin-top: 4px;
+.trend-axis-label {
+    font-size: 9px;
+    fill: $text-muted;
+    font-family: $font-family;
+}
+
+.trend-zero-line {
+    stroke: $border;
+    stroke-width: 1;
 }
 
 // Single-hue trend line (one measure, ranked over time) — same "one hue"
@@ -73,6 +92,14 @@
     stroke: $money-negative;
     stroke-width: 2;
 }
+
+// One class on the container rather than per-widget — text-align is
+// inherited, so it cascades to every widget's heading, stat values, and
+// summary-grid cells without a selector per element. Set from
+// public/js/dashboard.js's applyAlign, driven by preferences.dashboard.align.
+#dashboard-widgets.align-left .widget { text-align: left; }
+#dashboard-widgets.align-center .widget { text-align: center; }
+#dashboard-widgets.align-right .widget { text-align: right; }
 
 .dashboard-range-nav {
     display: flex;

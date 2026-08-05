@@ -183,6 +183,15 @@ const userSchema = new mongoose.Schema({
                 type: String,
                 enum: ['month', 'last3', 'last6', 'last12', 'year', 'all'],
                 default: 'month'
+            },
+            // Text alignment for every widget's heading/values — one setting
+            // for the whole dashboard rather than per-widget, to keep
+            // preferences.dashboard.widgets a plain ordered list of type
+            // strings instead of needing per-item config objects.
+            align: {
+                type: String,
+                enum: ['left', 'center', 'right'],
+                default: 'center'
             }
         }
     }

@@ -204,6 +204,7 @@ function sanitizeThemeColorGroup(input, existing) {
 // sanitizeThemeColorGroup above.
 const DASHBOARD_WIDGETS = ['summary', 'totalIncome', 'totalExpense', 'netBudget', 'netWorth', 'cashFlow'];
 const DASHBOARD_DATE_RANGES = ['month', 'last3', 'last6', 'last12', 'year', 'all'];
+const DASHBOARD_ALIGNS = ['left', 'center', 'right'];
 
 function sanitizeDashboard(input, existing) {
     const widgets = Array.isArray(input.widgets)
@@ -212,7 +213,8 @@ function sanitizeDashboard(input, existing) {
     const dateRangePreset = DASHBOARD_DATE_RANGES.includes(input.dateRangePreset)
         ? input.dateRangePreset
         : existing.dateRangePreset;
-    return { widgets, dateRangePreset };
+    const align = DASHBOARD_ALIGNS.includes(input.align) ? input.align : existing.align;
+    return { widgets, dateRangePreset, align };
 }
 
 async function updatePreferences(req, res) {

@@ -20,19 +20,26 @@ function dayKey(date) {
     return date.toISOString().slice(0, 10);
 }
 
-// Past segment: one point per calendar day from (today - pastDays) to
-// today, using real posted transactions. Anchored off accountsDb.balanceFor
-// (today's true balance, same formula as the Accounts page and
-// services/reports/netWorth.js) and walked backward by the window's own
-// transactions, rather than forward from the account's starting balance —
-// cheaper, and avoids re-summing the account's entire history for what's
-// usually just a ~10-day window.
-async function pastSegment(accountId, pastDays, currentBalanceCents) {
-    const start = new Date();
-    start.setUTCHours(0, 0, 0, 0);
-    start.setUTCDate(start.getUTCDate() - pastDays);
+// The past segment below walks day-by-day, so an unreasonably large window
+// (e.g. someone requesting 50 years back) would turn into a very long loop
+// — this bounds it regardless of the requested unit/amount combination,
+// same spirit as occurrenceProjection.js's own MAX_STEPS guard.
+const MAX_PAST_DAYS = 3650; // ~10 years
+
+// Past segment: one point per calendar day from (today - pastAmount
+// pastUnit) to today, using real posted transactions. Anchored off
+// accountsDb.balanceFor (today's true balance, same formula as the Accounts
+// page and services/reports/netWorth.js) and walked backward by the
+// window's own transactions, rather than forward from the account's
+// starting balance — cheaper, and avoids re-summing the account's entire
+// history for what's usually just a short window.
+async function pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents) {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
+    let start = addUnits(today, -pastAmount, pastUnit);
+    const minStart = new Date(today);
+    minStart.setUTCDate(minStart.getUTCDate() - MAX_PAST_DAYS);
+    if (start < minStart) start = minStart;
 
     const txns = await Transaction.find({ account: accountId, date: { $gte: start } })
         .select('date amountCents').lean();
@@ -83,12 +90,12 @@ async function futureSegment(accountId, futureAmount, futureUnit, currentBalance
 
 // Returns a plain array (not { rows }) — same convention as
 // incomeVsExpense.js/netWorth.js, wrapped into { rows } by the controller.
-async function forecast({ accountId, pastDays = 10, futureAmount = 6, futureUnit = 'months' }) {
+async function forecast({ accountId, pastAmount = 10, pastUnit = 'days', futureAmount = 6, futureUnit = 'months' }) {
     const currentBalanceCents = await accountsDb.balanceFor(accountId);
     if (currentBalanceCents === null) return [];
 
     const [past, future] = await Promise.all([
-        pastSegment(accountId, pastDays, currentBalanceCents),
+        pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents),
         futureSegment(accountId, futureAmount, futureUnit, currentBalanceCents)
     ]);
     return [...past, ...future];

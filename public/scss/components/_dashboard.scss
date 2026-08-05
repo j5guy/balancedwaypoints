@@ -101,6 +101,33 @@
     stroke-width: 2;
 }
 
+// Account Forecast widget (public/js/dashboard.js's buildForecastSvg) —
+// single accent-hue line, split into a solid past segment and a dashed
+// projected segment so the two are visually distinct without a legend
+// (the axis labels/title already establish what the line is). The danger
+// zone is a fixed translucent red band below the customizable threshold,
+// not a per-segment line-color change — reads as a low-balance warning
+// strip regardless of whether the line is currently inside it.
+.forecast-line {
+    fill: none;
+    stroke: $accent;
+    stroke-width: 2;
+}
+
+.forecast-line-projected {
+    stroke-dasharray: 4 3;
+}
+
+.forecast-danger-zone {
+    fill: rgba($red, 0.12);
+}
+
+.forecast-threshold-line {
+    stroke: rgba($red, 0.6);
+    stroke-width: 1;
+    stroke-dasharray: 2 2;
+}
+
 // One class on the container rather than per-widget — text-align is
 // inherited, so it cascades to every widget's heading, stat values, and
 // summary-grid cells without a selector per element. Set from

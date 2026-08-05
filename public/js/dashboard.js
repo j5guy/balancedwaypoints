@@ -24,7 +24,13 @@
         { type: 'totalExpense', label: 'Total Expense' },
         { type: 'netBudget', label: 'Net Budget' }
     ];
-    const WIDGET_LABELS = Object.fromEntries([...SINGLETON_WIDGETS, ...TOTALS_WIDGETS].map(w => [w.type, w.label]));
+    // Forecast is per-account like the totals widgets (repeatable — one per
+    // account), but isn't a "total": it needs its own past/future window and
+    // low-balance threshold per instance, not just an account id, so it gets
+    // its own catalog/category and its own add-form in the Customize modal
+    // rather than reusing the totals add-row.
+    const FORECAST_WIDGET = { type: 'forecast', label: 'Account Forecast' };
+    const WIDGET_LABELS = Object.fromEntries([...SINGLETON_WIDGETS, ...TOTALS_WIDGETS, FORECAST_WIDGET].map(w => [w.type, w.label]));
     const DEFAULT_WIDGETS = [
         { id: 'summary', type: 'summary', accountId: null },
         { id: 'totalIncome', type: 'totalIncome', accountId: null },
@@ -245,6 +251,56 @@
         `;
     }
 
+    // Running balance from the account's real past transactions (solid
+    // line) into scheduled-transaction projections (dashed line) — the two
+    // segments share their junction point ("today") so the line reads as
+    // continuous rather than visibly breaking where actual data ends. The
+    // red band is a fixed "danger zone" behind the line for any balance
+    // under `thresholdCents`, not per-segment line coloring — reads more
+    // like a low-balance warning strip than a line-color change would.
+    function buildForecastSvg(rows, thresholdCents) {
+        if (rows.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
+        const width = 400, height = 140;
+        const padLeft = 56, padRight = 8, padTop = 12, padBottom = 20;
+        const chartW = width - padLeft - padRight;
+        const chartH = height - padTop - padBottom;
+        const values = rows.map(r => r.balanceCents);
+        // thresholdCents is folded into the min/max so the danger line/band
+        // is always inside the visible chart, even if the account's balance
+        // never actually gets close to it.
+        const min = Math.min(0, thresholdCents, ...values);
+        const max = Math.max(0, thresholdCents, ...values);
+        const range = Math.max(1, max - min);
+        const stepX = chartW / (rows.length - 1);
+        const xAt = (i) => padLeft + i * stepX;
+        const yAt = (v) => padTop + chartH - ((v - min) / range) * chartH;
+
+        const firstProjected = rows.findIndex(r => r.projected);
+        const pastEnd = firstProjected === -1 ? rows.length - 1 : firstProjected;
+        const pastCoords = rows.slice(0, pastEnd + 1).map((r, i) => `${xAt(i)},${yAt(r.balanceCents)}`);
+        const futureCoords = rows.slice(pastEnd).map((r, i) => `${xAt(pastEnd + i)},${yAt(r.balanceCents)}`);
+
+        const thresholdY = yAt(thresholdCents);
+        const dangerBottom = padTop + chartH;
+        const dangerHeight = dangerBottom - thresholdY;
+
+        const xLabels = axisLabelIndexes(rows.length).map(i => `
+            <text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
+        `).join('');
+
+        return `
+            <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
+                ${dangerHeight > 0 ? `<rect class="forecast-danger-zone" x="${padLeft}" y="${thresholdY}" width="${chartW}" height="${dangerHeight}"></rect>` : ''}
+                <line class="forecast-threshold-line" x1="${padLeft}" y1="${thresholdY}" x2="${width - padRight}" y2="${thresholdY}"></line>
+                <text class="trend-axis-label" x="${padLeft - 6}" y="${padTop + 4}" text-anchor="end">${window.BWMoney.formatCents(max)}</text>
+                <text class="trend-axis-label" x="${padLeft - 6}" y="${dangerBottom + 4}" text-anchor="end">${window.BWMoney.formatCents(min)}</text>
+                <polyline class="forecast-line" points="${pastCoords.join(' ')}"></polyline>
+                <polyline class="forecast-line forecast-line-projected" points="${futureCoords.join(' ')}"></polyline>
+                ${xLabels}
+            </svg>
+        `;
+    }
+
     // ── Widget builders — each returns a draggable .widget element, or null
     // for an unknown/removed widget type (defensive: a stored preference
     // could reference a type that no longer exists after a future change).
@@ -301,6 +357,21 @@
             return div;
         }
 
+        if (type === 'forecast') {
+            div.classList.add('widget-wide');
+            const params = new URLSearchParams({
+                account: accountId || '',
+                pastAmount: widget.pastAmount,
+                pastUnit: widget.pastUnit,
+                futureAmount: widget.futureAmount,
+                futureUnit: widget.futureUnit
+            });
+            const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
+            div.innerHTML = `<div class="stat-label">${handle}Forecast — ${accountLabel(accountId)}</div><div class="widget-chart"></div>`;
+            div.querySelector('.widget-chart').innerHTML = buildForecastSvg(rows, widget.thresholdCents);
+            return div;
+        }
+
         return null;
     }
 
@@ -325,6 +396,13 @@
     const totalsListEl = document.getElementById('totals-widget-list');
     const addWidgetType = document.getElementById('add-widget-type');
     const addWidgetAccount = document.getElementById('add-widget-account');
+    const forecastListEl = document.getElementById('forecast-widget-list');
+    const addForecastAccount = document.getElementById('add-forecast-account');
+    const addForecastPastAmount = document.getElementById('add-forecast-past-amount');
+    const addForecastPastUnit = document.getElementById('add-forecast-past-unit');
+    const addForecastFutureAmount = document.getElementById('add-forecast-future-amount');
+    const addForecastFutureUnit = document.getElementById('add-forecast-future-unit');
+    const addForecastThreshold = document.getElementById('add-forecast-threshold');
     const alignSelect = document.getElementById('widget-align');
     let draftWidgets = [];
 
@@ -362,11 +440,43 @@
             accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
+    // No "All accounts" option here — a forecast is always tied to exactly
+    // one account (services/reports/forecast.js requires it).
+    function populateForecastAccountSelect() {
+        addForecastAccount.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
+    function forecastSummary(w) {
+        return `Past ${w.pastAmount} ${w.pastUnit}, future ${w.futureAmount} ${w.futureUnit}, below ${window.BWMoney.formatCents(w.thresholdCents)}`;
+    }
+
+    function buildForecastList() {
+        const instances = draftWidgets.filter(w => w.type === 'forecast');
+        if (instances.length === 0) {
+            forecastListEl.innerHTML = '<p class="muted" style="font-size:0.85rem;">None added yet.</p>';
+            return;
+        }
+        forecastListEl.innerHTML = instances.map(w => `
+            <div class="widget-instance-row">
+                <span>${accountLabel(w.accountId)} <span class="muted" style="font-size:0.8rem;">— ${forecastSummary(w)}</span></span>
+                <button type="button" class="icon-btn" data-remove-forecast="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+            </div>
+        `).join('');
+        forecastListEl.querySelectorAll('[data-remove-forecast]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeForecast);
+                buildForecastList();
+            });
+        });
+    }
+
     document.getElementById('customize-dashboard-btn').addEventListener('click', () => {
         draftWidgets = currentWidgets.map(w => ({ ...w }));
         buildSingletonChecklist();
         populateAccountSelect();
+        populateForecastAccountSelect();
         buildTotalsList();
+        buildForecastList();
         alignSelect.value = align;
         customizeOverlay.hidden = false;
     });
@@ -378,6 +488,22 @@
         const accountId = addWidgetAccount.value || null;
         draftWidgets.push({ id: makeWidgetId(type), type, accountId });
         buildTotalsList();
+    });
+
+    document.getElementById('add-forecast-btn').addEventListener('click', () => {
+        const accountId = addForecastAccount.value;
+        if (!accountId) return;
+        draftWidgets.push({
+            id: makeWidgetId('forecast'),
+            type: 'forecast',
+            accountId,
+            pastAmount: Number(addForecastPastAmount.value) || 10,
+            pastUnit: addForecastPastUnit.value,
+            futureAmount: Number(addForecastFutureAmount.value) || 6,
+            futureUnit: addForecastFutureUnit.value,
+            thresholdCents: window.BWMoney.toCents(addForecastThreshold.value || 0)
+        });
+        buildForecastList();
     });
 
     document.getElementById('save-widgets-btn').addEventListener('click', async () => {

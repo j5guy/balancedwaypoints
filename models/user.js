@@ -2,11 +2,22 @@ const mongoose = require('mongoose');
 
 // One dashboard widget instance — see preferences.dashboard.widgets below
 // for the full explanation. `_id: false` since these are identified by
-// their own client-generated `id` field, not Mongo's.
+// their own client-generated `id` field, not Mongo's. pastAmount/pastUnit/
+// futureAmount/futureUnit/thresholdCents are only meaningful for
+// type:'forecast' — kept on the one shared schema rather than a
+// discriminator since it's just a handful of optional numbers, not worth a
+// polymorphic schema for a single widget type.
 const dashboardWidgetSchema = new mongoose.Schema({
     id: { type: String, required: true },
     type: { type: String, required: true },
-    accountId: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null }
+    accountId: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
+    pastAmount: { type: Number, default: 10 },
+    pastUnit: { type: String, enum: ['days', 'weeks', 'months', 'years'], default: 'days' },
+    futureAmount: { type: Number, default: 6 },
+    futureUnit: { type: String, enum: ['days', 'weeks', 'months', 'years'], default: 'months' },
+    // $1,000.00 default low-balance threshold for the forecast widget's
+    // red danger zone (public/js/dashboard.js's buildForecastSvg).
+    thresholdCents: { type: Number, default: 100000 }
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({

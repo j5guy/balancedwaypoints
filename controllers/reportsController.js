@@ -37,11 +37,12 @@ async function summaryReport(req, res) {
 const FORECAST_UNITS = ['days', 'weeks', 'months', 'years'];
 
 async function forecastReport(req, res) {
-    const { account, pastDays, futureAmount, futureUnit } = req.query;
+    const { account, pastAmount, pastUnit, futureAmount, futureUnit } = req.query;
     if (!account) return res.status(400).json({ error: 'account is required' });
     const rows = await forecast({
         accountId: account,
-        pastDays: pastDays ? Number(pastDays) : 10,
+        pastAmount: pastAmount ? Number(pastAmount) : 10,
+        pastUnit: FORECAST_UNITS.includes(pastUnit) ? pastUnit : 'days',
         futureAmount: futureAmount ? Number(futureAmount) : 6,
         futureUnit: FORECAST_UNITS.includes(futureUnit) ? futureUnit : 'months'
     });

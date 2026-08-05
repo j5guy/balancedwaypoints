@@ -1,6 +1,8 @@
 const spendingByCategory = require('../services/reports/spendingByCategory');
 const incomeVsExpense = require('../services/reports/incomeVsExpense');
 const netWorth = require('../services/reports/netWorth');
+const summary = require('../services/reports/summary');
+const forecast = require('../services/reports/forecast');
 
 async function spending(req, res) {
     const { from, to, month } = req.query;
@@ -26,4 +28,24 @@ async function netWorthReport(req, res) {
     res.json({ rows });
 }
 
-module.exports = { spending, incomeExpense, netWorthReport };
+async function summaryReport(req, res) {
+    const { from, to } = req.query;
+    const result = await summary({ from, to });
+    res.json(result);
+}
+
+const FORECAST_UNITS = ['days', 'weeks', 'months', 'years'];
+
+async function forecastReport(req, res) {
+    const { account, pastDays, futureAmount, futureUnit } = req.query;
+    if (!account) return res.status(400).json({ error: 'account is required' });
+    const rows = await forecast({
+        accountId: account,
+        pastDays: pastDays ? Number(pastDays) : 10,
+        futureAmount: futureAmount ? Number(futureAmount) : 6,
+        futureUnit: FORECAST_UNITS.includes(futureUnit) ? futureUnit : 'months'
+    });
+    res.json({ rows });
+}
+
+module.exports = { spending, incomeExpense, netWorthReport, summaryReport, forecastReport };

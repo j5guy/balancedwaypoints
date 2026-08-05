@@ -2,9 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 
+const HOME_REDIRECTS = { accounts: '/accounts', dashboard: '/dashboard' };
+
 router.get('/', (req, res) => {
-    if (req.session.userId) return res.redirect(req.session.homeDashboard === 'accounts' ? '/accounts' : '/budget');
+    if (req.session.userId) return res.redirect(HOME_REDIRECTS[req.session.homeDashboard] || '/budget');
     res.render('index', { title: 'Welcome' });
+});
+
+router.get('/dashboard', requireAuth, (req, res) => {
+    res.render('dashboard/index', { title: 'Dashboard' });
 });
 
 router.get('/budget', requireAuth, (req, res) => {

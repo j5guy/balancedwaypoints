@@ -1,3 +1,8 @@
+v0.6.0
+------
+Adding Dashboards concept with a few customizable widgets for testing
+Adding Endpoints for use in Grafana to match Dashboard Widgets
+
 v0.5.0
 ------
 Introducing API Keys for Grafana Integration

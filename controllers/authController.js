@@ -169,6 +169,7 @@ async function getPreferences(req, res) {
         upcomingSchedules: user.preferences.upcomingSchedules,
         registerHistory: user.preferences.registerHistory,
         weeklyReportEmail: user.preferences.weeklyReportEmail,
+        dashboard: user.preferences.dashboard,
         notifyEmail: user.notifyEmail,
         themeColors: user.themeColors
     });
@@ -195,18 +196,38 @@ function sanitizeThemeColorGroup(input, existing) {
     return result;
 }
 
+// Widget types the Dashboard page (views/dashboard/index.ejs) knows how to
+// render — kept here (not just client-side) so a request can't smuggle an
+// arbitrary string into preferences.dashboard.widgets. Object.assign (used
+// for the simpler flat sub-objects below) would replace the array wholesale
+// with no validation, so this gets its own sanitizer, same reasoning as
+// sanitizeThemeColorGroup above.
+const DASHBOARD_WIDGETS = ['summary', 'totalIncome', 'totalExpense', 'netBudget', 'netWorth', 'cashFlow'];
+const DASHBOARD_DATE_RANGES = ['month', 'last3', 'last6', 'last12', 'year', 'all'];
+
+function sanitizeDashboard(input, existing) {
+    const widgets = Array.isArray(input.widgets)
+        ? [...new Set(input.widgets.filter(w => DASHBOARD_WIDGETS.includes(w)))]
+        : existing.widgets;
+    const dateRangePreset = DASHBOARD_DATE_RANGES.includes(input.dateRangePreset)
+        ? input.dateRangePreset
+        : existing.dateRangePreset;
+    return { widgets, dateRangePreset };
+}
+
 async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { homeDashboard, registerSort, registerMask, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, notifyEmail, themeColors } = req.body || {};
-    if (['budget', 'accounts'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
+    const { homeDashboard, registerSort, registerMask, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, notifyEmail, themeColors } = req.body || {};
+    if (['budget', 'accounts', 'dashboard'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
     if (['newest', 'oldest', 'manual'].includes(registerSort)) user.preferences.registerSort = registerSort;
     if (registerMask) Object.assign(user.preferences.registerMask, registerMask);
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
     if (registerHistory) Object.assign(user.preferences.registerHistory, registerHistory);
     if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
+    if (dashboard) user.preferences.dashboard = sanitizeDashboard(dashboard, user.preferences.dashboard);
     // notifyEmail lives directly on the user doc (see models/user.js), not
     // under preferences, but is accepted here too so the My Account page's
     // notification-settings card can save it independent of the SMTP
@@ -239,6 +260,7 @@ async function updatePreferences(req, res) {
             upcomingSchedules: user.preferences.upcomingSchedules,
             registerHistory: user.preferences.registerHistory,
             weeklyReportEmail: user.preferences.weeklyReportEmail,
+            dashboard: user.preferences.dashboard,
             notifyEmail: user.notifyEmail,
             themeColors: user.themeColors
         });

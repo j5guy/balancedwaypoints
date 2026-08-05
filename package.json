@@ -1,6 +1,6 @@
 {
   "name": "balancedwaypoints",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Balanced Waypoints — envelope budgeting, schedules, rules, and payees for your household finances",
   "main": "server.js",
   "dependencies": {

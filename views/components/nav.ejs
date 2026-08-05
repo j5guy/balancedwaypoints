@@ -4,6 +4,7 @@
     </div>
     <div class="nav-links">
         <% if (locals.isAuthenticated) { %>
+            <a href="/dashboard" class="nav-link<%= locals.path && locals.path.startsWith('/dashboard') ? ' active' : '' %>">Dashboard</a>
             <a href="/budget" class="nav-link<%= locals.path && locals.path.startsWith('/budget') ? ' active' : '' %>">Budget</a>
             <a href="/accounts" class="nav-link<%= locals.path && locals.path.startsWith('/accounts') ? ' active' : '' %>">Accounts</a>
             <a href="/payees" class="nav-link<%= locals.path && locals.path.startsWith('/payees') ? ' active' : '' %>">Payees</a>

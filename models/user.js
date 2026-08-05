@@ -122,9 +122,8 @@ const userSchema = new mongoose.Schema({
     // they follow whoever's logged in across devices. Applied on every
     // account's register page (see accounts/show.ejs + public/js/register.js).
     preferences: {
-        // Which page '/' redirects to after login (routes/pages.js). More
-        // options (e.g. a configurable dashboard) may join this enum later.
-        homeDashboard: { type: String, enum: ['budget', 'accounts'], default: 'budget' },
+        // Which page '/' redirects to after login (routes/pages.js).
+        homeDashboard: { type: String, enum: ['budget', 'accounts', 'dashboard'], default: 'budget' },
         // How the register orders its rows — see services/database/transactions.js's
         // SORTS. 'manual' follows the drag-and-drop sortOrder instead of date.
         registerSort: { type: String, enum: ['newest', 'oldest', 'manual'], default: 'newest' },
@@ -162,7 +161,30 @@ const userSchema = new mongoose.Schema({
         // Sent by services/jobs/weeklyReportEmailJob.js through this user's
         // own configured SMTP (smtp above) — requires that to be set up, same
         // as per-schedule email alerts (see models/schedule.js's notifyByEmail).
-        weeklyReportEmail: { type: Boolean, default: false }
+        weeklyReportEmail: { type: Boolean, default: false },
+        // The "Dashboard" page's (views/dashboard/index.ejs) widget picker —
+        // an ORDERED list of enabled widget-type strings (order = display
+        // order, absence = hidden), not x/y/w/h: the dashboard supports
+        // drag-to-reorder only, no free resize (see public/js/dashboard.js —
+        // reorder uses the same native-HTML5-drag public/js/dragReorder.js
+        // already used on Budget/Register, which needs no inline style
+        // writes and so no CSP change, unlike a real resize grid would).
+        // Validated server-side against a fixed whitelist in
+        // controllers/authController.js's updatePreferences before save,
+        // same as themeColors below — Object.assign wouldn't merge an array
+        // sensibly, so this needs a real sanitizer rather than the shallow
+        // merge the simpler boolean sub-objects above get.
+        dashboard: {
+            widgets: {
+                type: [String],
+                default: ['summary', 'totalIncome', 'totalExpense', 'netBudget', 'netWorth', 'cashFlow']
+            },
+            dateRangePreset: {
+                type: String,
+                enum: ['month', 'last3', 'last6', 'last12', 'year', 'all'],
+                default: 'month'
+            }
+        }
     }
 }, { timestamps: true });
 

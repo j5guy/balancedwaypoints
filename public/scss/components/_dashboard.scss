@@ -1,0 +1,83 @@
+@use '../abstracts/variables' as *;
+
+// The Dashboard page (views/dashboard/index.ejs, public/js/dashboard.js) —
+// reorder-only widgets (drag via public/js/dragReorder.js, same as
+// Budget/Register) laid out in the existing .card-grid from _cards.scss.
+// Deliberately no free resize: see public/js/dashboard.js's own note — a
+// real resize grid needs inline style writes during drag, which this app's
+// nonce-only CSP (server.js) blocks, so every widget gets one fixed size
+// instead (.widget-wide spans two grid columns for the two chart widgets;
+// everything else is a single card).
+// Extends .stat-card (public/scss/components/_cards.scss) rather than
+// restating its chrome — that's also what pulls in its nested
+// .stat-label/.stat-value rules (compiled as ".stat-card .stat-label" etc.),
+// which every widget's markup uses for its heading/value styling.
+.widget {
+    @extend .stat-card;
+    position: relative;
+}
+
+.widget-wide {
+    grid-column: span 2;
+}
+
+.widget-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.widget-chart {
+    margin-top: 8px;
+
+    svg {
+        width: 100%;
+        height: 100px;
+        display: block;
+    }
+}
+
+.widget-chart-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: $text-muted;
+    margin-top: 4px;
+}
+
+// Single-hue trend line (one measure, ranked over time) — same "one hue"
+// convention public/scss/components/_reports.scss documents for the net
+// worth/spending charts there.
+.networth-line {
+    fill: none;
+    stroke: $accent;
+    stroke-width: 2;
+}
+
+// Diverging pair so where income/expense visually cross is legible without
+// a dedicated crossover calculation — same green/red the rest of the app
+// already uses for money going the "right"/"wrong" direction.
+.cashflow-income-line {
+    fill: none;
+    stroke: $money-positive;
+    stroke-width: 2;
+}
+
+.cashflow-expense-line {
+    fill: none;
+    stroke: $money-negative;
+    stroke-width: 2;
+}
+
+.dashboard-range-nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+
+    select {
+        width: auto;
+    }
+}

@@ -1,0 +1,41 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-dashboard">
+    <div class="page-header">
+        <h1>Dashboard</h1>
+        <button type="button" class="btn btn-secondary btn-sm" id="customize-dashboard-btn">Customize</button>
+    </div>
+    <div id="dashboard-error" class="form-error" hidden></div>
+
+    <div class="dashboard-range-nav">
+        <select id="dashboard-range-preset">
+            <option value="month">This month</option>
+            <option value="last3">Last 3 months</option>
+            <option value="last6">Last 6 months</option>
+            <option value="last12">Last 12 months</option>
+            <option value="year">This year</option>
+            <option value="all">All time</option>
+        </select>
+        <div class="month-nav" id="dashboard-month-nav">
+            <button type="button" class="btn btn-secondary btn-sm" id="dashboard-prev-month-btn">&larr;</button>
+            <div class="month-label" id="dashboard-month-label"></div>
+            <button type="button" class="btn btn-secondary btn-sm" id="dashboard-next-month-btn">&rarr;</button>
+        </div>
+    </div>
+
+    <p class="muted" style="font-size:0.85rem;">Drag a widget by its handle (⠿) to reorder it.</p>
+    <div id="dashboard-widgets" class="card-grid"></div>
+</main>
+
+<div class="modal-overlay" id="customize-dashboard-overlay" hidden>
+    <div class="modal-card">
+        <h3>Customize dashboard</h3>
+        <p class="muted">Choose which widgets to show. Reorder them from the dashboard itself by dragging.</p>
+        <div id="widget-checklist"></div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-widgets-btn">Save</button>
+            <button type="button" class="btn btn-secondary" id="cancel-widgets-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/dashboard.js'] }) %>

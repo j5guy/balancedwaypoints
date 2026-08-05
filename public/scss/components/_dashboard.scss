@@ -1,4 +1,8 @@
 @use '../abstracts/variables' as *;
+// Needed so the @extend .stat-card below can see that selector — Dart
+// Sass's module system only lets @extend reach selectors from partials this
+// file actually @uses, unlike the old global @import model.
+@use 'cards';
 
 // The Dashboard page (views/dashboard/index.ejs, public/js/dashboard.js) —
 // reorder-only widgets (drag via public/js/dragReorder.js, same as

@@ -36,12 +36,12 @@ function validateSplits(amountCents, splits) {
 
 async function list(req, res) {
     const { account, category, tag, payee, from, to, limit, sort } = req.query;
-    const items = await transactions.list({ account, category, tag, payee, from, to, limit: limit ? Number(limit) : undefined, sort });
+    const items = await transactions.list(req.session.userId, { account, category, tag, payee, from, to, limit: limit ? Number(limit) : undefined, sort });
     res.json({ transactions: items.map(serialize) });
 }
 
 async function get(req, res) {
-    const t = await transactions.findById(req.params.id);
+    const t = await transactions.findById(req.params.id, req.session.userId);
     if (!t) return res.status(404).json({ error: 'Not found' });
     res.json(serialize(t));
 }
@@ -56,6 +56,7 @@ async function create(req, res) {
     if (splitError) return res.status(400).json({ error: splitError });
 
     const t = await transactions.create({
+        owner: req.session.userId,
         account, date, payee: payee || null,
         amountCents: Number(amountCents),
         category: splits && splits.length ? null : (category || null),
@@ -64,7 +65,7 @@ async function create(req, res) {
         tags: tags || [],
         notes: notes || ''
     });
-    const populated = await transactions.findById(t._id);
+    const populated = await transactions.findById(t._id, req.session.userId);
     res.status(201).json(serialize(populated));
 }
 
@@ -75,12 +76,12 @@ async function createTransfer(req, res) {
     if (!date) return res.status(400).json({ error: 'date is required' });
     if (!amountCents) return res.status(400).json({ error: 'amountCents is required' });
 
-    const { outgoing, incoming } = await transactions.createTransfer({ fromAccount, toAccount, date, amountCents: Number(amountCents), notes });
+    const { outgoing, incoming } = await transactions.createTransfer({ owner: req.session.userId, fromAccount, toAccount, date, amountCents: Number(amountCents), notes });
     res.status(201).json({ outgoing: serialize(outgoing), incoming: serialize(incoming) });
 }
 
 async function update(req, res) {
-    const existing = await transactions.findById(req.params.id);
+    const existing = await transactions.findById(req.params.id, req.session.userId);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     if (existing.transferId) return res.status(400).json({ error: 'Transfer transactions cannot be edited directly — delete and recreate the transfer instead' });
 
@@ -101,18 +102,18 @@ async function update(req, res) {
     if (tags !== undefined) data.tags = tags;
     if (notes !== undefined) data.notes = notes;
 
-    const t = await transactions.update(req.params.id, data);
+    const t = await transactions.update(req.params.id, data, req.session.userId);
     res.json(serialize(t));
 }
 
 async function remove(req, res) {
-    const existing = await transactions.findById(req.params.id);
+    const existing = await transactions.findById(req.params.id, req.session.userId);
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
     if (existing.transferId) {
-        await transactions.removeTransferPair(existing.transferId);
+        await transactions.removeTransferPair(existing.transferId, req.session.userId);
     } else {
-        await transactions.remove(req.params.id);
+        await transactions.remove(req.params.id, req.session.userId);
     }
     res.status(204).end();
 }
@@ -124,7 +125,7 @@ async function remove(req, res) {
 async function reorder(req, res) {
     const { ids } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array' });
-    await transactions.reorder(ids);
+    await transactions.reorder(ids, req.session.userId);
     res.status(204).end();
 }
 
@@ -132,7 +133,7 @@ async function reorder(req, res) {
 // and returns suggested category/payee/tags — never writes anything.
 async function previewRules(req, res) {
     const { payee, notes, amountCents } = req.body || {};
-    const rules = await rulesDb.findActive();
+    const rules = await rulesDb.findActive(req.session.userId);
     const result = await applyRules(rules, { payee, notes, amountCents: Number(amountCents) || 0 });
     res.json(result);
 }

@@ -23,9 +23,9 @@ async function preview(req, res) {
     const { rows, errors } = parser(req.file.buffer, accountId);
     if (rows.length === 0) return res.status(400).json({ error: 'No usable rows found', details: errors });
 
-    const { newRows, duplicateCount } = await partitionNewRows(rows, transactionsDb);
-    const activeRules = await rulesDb.findActive();
-    const allCategories = await categoriesDb.list({ includeArchived: true });
+    const { newRows, duplicateCount } = await partitionNewRows(rows, transactionsDb, req.session.userId);
+    const activeRules = await rulesDb.findActive(req.session.userId);
+    const allCategories = await categoriesDb.list(req.session.userId, { includeArchived: true });
 
     const preview = await Promise.all(newRows.map(async (row) => {
         const suggestion = await applyRules(activeRules, { payee: row.payeeName, notes: row.notes, amountCents: row.amountCents });
@@ -48,6 +48,8 @@ async function commit(req, res) {
     if (!accountId) return res.status(400).json({ error: 'accountId is required' });
     if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'rows must be a non-empty array' });
 
+    const ownerId = req.session.userId;
+
     // Every imported row would otherwise get the schema's default sortOrder
     // (Date.now() at the moment it's created) — since this loop creates rows
     // sequentially, that default increases with processing order, which is
@@ -65,19 +67,20 @@ async function commit(req, res) {
 
     let created = 0;
     for (const row of rows) {
-        const payee = row.payeeName ? await payeesDb.findOrCreateByName(row.payeeName) : null;
-        const tags = await Promise.all((row.tagNames || []).map(name => tagsDb.findOrCreateByName(name)));
+        const payee = row.payeeName ? await payeesDb.findOrCreateByName(row.payeeName, ownerId) : null;
+        const tags = await Promise.all((row.tagNames || []).map(name => tagsDb.findOrCreateByName(name, ownerId)));
 
         // No categoryId was picked (the CSV named a category that doesn't
         // exist yet) — create the group and category on the fly.
         let categoryId = row.categoryId || null;
         if (!categoryId && row.categoryName) {
-            const group = await categoryGroupsDb.findOrCreateByName(row.categoryGroupName || 'Imported');
-            const category = group ? await categoriesDb.findOrCreateByName(row.categoryName, group._id) : null;
+            const group = await categoryGroupsDb.findOrCreateByName(row.categoryGroupName || 'Imported', ownerId);
+            const category = group ? await categoriesDb.findOrCreateByName(row.categoryName, group._id, ownerId) : null;
             categoryId = category ? category._id : null;
         }
 
         await transactionsDb.create({
+            owner: ownerId,
             account: accountId,
             date: row.date,
             payee: payee ? payee._id : null,

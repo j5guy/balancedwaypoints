@@ -17,10 +17,16 @@ const runWeeklyReportEmails = require('../jobs/weeklyReportEmailJob');
 const logger = require('../../utils/logger');
 
 async function runDueSchedules() {
+    // Deliberately unscoped — this cron run is supposed to process every
+    // user's due schedules in one pass (see services/database/schedules.js's
+    // findDue). Each schedule already carries its own `owner`, which just
+    // gets propagated onto the Transaction/update below instead of this
+    // needing a per-user loop.
     const due = await schedulesDb.findDue();
     for (const schedule of due) {
         try {
             await transactionsDb.create({
+                owner: schedule.owner,
                 account: schedule.account,
                 date: schedule.nextDate,
                 payee: schedule.payee,
@@ -36,7 +42,7 @@ async function runDueSchedules() {
             await schedulesDb.update(schedule._id, {
                 nextDate: next,
                 active: stillActive
-            });
+            }, schedule.owner);
             logger.info(`Auto-entered schedule "${schedule.name}" for ${schedule.nextDate.toISOString().slice(0, 10)}`);
         } catch (err) {
             logger.error(`Failed to auto-enter schedule "${schedule.name}": ${err.message}`);

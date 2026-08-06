@@ -29,7 +29,6 @@ const FIELD_LABELS = {
     SSL_CERT_FILE: 'Certificate file',
     SSL_KEY_FILE: 'Certificate key file',
     ADMIN_EMAIL: 'Always-admin email (optional)',
-    SIGNUP_ALLOWLIST: 'Signup allowlist (optional)',
     CURRENCY_SYMBOL: 'Currency symbol',
     mongoHost: 'MongoDB host',
     mongoUser: 'MongoDB username',

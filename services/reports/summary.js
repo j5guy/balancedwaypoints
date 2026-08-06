@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Transaction = require('../../models/transaction');
 
 // Single-period income/expense totals, transfers excluded — same rules as
@@ -7,13 +8,18 @@ const Transaction = require('../../models/transaction');
 // per widget. `accountId` is optional — omitted means "every account" (the
 // dashboard's "All accounts" scope); the widget-instance model that carries
 // this is documented on models/user.js's preferences.dashboard.widgets.
-async function summary({ from, to, accountId }) {
+async function summary({ from, to, accountId, ownerId }) {
     const dateFilter = {};
     if (from) dateFilter.$gte = new Date(from);
     if (to) dateFilter.$lte = new Date(to);
+    // .aggregate() bypasses Mongoose's usual query-side ObjectId casting —
+    // both owner and accountId arrive here as plain strings (session/query
+    // param respectively), so both need an explicit cast or this silently
+    // matches nothing.
     const match = {
+        owner: new mongoose.Types.ObjectId(ownerId),
         transferAccount: null,
-        ...(accountId ? { account: accountId } : {}),
+        ...(accountId ? { account: new mongoose.Types.ObjectId(accountId) } : {}),
         ...(Object.keys(dateFilter).length ? { date: dateFilter } : {})
     };
 

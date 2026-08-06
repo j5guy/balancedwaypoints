@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const usersDb = require('../services/database/users');
-const { adminEmail, signupAllowlist } = require('../config/config');
+const { adminEmail } = require('../config/config');
 const { resolveLdapConfig, authenticateLdap } = require('../config/ldapAuth');
 const THEME_COLOR_FIELDS = require('../utils/themeColorFields');
 const logger = require('../utils/logger');
@@ -30,12 +30,6 @@ function establishSession(req, user) {
     req.session.homeDashboard = user.preferences.homeDashboard;
 }
 
-function isAllowedToSignUp(email) {
-    if (email === adminEmail) return true;
-    if (signupAllowlist.length === 0) return true;
-    return signupAllowlist.includes(email);
-}
-
 async function signup(req, res) {
     const email = String((req.body || {}).email || '').toLowerCase().trim();
     const password = String((req.body || {}).password || '');
@@ -43,7 +37,6 @@ async function signup(req, res) {
 
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    if (!isAllowedToSignUp(email)) return res.status(403).json({ error: 'This email is not authorized to sign up' });
 
     const existing = await usersDb.findByEmail(email);
     if (existing) return res.status(409).json({ error: 'An account with that email already exists' });

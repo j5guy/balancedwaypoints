@@ -1,15 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const tagsController = require('../../controllers/tagsController');
-const { requireApiAuth, requireApiAdmin } = require('../../middleware/auth');
+const { requireApiAuth } = require('../../middleware/auth');
 
 router.use(requireApiAuth);
 
+// Tags are per-user data now (see models/tag.js's owner field) — no longer
+// a shared household resource, so rename/delete no longer need the
+// admin-only gate they used to (that was for cleaning up everyone's shared
+// tags; each user's own tags are theirs to manage freely).
 router.get('/', tagsController.list);
-// Creation is open to any authenticated user (typeahead "create if missing"
-// when tagging a transaction) — rename/delete stay admin-only for cleanup.
 router.post('/', tagsController.create);
-router.put('/:id', requireApiAdmin, tagsController.update);
-router.delete('/:id', requireApiAdmin, tagsController.remove);
+router.put('/:id', tagsController.update);
+router.delete('/:id', tagsController.remove);
 
 module.exports = router;

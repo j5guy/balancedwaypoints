@@ -8,9 +8,12 @@ async function runWeeklyReportEmails() {
     const recipients = users.filter((u) => u.preferences && u.preferences.weeklyReportEmail);
     if (recipients.length === 0) return;
 
-    const { subject, html } = await weeklyReportEmail();
+    // Each recipient's report is now their own — accounts/spending are
+    // per-user (models/account.js's owner field), so a global "the
+    // household's report" no longer means anything.
     let sentCount = 0;
     for (const user of recipients) {
+        const { subject, html } = await weeklyReportEmail(user._id);
         const sent = await sendMailAsUser(user, { subject, html });
         if (sent) sentCount++;
     }

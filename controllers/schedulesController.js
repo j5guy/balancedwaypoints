@@ -39,7 +39,7 @@ function validateSplits(amountCents, splits) {
 }
 
 async function list(req, res) {
-    const items = await schedules.list();
+    const items = await schedules.list(req.session.userId);
     res.json({ schedules: items.map(serialize) });
 }
 
@@ -54,6 +54,7 @@ async function create(req, res) {
     if (splitError) return res.status(400).json({ error: splitError });
 
     const schedule = await schedules.create({
+        owner: req.session.userId,
         name: String(name).trim(), account, payee: payee || null,
         amountCents: Number(amountCents),
         category: splits && splits.length ? null : (category || null),
@@ -65,7 +66,7 @@ async function create(req, res) {
         notes: notes || '',
         notifyByEmail: !!notifyByEmail
     });
-    const populated = await schedules.findById(schedule._id);
+    const populated = await schedules.findById(schedule._id, req.session.userId);
     res.status(201).json(serialize(populated));
 }
 
@@ -89,14 +90,14 @@ async function update(req, res) {
     if (notes !== undefined) data.notes = notes;
     if (notifyByEmail !== undefined) data.notifyByEmail = !!notifyByEmail;
 
-    const schedule = await schedules.update(req.params.id, data);
+    const schedule = await schedules.update(req.params.id, data, req.session.userId);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
-    const populated = await schedules.findById(schedule._id);
+    const populated = await schedules.findById(schedule._id, req.session.userId);
     res.json(serialize(populated));
 }
 
 async function remove(req, res) {
-    const schedule = await schedules.remove(req.params.id);
+    const schedule = await schedules.remove(req.params.id, req.session.userId);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
     res.status(204).end();
 }
@@ -127,7 +128,7 @@ async function upcoming(req, res) {
     const cutoffDate = cutoff ? new Date(cutoff) : new Date();
     const asOf = new Date();
 
-    const scheduleDocs = await schedules.listActiveForAccount(account);
+    const scheduleDocs = await schedules.listActiveForAccount(account, req.session.userId);
     const occurrences = [];
     for (const schedule of scheduleDocs) {
         const projected = await projectSchedule(schedule, cutoffDate, asOf);
@@ -166,7 +167,7 @@ async function setOccurrenceOverride(req, res) {
             splits: splits || []
         };
     }
-    const schedule = await schedules.setOccurrenceOverride(req.params.id, entry);
+    const schedule = await schedules.setOccurrenceOverride(req.params.id, entry, req.session.userId);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
     res.json(serialize(schedule));
 }
@@ -181,7 +182,7 @@ async function postOccurrence(req, res) {
     if (!['today', 'scheduled', 'custom'].includes(postTo)) return res.status(400).json({ error: 'postTo must be "today", "scheduled", or "custom"' });
     if (postTo === 'custom' && !customDate) return res.status(400).json({ error: 'customDate is required when postTo is "custom"' });
 
-    const schedule = await schedules.findRawById(req.params.id);
+    const schedule = await schedules.findRawById(req.params.id, req.session.userId);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
 
     const occDate = new Date(occurrenceDate);
@@ -190,6 +191,7 @@ async function postOccurrence(req, res) {
     const postDate = postTo === 'today' ? new Date() : postTo === 'scheduled' ? occDate : new Date(customDate);
 
     const txn = await transactionsDb.create({
+        owner: req.session.userId,
         account: schedule.account,
         date: postDate,
         payee: fields.payee,
@@ -202,7 +204,7 @@ async function postOccurrence(req, res) {
     });
     await advanceNextDatePastPosted(schedule);
 
-    const populated = await transactionsDb.findById(txn._id);
+    const populated = await transactionsDb.findById(txn._id, req.session.userId);
     res.status(201).json({
         id: populated._id,
         account: populated.account,

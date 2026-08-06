@@ -12,6 +12,7 @@ const splitSchema = new mongoose.Schema({
 }, { _id: false });
 
 const transactionSchema = new mongoose.Schema({
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     account: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', required: true },
     date: { type: Date, required: true },
     payee: { type: mongoose.Schema.Types.ObjectId, ref: 'Payee', default: null },
@@ -47,11 +48,11 @@ const transactionSchema = new mongoose.Schema({
     sortOrder: { type: Number, default: () => Date.now() }
 }, { timestamps: true });
 
-transactionSchema.index({ account: 1, date: -1 });
-transactionSchema.index({ account: 1, sortOrder: -1 });
-transactionSchema.index({ importedId: 1 }, { sparse: true });
-transactionSchema.index({ category: 1, date: 1 });
-transactionSchema.index({ schedule: 1, scheduleOccurrenceDate: 1 }, { sparse: true });
+transactionSchema.index({ owner: 1, account: 1, date: -1 });
+transactionSchema.index({ owner: 1, account: 1, sortOrder: -1 });
+transactionSchema.index({ owner: 1, importedId: 1 }, { sparse: true });
+transactionSchema.index({ owner: 1, category: 1, date: 1 });
+transactionSchema.index({ owner: 1, schedule: 1, scheduleOccurrenceDate: 1 }, { sparse: true });
 
 module.exports = mongoose.model('Transaction', transactionSchema);
 module.exports.CLEARED_STATES = CLEARED_STATES;

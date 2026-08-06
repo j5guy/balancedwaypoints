@@ -16,14 +16,14 @@ function serialize({ account, balanceCents }) {
 }
 
 async function list(req, res) {
-    const withBalances = await accounts.balancesForAll();
+    const withBalances = await accounts.balancesForAll(req.session.userId);
     res.json({ accounts: withBalances.map(serialize) });
 }
 
 async function get(req, res) {
-    const account = await accounts.findById(req.params.id);
+    const account = await accounts.findById(req.params.id, req.session.userId);
     if (!account) return res.status(404).json({ error: 'Not found' });
-    const balanceCents = await accounts.balanceFor(account._id);
+    const balanceCents = await accounts.balanceFor(account._id, req.session.userId);
     res.json(serialize({ account, balanceCents }));
 }
 
@@ -33,6 +33,7 @@ async function create(req, res) {
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
     const account = await accounts.create({
+        owner: req.session.userId,
         name: String(name).trim(),
         type: type || 'checking',
         onBudget: onBudget !== false,
@@ -55,14 +56,14 @@ async function update(req, res) {
     if (notes !== undefined) data.notes = notes;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;
 
-    const account = await accounts.update(req.params.id, data);
+    const account = await accounts.update(req.params.id, data, req.session.userId);
     if (!account) return res.status(404).json({ error: 'Not found' });
-    const balanceCents = await accounts.balanceFor(account._id);
+    const balanceCents = await accounts.balanceFor(account._id, req.session.userId);
     res.json(serialize({ account, balanceCents }));
 }
 
 async function remove(req, res) {
-    const account = await accounts.remove(req.params.id);
+    const account = await accounts.remove(req.params.id, req.session.userId);
     if (!account) return res.status(409).json({ error: 'Account has transactions and cannot be deleted — close it instead' });
     res.status(204).end();
 }
@@ -74,7 +75,7 @@ async function remove(req, res) {
 // active account can't be wiped by hitting the wrong endpoint.
 async function forceRemove(req, res) {
     try {
-        const account = await accounts.forceRemove(req.params.id);
+        const account = await accounts.forceRemove(req.params.id, req.session.userId);
         if (!account) return res.status(404).json({ error: 'Not found' });
         res.status(204).end();
     } catch (err) {

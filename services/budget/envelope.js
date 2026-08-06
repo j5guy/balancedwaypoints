@@ -24,32 +24,37 @@ function monthEndExclusive(month) {
     return new Date(Date.UTC(year, monthNum, 1)); // first instant of the following month
 }
 
-async function onBudgetAccountBalanceThroughMonth(month) {
+async function onBudgetAccountBalanceThroughMonth(month, ownerId) {
     const end = monthEndExclusive(month);
-    const accounts = await Account.find({ onBudget: true }).exec();
+    const accounts = await Account.find({ owner: ownerId, onBudget: true }).exec();
     if (accounts.length === 0) return 0;
     const ids = accounts.map(a => a._id);
     const startingTotal = accounts.reduce((sum, a) => sum + a.startingBalanceCents, 0);
+    // .aggregate() bypasses Mongoose's usual query-side ObjectId casting —
+    // req.session.userId round-trips through the session store's JSON
+    // serialization as a plain string, so owner needs an explicit cast here
+    // the same way category/account ids already get below.
     const [agg] = await Transaction.aggregate([
-        { $match: { account: { $in: ids }, date: { $lt: end } } },
+        { $match: { owner: new mongoose.Types.ObjectId(ownerId), account: { $in: ids }, date: { $lt: end } } },
         { $group: { _id: null, total: { $sum: '$amountCents' } } }
     ]);
     return startingTotal + (agg ? agg.total : 0);
 }
 
-async function activityForCategoryThroughMonth(categoryId, month, { exact = false } = {}) {
+async function activityForCategoryThroughMonth(categoryId, month, ownerId, { exact = false } = {}) {
     const end = monthEndExclusive(month);
     const dateFilter = exact
         ? { $gte: new Date(`${month}-01T00:00:00.000Z`), $lt: end }
         : { $lt: end };
     const catId = new mongoose.Types.ObjectId(categoryId);
+    const ownerObjectId = new mongoose.Types.ObjectId(ownerId);
 
     const [direct] = await Transaction.aggregate([
-        { $match: { category: catId, date: dateFilter } },
+        { $match: { owner: ownerObjectId, category: catId, date: dateFilter } },
         { $group: { _id: null, total: { $sum: '$amountCents' } } }
     ]);
     const [splitAgg] = await Transaction.aggregate([
-        { $match: { 'splits.category': catId, date: dateFilter } },
+        { $match: { owner: ownerObjectId, 'splits.category': catId, date: dateFilter } },
         { $unwind: '$splits' },
         { $match: { 'splits.category': catId } },
         { $group: { _id: null, total: { $sum: '$splits.amountCents' } } }
@@ -59,10 +64,10 @@ async function activityForCategoryThroughMonth(categoryId, month, { exact = fals
 
 // Full summary for the budget page: per-category assigned/activity for the
 // viewed month plus its rolling balance, and the top-line Ready to Assign.
-async function summary(month) {
-    const categories = await categoriesDb.list();
+async function summary(month, ownerId) {
+    const categories = await categoriesDb.list(ownerId);
     const budgetable = categories.filter(c => !c.group.isIncome);
-    const budgetRows = await categoryBudgetsDb.upToMonth(month);
+    const budgetRows = await categoryBudgetsDb.upToMonth(month, ownerId);
 
     const assignedThroughMonthByCategory = new Map();
     const assignedThisMonthByCategory = new Map();
@@ -76,8 +81,8 @@ async function summary(month) {
         const key = String(category._id);
         const assignedThroughMonth = assignedThroughMonthByCategory.get(key) || 0;
         const assignedThisMonth = assignedThisMonthByCategory.get(key) || 0;
-        const activityThroughMonth = await activityForCategoryThroughMonth(category._id, month);
-        const activityThisMonth = await activityForCategoryThroughMonth(category._id, month, { exact: true });
+        const activityThroughMonth = await activityForCategoryThroughMonth(category._id, month, ownerId);
+        const activityThisMonth = await activityForCategoryThroughMonth(category._id, month, ownerId, { exact: true });
         return {
             category,
             assignedCents: assignedThisMonth,
@@ -87,7 +92,7 @@ async function summary(month) {
     }));
 
     const totalCategoryBalance = categoryResults.reduce((sum, c) => sum + c.balanceCents, 0);
-    const onBudgetBalance = await onBudgetAccountBalanceThroughMonth(month);
+    const onBudgetBalance = await onBudgetAccountBalanceThroughMonth(month, ownerId);
     const readyToAssignCents = onBudgetBalance - totalCategoryBalance;
 
     return {

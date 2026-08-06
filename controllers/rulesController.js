@@ -25,7 +25,7 @@ function validate({ conditions, actions }) {
 }
 
 async function list(req, res) {
-    const items = await rules.list();
+    const items = await rules.list(req.session.userId);
     res.json({ rules: items.map(serialize) });
 }
 
@@ -36,6 +36,7 @@ async function create(req, res) {
     if (error) return res.status(400).json({ error });
 
     const rule = await rules.create({
+        owner: req.session.userId,
         name: String(name).trim(),
         priority: Number(priority) || 0,
         stopProcessing: !!stopProcessing,
@@ -59,13 +60,13 @@ async function update(req, res) {
     if (actions !== undefined) data.actions = actions;
     if (active !== undefined) data.active = !!active;
 
-    const rule = await rules.update(req.params.id, data);
+    const rule = await rules.update(req.params.id, data, req.session.userId);
     if (!rule) return res.status(404).json({ error: 'Not found' });
     res.json(serialize(rule));
 }
 
 async function remove(req, res) {
-    const rule = await rules.remove(req.params.id);
+    const rule = await rules.remove(req.params.id, req.session.userId);
     if (!rule) return res.status(404).json({ error: 'Not found' });
     res.status(204).end();
 }

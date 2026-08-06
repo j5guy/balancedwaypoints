@@ -1,14 +1,14 @@
 const CategoryBudget = require('../../models/categoryBudget');
 
-const forMonth = (month) => CategoryBudget.find({ month }).exec();
+const forMonth = (month, ownerId) => CategoryBudget.find({ owner: ownerId, month }).exec();
 
 // All rows up to and including a given month, per category — used to
 // compute rolling balances (services/budget/envelope.js) without needing to
 // re-scan every month from the beginning each time a later one is requested.
-const upToMonth = (month) => CategoryBudget.find({ month: { $lte: month } }).exec();
+const upToMonth = (month, ownerId) => CategoryBudget.find({ owner: ownerId, month: { $lte: month } }).exec();
 
-const assign = (categoryId, month, assignedCents) => CategoryBudget.findOneAndUpdate(
-    { category: categoryId, month },
+const assign = (categoryId, month, assignedCents, ownerId) => CategoryBudget.findOneAndUpdate(
+    { owner: ownerId, category: categoryId, month },
     { assignedCents },
     { upsert: true, new: true, runValidators: true }
 ).exec();
@@ -18,9 +18,9 @@ const assign = (categoryId, month, assignedCents) => CategoryBudget.findOneAndUp
 // created, and one that already has an assignment there gets overwritten.
 // Categories with nothing assigned in fromMonth are left untouched in
 // toMonth (there's nothing to copy for them).
-const copyMonth = async (fromMonth, toMonth) => {
-    const rows = await forMonth(fromMonth);
-    await Promise.all(rows.map(r => assign(r.category, toMonth, r.assignedCents)));
+const copyMonth = async (fromMonth, toMonth, ownerId) => {
+    const rows = await forMonth(fromMonth, ownerId);
+    await Promise.all(rows.map(r => assign(r.category, toMonth, r.assignedCents, ownerId)));
     return rows.length;
 };
 

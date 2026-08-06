@@ -10,9 +10,9 @@ function csvImportedId(accountId, { date, amountCents, payeeName }) {
     return crypto.createHash('sha1').update(key).digest('hex');
 }
 
-async function partitionNewRows(rows, transactionsDb) {
+async function partitionNewRows(rows, transactionsDb, ownerId) {
     const ids = rows.map(r => r.importedId).filter(Boolean);
-    const existing = await transactionsDb.findByImportedIds(ids);
+    const existing = await transactionsDb.findByImportedIds(ids, ownerId);
     const existingIds = new Set(existing.map(t => t.importedId));
     return {
         newRows: rows.filter(r => !existingIds.has(r.importedId)),

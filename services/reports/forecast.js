@@ -33,7 +33,7 @@ const MAX_PAST_DAYS = 3650; // ~10 years
 // window's own transactions, rather than forward from the account's
 // starting balance — cheaper, and avoids re-summing the account's entire
 // history for what's usually just a short window.
-async function pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents) {
+async function pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents, ownerId) {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     let start = addUnits(today, -pastAmount, pastUnit);
@@ -41,7 +41,7 @@ async function pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents)
     minStart.setUTCDate(minStart.getUTCDate() - MAX_PAST_DAYS);
     if (start < minStart) start = minStart;
 
-    const txns = await Transaction.find({ account: accountId, date: { $gte: start } })
+    const txns = await Transaction.find({ owner: ownerId, account: accountId, date: { $gte: start } })
         .select('date amountCents').lean();
     const byDay = new Map();
     let sumInWindow = 0;
@@ -69,11 +69,11 @@ async function pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents)
 // recurrence math — this is the same projection the register's "upcoming"
 // list uses (services/schedules/occurrenceProjection.js), just summed into
 // a running balance server-side instead of left as a raw occurrence list.
-async function futureSegment(accountId, futureAmount, futureUnit, currentBalanceCents) {
+async function futureSegment(accountId, futureAmount, futureUnit, currentBalanceCents, ownerId) {
     const asOf = new Date();
     const cutoff = addUnits(asOf, futureAmount, futureUnit);
 
-    const scheduleDocs = await schedulesDb.listActiveForAccount(accountId);
+    const scheduleDocs = await schedulesDb.listActiveForAccount(accountId, ownerId);
     const occurrences = [];
     for (const schedule of scheduleDocs) {
         const projected = await projectSchedule(schedule, cutoff, asOf);
@@ -90,13 +90,13 @@ async function futureSegment(accountId, futureAmount, futureUnit, currentBalance
 
 // Returns a plain array (not { rows }) — same convention as
 // incomeVsExpense.js/netWorth.js, wrapped into { rows } by the controller.
-async function forecast({ accountId, pastAmount = 10, pastUnit = 'days', futureAmount = 6, futureUnit = 'months' }) {
-    const currentBalanceCents = await accountsDb.balanceFor(accountId);
+async function forecast({ accountId, pastAmount = 10, pastUnit = 'days', futureAmount = 6, futureUnit = 'months', ownerId }) {
+    const currentBalanceCents = await accountsDb.balanceFor(accountId, ownerId);
     if (currentBalanceCents === null) return [];
 
     const [past, future] = await Promise.all([
-        pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents),
-        futureSegment(accountId, futureAmount, futureUnit, currentBalanceCents)
+        pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents, ownerId),
+        futureSegment(accountId, futureAmount, futureUnit, currentBalanceCents, ownerId)
     ]);
     return [...past, ...future];
 }

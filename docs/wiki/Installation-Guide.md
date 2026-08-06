@@ -15,7 +15,7 @@ printed URL, fill in:
 
 - **MongoDB** — Internal (bundled container, recommended) or External (point at your own).
 - **TLS certificate** — generate a self-signed one, or provide your own cert/key files.
-- **Domain/IP, ports, admin email, signup allowlist, currency symbol, MongoDB settings.**
+- **Domain/IP, ports, admin email, currency symbol, MongoDB settings.**
 
 Submitting writes `.env`, generates a cert if requested, and runs
 `docker compose up -d --build`. The app is Docker-only — there is no local
@@ -53,5 +53,6 @@ behind the bundled/Docker nginx, which actually terminates TLS.
 ## First account
 
 The first person to sign up (at `/auth/signup`) automatically becomes admin,
-regardless of `ADMIN_EMAIL`/`SIGNUP_ALLOWLIST`. Set `SIGNUP_ALLOWLIST` once
-everyone in the household has an account, to stop further signups.
+regardless of `ADMIN_EMAIL`. Signup is always open — each account gets its
+own separate, empty set of accounts/categories/budget, so there's no "lock
+it down once everyone's in" step anymore.

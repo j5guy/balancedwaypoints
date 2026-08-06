@@ -9,11 +9,14 @@ const categoryBudgetsDb = require('../database/categoryBudgets');
 // ever covers one exact calendar month, so this is meaningful specifically
 // when from/to bound that same single month (the caller's job to ensure;
 // this just attaches whatever's on record for `month`, unconditionally).
-async function spendingByCategory({ from, to, month }) {
+async function spendingByCategory({ from, to, month, ownerId }) {
     const dateFilter = {};
     if (from) dateFilter.$gte = new Date(from);
     if (to) dateFilter.$lte = new Date(to);
-    const match = Object.keys(dateFilter).length ? { date: dateFilter } : {};
+    // .aggregate() bypasses Mongoose's usual query-side ObjectId casting —
+    // req.authUserId round-trips through the session store's JSON
+    // serialization as a plain string, so this needs an explicit cast.
+    const match = { owner: new mongoose.Types.ObjectId(ownerId), ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}) };
 
     const [direct, splits] = await Promise.all([
         Transaction.aggregate([
@@ -33,12 +36,12 @@ async function spendingByCategory({ from, to, month }) {
         totals.set(key, (totals.get(key) || 0) + row.total);
     });
 
-    const categories = await categoriesDb.list({ includeArchived: true });
+    const categories = await categoriesDb.list(ownerId, { includeArchived: true });
     const byId = new Map(categories.map(c => [String(c._id), c]));
 
     let assignedById = new Map();
     if (month) {
-        const budgetRows = await categoryBudgetsDb.forMonth(month);
+        const budgetRows = await categoryBudgetsDb.forMonth(month, ownerId);
         assignedById = new Map(budgetRows.map(r => [String(r.category), r.assignedCents]));
     }
 

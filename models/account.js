@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const ACCOUNT_TYPES = ['checking', 'savings', 'credit', 'cash', 'investment', 'loan', 'other'];
 
 const accountSchema = new mongoose.Schema({
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, required: true, trim: true },
     type: { type: String, enum: ACCOUNT_TYPES, default: 'checking' },
     // Off-budget/tracking accounts (investments, loans) are excluded from
@@ -13,6 +14,8 @@ const accountSchema = new mongoose.Schema({
     notes: { type: String, trim: true, default: '' },
     sortOrder: { type: Number, default: 0 }
 }, { timestamps: true });
+
+accountSchema.index({ owner: 1 });
 
 module.exports = mongoose.model('Account', accountSchema);
 module.exports.ACCOUNT_TYPES = ACCOUNT_TYPES;

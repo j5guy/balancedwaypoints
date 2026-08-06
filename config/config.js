@@ -19,14 +19,6 @@ module.exports = {
     // ever flips a boolean on that one account.
     adminEmail: (process.env.ADMIN_EMAIL || '').toLowerCase().trim() || null,
 
-    // Comma-separated list of emails allowed to sign up. Empty = open signup
-    // (fine for a single-household internal deployment; set this to lock it
-    // down once everyone in the household has an account).
-    signupAllowlist: (process.env.SIGNUP_ALLOWLIST || '')
-        .split(',')
-        .map(e => e.trim().toLowerCase())
-        .filter(Boolean),
-
     // All amounts are stored as integer cents internally — this is the only
     // symbol/format applied on top for display.
     currencySymbol: process.env.CURRENCY_SYMBOL || '$',

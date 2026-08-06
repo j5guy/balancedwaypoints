@@ -53,10 +53,10 @@ async function applyRules(rules, candidate) {
 
 // Convenience wrapper that also resolves the payee name / tag names to docs,
 // for callers that want ready-to-save references.
-async function applyRulesResolved(rules, candidate) {
+async function applyRulesResolved(rules, candidate, ownerId) {
     const result = await applyRules(rules, candidate);
-    const payee = result.payeeName ? await payeesDb.findOrCreateByName(result.payeeName) : null;
-    const tags = await Promise.all(result.tagNames.map(name => tagsDb.findOrCreateByName(name)));
+    const payee = result.payeeName ? await payeesDb.findOrCreateByName(result.payeeName, ownerId) : null;
+    const tags = await Promise.all(result.tagNames.map(name => tagsDb.findOrCreateByName(name, ownerId)));
     return { categoryId: result.categoryId, payee, tags: tags.filter(Boolean) };
 }
 

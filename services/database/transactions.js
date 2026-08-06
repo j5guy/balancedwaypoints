@@ -21,8 +21,8 @@ const SORTS = {
     manual: { sortOrder: -1, date: -1, createdAt: -1 }
 };
 
-const list = ({ account, category, tag, payee, from, to, limit, sort } = {}) => {
-    const query = {};
+const list = (ownerId, { account, category, tag, payee, from, to, limit, sort } = {}) => {
+    const query = { owner: ownerId };
     if (account) query.account = account;
     if (category) query.$or = [{ category }, { 'splits.category': category }];
     if (tag) query.tags = tag;
@@ -37,38 +37,43 @@ const list = ({ account, category, tag, payee, from, to, limit, sort } = {}) => 
     return cursor.exec();
 };
 
-const findById = (id) => Transaction.findById(id).populate(populateOpts).exec();
-const findByImportedIds = (importedIds) => Transaction.find({ importedId: { $in: importedIds } }).exec();
+const findById = (id, ownerId) => Transaction.findOne({ _id: id, owner: ownerId }).populate(populateOpts).exec();
+const findByImportedIds = (importedIds, ownerId) => Transaction.find({ owner: ownerId, importedId: { $in: importedIds } }).exec();
 
 const create = (data) => Transaction.create(data);
-const update = (id, data) => Transaction.findByIdAndUpdate(id, data, { new: true, runValidators: true }).populate(populateOpts).exec();
-const remove = (id) => Transaction.findByIdAndDelete(id).exec();
+const update = (id, data, ownerId) => Transaction.findOneAndUpdate({ _id: id, owner: ownerId }, data, { new: true, runValidators: true }).populate(populateOpts).exec();
+const remove = (id, ownerId) => Transaction.findOneAndDelete({ _id: id, owner: ownerId }).exec();
 
 // Both sides of a transfer share a transferId so editing/deleting one can
 // keep the other in sync (see updateTransferPair/removeTransferPair below).
-const createTransfer = async ({ fromAccount, toAccount, date, amountCents, notes }) => {
+const createTransfer = async ({ owner, fromAccount, toAccount, date, amountCents, notes }) => {
     const transferId = new mongoose.Types.ObjectId();
     const [outgoing, incoming] = await Transaction.create([
-        { account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, notes },
-        { account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, notes }
+        { owner, account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, notes },
+        { owner, account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, notes }
     ]);
     return { outgoing, incoming };
 };
 
-const removeTransferPair = async (transferId) => Transaction.deleteMany({ transferId }).exec();
+const removeTransferPair = async (transferId, ownerId) => Transaction.deleteMany({ transferId, owner: ownerId }).exec();
 
 // Bulk-persists a new manual display order from the register's drag-and-drop
 // (see public/js/dragReorder.js) — ids top-to-bottom as currently displayed.
 // Allowed even for transfer/schedule-created rows, since this only ever
 // touches sortOrder (cosmetic), never the financial fields update() guards.
-const reorder = async (ids) => {
+const reorder = async (ids, ownerId) => {
     const total = ids.length;
-    await Promise.all(ids.map((id, i) => Transaction.updateOne({ _id: id }, { sortOrder: total - i }).exec()));
+    await Promise.all(ids.map((id, i) => Transaction.updateOne({ _id: id, owner: ownerId }, { sortOrder: total - i }).exec()));
 };
 
-const sumForAccount = async (accountId) => {
+// .aggregate() bypasses Mongoose's usual query-side ObjectId casting — both
+// owner and accountId/categoryId need an explicit cast here (owner because
+// req.session.userId round-trips through the session store's JSON
+// serialization as a plain string, same reasoning already applied to
+// accountId/categoryId below before this file added owner-scoping).
+const sumForAccount = async (accountId, ownerId) => {
     const [agg] = await Transaction.aggregate([
-        { $match: { account: new mongoose.Types.ObjectId(accountId) } },
+        { $match: { owner: new mongoose.Types.ObjectId(ownerId), account: new mongoose.Types.ObjectId(accountId) } },
         { $group: { _id: null, total: { $sum: '$amountCents' } } }
     ]);
     return agg ? agg.total : 0;
@@ -76,18 +81,19 @@ const sumForAccount = async (accountId) => {
 
 // Signed total for a category within a given month ('YYYY-MM'), counting
 // both direct-category transactions and any splits assigned to it.
-const sumForCategoryMonth = async (categoryId, month) => {
+const sumForCategoryMonth = async (categoryId, month, ownerId) => {
     const [year, monthNum] = month.split('-').map(Number);
     const start = new Date(Date.UTC(year, monthNum - 1, 1));
     const end = new Date(Date.UTC(year, monthNum, 1));
     const catId = new mongoose.Types.ObjectId(categoryId);
+    const ownerObjectId = new mongoose.Types.ObjectId(ownerId);
 
     const [direct] = await Transaction.aggregate([
-        { $match: { category: catId, date: { $gte: start, $lt: end } } },
+        { $match: { owner: ownerObjectId, category: catId, date: { $gte: start, $lt: end } } },
         { $group: { _id: null, total: { $sum: '$amountCents' } } }
     ]);
     const [splitAgg] = await Transaction.aggregate([
-        { $match: { 'splits.category': catId, date: { $gte: start, $lt: end } } },
+        { $match: { owner: ownerObjectId, 'splits.category': catId, date: { $gte: start, $lt: end } } },
         { $unwind: '$splits' },
         { $match: { 'splits.category': catId } },
         { $group: { _id: null, total: { $sum: '$splits.amountCents' } } }

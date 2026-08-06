@@ -10,8 +10,7 @@ locking yourself out), and delete accounts.
 
 ## Tags, categories, and payees
 
-Renaming/deleting a **tag** is admin-only (creating one is open to any user,
-so a typeahead "create if missing" flow while tagging a transaction doesn't
-need elevated access). Categories, category groups, and payees are editable
-by any authenticated user — there's no separate moderation step for those,
-since a single-household deployment doesn't need one.
+Each user's tags, categories, category groups, and payees are their own
+private data (see each model's `owner` field) — nobody else, admin included,
+can see or edit another user's. There's no cross-user moderation step for
+any of these.

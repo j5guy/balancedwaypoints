@@ -20,7 +20,7 @@ function serializeSummary(summary) {
 async function getMonth(req, res) {
     const { month } = req.params;
     if (!MONTH_RE.test(month)) return res.status(400).json({ error: 'month must be in YYYY-MM format' });
-    const summary = await envelope.summary(month);
+    const summary = await envelope.summary(month, req.session.userId);
     res.json(serializeSummary(summary));
 }
 
@@ -30,8 +30,8 @@ async function assign(req, res) {
     if (!MONTH_RE.test(month)) return res.status(400).json({ error: 'month must be in YYYY-MM format' });
     if (assignedCents === undefined || assignedCents === null) return res.status(400).json({ error: 'assignedCents is required' });
 
-    await categoryBudgetsDb.assign(categoryId, month, Number(assignedCents));
-    const summary = await envelope.summary(month);
+    await categoryBudgetsDb.assign(categoryId, month, Number(assignedCents), req.session.userId);
+    const summary = await envelope.summary(month, req.session.userId);
     res.json(serializeSummary(summary));
 }
 
@@ -45,8 +45,8 @@ async function copyFrom(req, res) {
     if (!MONTH_RE.test(fromMonth)) return res.status(400).json({ error: 'fromMonth must be in YYYY-MM format' });
     if (fromMonth === month) return res.status(400).json({ error: "fromMonth can't be the same as month" });
 
-    await categoryBudgetsDb.copyMonth(fromMonth, month);
-    const summary = await envelope.summary(month);
+    await categoryBudgetsDb.copyMonth(fromMonth, month, req.session.userId);
+    const summary = await envelope.summary(month, req.session.userId);
     res.json(serializeSummary(summary));
 }
 

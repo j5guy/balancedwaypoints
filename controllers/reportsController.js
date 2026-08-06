@@ -6,7 +6,7 @@ const forecast = require('../services/reports/forecast');
 
 async function spending(req, res) {
     const { from, to, month } = req.query;
-    const rows = await spendingByCategory({ from, to, month });
+    const rows = await spendingByCategory({ from, to, month, ownerId: req.authUserId });
     res.json({
         rows: rows.map(r => ({
             category: r.category ? { id: r.category._id, name: r.category.name } : null,
@@ -18,19 +18,19 @@ async function spending(req, res) {
 
 async function incomeExpense(req, res) {
     const { from, to } = req.query;
-    const rows = await incomeVsExpense({ from, to });
+    const rows = await incomeVsExpense({ from, to, ownerId: req.authUserId });
     res.json({ rows });
 }
 
 async function netWorthReport(req, res) {
     const months = req.query.months ? Number(req.query.months) : 12;
-    const rows = await netWorth({ months });
+    const rows = await netWorth({ months, ownerId: req.authUserId });
     res.json({ rows });
 }
 
 async function summaryReport(req, res) {
     const { from, to, account } = req.query;
-    const result = await summary({ from, to, accountId: account || null });
+    const result = await summary({ from, to, accountId: account || null, ownerId: req.authUserId });
     res.json(result);
 }
 
@@ -44,7 +44,8 @@ async function forecastReport(req, res) {
         pastAmount: pastAmount ? Number(pastAmount) : 10,
         pastUnit: FORECAST_UNITS.includes(pastUnit) ? pastUnit : 'days',
         futureAmount: futureAmount ? Number(futureAmount) : 6,
-        futureUnit: FORECAST_UNITS.includes(futureUnit) ? futureUnit : 'months'
+        futureUnit: FORECAST_UNITS.includes(futureUnit) ? futureUnit : 'months',
+        ownerId: req.authUserId
     });
     res.json({ rows });
 }

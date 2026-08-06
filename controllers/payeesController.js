@@ -13,7 +13,7 @@ function serialize(payee) {
 }
 
 async function list(req, res) {
-    const items = await payees.list();
+    const items = await payees.list(req.session.userId);
     res.json({ payees: items.map(serialize) });
 }
 
@@ -24,6 +24,7 @@ async function create(req, res) {
 
     try {
         const payee = await payees.create({
+            owner: req.session.userId,
             name,
             transferAccount: transferAccount || null,
             defaultCategory: defaultCategory || null,
@@ -49,7 +50,7 @@ async function update(req, res) {
     if (accountNumber !== undefined) data.accountNumber = accountNumber;
 
     try {
-        const payee = await payees.update(req.params.id, data);
+        const payee = await payees.update(req.params.id, data, req.session.userId);
         if (!payee) return res.status(404).json({ error: 'Not found' });
         res.json(serialize(payee));
     } catch (err) {
@@ -59,7 +60,7 @@ async function update(req, res) {
 }
 
 async function remove(req, res) {
-    const payee = await payees.remove(req.params.id);
+    const payee = await payees.remove(req.params.id, req.session.userId);
     if (!payee) return res.status(409).json({ error: 'Payee is used by existing transactions and cannot be deleted' });
     res.status(204).end();
 }

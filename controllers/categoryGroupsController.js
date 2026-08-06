@@ -5,7 +5,7 @@ function serialize(group) {
 }
 
 async function list(req, res) {
-    const items = await categoryGroups.list();
+    const items = await categoryGroups.list(req.session.userId);
     res.json({ categoryGroups: items.map(serialize) });
 }
 
@@ -15,7 +15,7 @@ async function create(req, res) {
     const { isIncome, sortOrder } = req.body || {};
 
     try {
-        const group = await categoryGroups.create({ name, isIncome: !!isIncome, sortOrder: Number(sortOrder) || 0 });
+        const group = await categoryGroups.create({ owner: req.session.userId, name, isIncome: !!isIncome, sortOrder: Number(sortOrder) || 0 });
         res.status(201).json(serialize(group));
     } catch (err) {
         if (err.code === 11000) return res.status(409).json({ error: 'A category group with that name already exists' });
@@ -30,13 +30,13 @@ async function update(req, res) {
     if (isIncome !== undefined) data.isIncome = !!isIncome;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;
 
-    const group = await categoryGroups.update(req.params.id, data);
+    const group = await categoryGroups.update(req.params.id, data, req.session.userId);
     if (!group) return res.status(404).json({ error: 'Not found' });
     res.json(serialize(group));
 }
 
 async function remove(req, res) {
-    const group = await categoryGroups.remove(req.params.id);
+    const group = await categoryGroups.remove(req.params.id, req.session.userId);
     if (!group) return res.status(409).json({ error: 'Category group still has categories in it and cannot be deleted' });
     res.status(204).end();
 }

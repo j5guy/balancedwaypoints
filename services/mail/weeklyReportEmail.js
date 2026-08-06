@@ -6,13 +6,13 @@ const accountsDb = require('../database/accounts');
 
 const ROW_STYLE = 'padding:4px 8px;border-bottom:1px solid #EAE7DE;';
 
-async function weeklyReportEmail() {
+async function weeklyReportEmail(ownerId) {
     const to = new Date();
     const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const [spending, accountBalances] = await Promise.all([
-        spendingByCategory({ from: from.toISOString(), to: to.toISOString() }),
-        accountsDb.balancesForAll()
+        spendingByCategory({ from: from.toISOString(), to: to.toISOString(), ownerId }),
+        accountsDb.balancesForAll(ownerId)
     ]);
 
     const spendingRows = spending.slice(0, 10).map((row) => `

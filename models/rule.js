@@ -16,6 +16,7 @@ const actionSchema = new mongoose.Schema({
 }, { _id: false });
 
 const ruleSchema = new mongoose.Schema({
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, required: true, trim: true },
     // Lower runs first.
     priority: { type: Number, default: 0 },
@@ -26,7 +27,7 @@ const ruleSchema = new mongoose.Schema({
     active: { type: Boolean, default: true }
 }, { timestamps: true });
 
-ruleSchema.index({ priority: 1 });
+ruleSchema.index({ owner: 1, priority: 1 });
 
 module.exports = mongoose.model('Rule', ruleSchema);
 module.exports.CONDITION_FIELDS = CONDITION_FIELDS;

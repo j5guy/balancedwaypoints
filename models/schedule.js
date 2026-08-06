@@ -32,6 +32,7 @@ const occurrenceOverrideSchema = new mongoose.Schema({
 });
 
 const scheduleSchema = new mongoose.Schema({
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, required: true, trim: true },
     account: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', required: true },
     payee: { type: mongoose.Schema.Types.ObjectId, ref: 'Payee', default: null },
@@ -64,6 +65,8 @@ const scheduleSchema = new mongoose.Schema({
     // Per-occurrence edits — see services/schedules/occurrenceOverrides.js.
     occurrenceOverrides: { type: [occurrenceOverrideSchema], default: [] }
 }, { timestamps: true });
+
+scheduleSchema.index({ owner: 1, nextDate: 1 });
 
 module.exports = mongoose.model('Schedule', scheduleSchema);
 module.exports.FREQUENCY_UNITS = FREQUENCY_UNITS;

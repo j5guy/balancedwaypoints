@@ -214,7 +214,7 @@ function sanitizeThemeColorGroup(input, existing) {
 // for the simpler flat sub-objects below) would replace the array wholesale
 // with no validation, so this gets its own sanitizer, same reasoning as
 // sanitizeThemeColorGroup above.
-const DASHBOARD_WIDGETS = ['summary', 'totalIncome', 'totalExpense', 'netBudget', 'netWorth', 'cashFlow', 'forecast'];
+const DASHBOARD_WIDGETS = ['summary', 'totalIncome', 'totalExpense', 'netBudget', 'netWorth', 'cashFlow', 'forecast', 'spendingPie'];
 const DASHBOARD_DATE_RANGES = ['month', 'last3', 'last6', 'last12', 'year', 'all'];
 const DASHBOARD_ALIGNS = ['left', 'center', 'right'];
 const DASHBOARD_FORECAST_UNITS = ['days', 'weeks', 'months', 'years'];

@@ -16,6 +16,20 @@
     --accent: #{$teal};
     --nav-bg: #FFFFFF;
     --nav-text: #{color.adjust($ink, $lightness: 15%)};
+
+    // Categorical palette for charts with >2 identity-carrying series (e.g.
+    // the dashboard's spending-by-category pie) — a validated, brand-neutral
+    // 5-hue set (dataviz skill's default categorical theme) plus a muted
+    // "Other" bucket. Assign in this fixed order, never cycled/re-ranked —
+    // see public/js/dashboard.js's categoryColorSlot, which hashes each
+    // category to a slot so its color stays stable across renders instead
+    // of shifting with its current rank.
+    --chart-cat-1: #2a78d6;
+    --chart-cat-2: #eb6834;
+    --chart-cat-3: #1baf7a;
+    --chart-cat-4: #eda100;
+    --chart-cat-5: #e87ba4;
+    --chart-cat-other: #{$muted-gray};
 }
 
 [data-theme='dark'] {
@@ -32,6 +46,15 @@
     --accent: #{color.adjust($teal, $lightness: 18%)};
     --nav-bg: #212728;
     --nav-text: #C7CDCB;
+
+    // Same 5 hues, stepped for the dark surface (dataviz skill's palette —
+    // this is the documented dark-mode column, not a separate palette).
+    --chart-cat-1: #3987e5;
+    --chart-cat-2: #d95926;
+    --chart-cat-3: #199e70;
+    --chart-cat-4: #c98500;
+    --chart-cat-5: #d55181;
+    --chart-cat-other: #8D9698;
 }
 
 * {

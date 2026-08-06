@@ -205,3 +205,85 @@
         width: auto;
     }
 }
+
+// Spending-by-category donut (public/js/dashboard.js's buildCategoryPieSvg).
+// Fixed square SVG rather than the generic .widget-chart svg's stretch-to-
+// fill (that rule's meant for the line charts) — a pie forced into a
+// non-square box would render as an ellipse.
+.pie-chart-layout {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+
+    svg {
+        width: 160px;
+        height: 160px;
+        flex-shrink: 0;
+    }
+}
+
+// The 2px stroke (in the card background color) between slices is this
+// chart's version of the dataviz "surface gap between fills" spec — same
+// idea as a stacked bar's segment gap, just around a ring instead.
+.pie-slice {
+    stroke: $bg-card;
+    stroke-width: 2;
+}
+
+.pie-center-label {
+    font-family: $font-mono;
+    font-size: 13px;
+    font-weight: 600;
+    fill: $text-primary;
+}
+
+.pie-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 160px;
+    flex: 1;
+}
+
+.pie-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+}
+
+.pie-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.pie-legend-label {
+    color: $text-secondary;
+    flex: 1;
+}
+
+.pie-legend-value {
+    font-family: $font-mono;
+    color: $text-primary;
+    white-space: nowrap;
+}
+
+// Categorical palette assignment — see abstracts/_variables.scss /
+// layout/_base.scss for the actual color values and provenance.
+$chart-cat-colors: (
+    1: $chart-cat-1,
+    2: $chart-cat-2,
+    3: $chart-cat-3,
+    4: $chart-cat-4,
+    5: $chart-cat-5,
+    other: $chart-cat-other
+);
+
+@each $key, $color in $chart-cat-colors {
+    .pie-slice.chart-cat-#{$key} { fill: $color; }
+    .pie-legend-swatch.chart-cat-#{$key} { background: $color; }
+}

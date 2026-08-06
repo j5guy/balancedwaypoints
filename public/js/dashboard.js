@@ -16,7 +16,8 @@
     // full instance shape ({id, type, accountId}).
     const SINGLETON_WIDGETS = [
         { type: 'netWorth', label: 'Net Worth Graph' },
-        { type: 'cashFlow', label: 'Cash Flow Graph' }
+        { type: 'cashFlow', label: 'Cash Flow Graph' },
+        { type: 'spendingPie', label: 'Spending by Category (Pie)' }
     ];
     const TOTALS_WIDGETS = [
         { type: 'summary', label: 'Summary Card' },
@@ -178,6 +179,28 @@
         return [0, Math.floor((count - 1) / 2), count - 1];
     }
 
+    // Category names are user data (created via /api/categories) and land
+    // as chart/legend markup below — same reasoning as public/js/reports.js's
+    // own escapeXml, just covering HTML's escapes too since this lands via
+    // innerHTML rather than being built as SVG text nodes.
+    function escapeHtml(str) {
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Assigns a category a stable categorical-palette slot from its own id
+    // (falling back to its name), not its current rank by spend — the
+    // dataviz rule "color follows the entity, never its rank": if the same
+    // category is #1 this month and #3 next month, it should stay the same
+    // color both times, not repaint. A cheap string hash is enough here;
+    // exact uniform distribution across the 5 slots doesn't matter, and a
+    // rare collision just means two categories share a color (still
+    // distinguishable via the legend's labels).
+    function categoryColorSlot(key) {
+        let hash = 0;
+        for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+        return (hash % 5) + 1;
+    }
+
     // ── Minimal inline-SVG chart helpers (no library — see
     // public/js/reports.js's own note on this app's no-CDN/no-build-step
     // policy) for the two trend widgets. Single-hue for Net Worth (one
@@ -301,6 +324,76 @@
         `;
     }
 
+    // Donut chart of spending by category — capped at the top 5 categories
+    // plus an "Other" bucket for the rest (dataviz guidance: pie/donut only
+    // reads at a glance up to ~6 segments; past that, adjacent slices blur
+    // and it stops being legible as anything more precise than "roughly
+    // even" or "roughly nothing"). Legend is mandatory here (≥2 series),
+    // and doubles as exact figures — the donut itself is deliberately just
+    // the at-a-glance shape, with a per-slice <title> for hover detail.
+    function buildCategoryPieSvg(rows) {
+        const spendingRows = rows
+            .filter(r => r.totalCents < 0)
+            .map(r => ({
+                key: r.category ? String(r.category.id) : 'uncategorized',
+                label: r.category ? r.category.name : 'Uncategorized',
+                value: Math.abs(r.totalCents)
+            }))
+            .sort((a, b) => b.value - a.value);
+        if (spendingRows.length === 0) return '<div class="empty-state">No spending in this range.</div>';
+
+        const MAX_SLICES = 5;
+        const top = spendingRows.slice(0, MAX_SLICES);
+        const otherValue = spendingRows.slice(MAX_SLICES).reduce((sum, r) => sum + r.value, 0);
+        const slices = otherValue > 0 ? [...top, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : top;
+        const total = slices.reduce((sum, s) => sum + s.value, 0);
+
+        const size = 160, cx = size / 2, cy = size / 2, r = 70, innerR = 42;
+        let angle = -Math.PI / 2; // start at 12 o'clock
+
+        const paths = slices.map((s) => {
+            const fraction = s.value / total;
+            const startAngle = angle;
+            const endAngle = angle + fraction * Math.PI * 2;
+            angle = endAngle;
+            // A full-circle single slice (100% in one category) has no arc
+            // to sweep — nudge just short of a full turn so the arc command
+            // still renders a (near-)complete ring instead of degenerating.
+            const sweep = Math.min(endAngle - startAngle, Math.PI * 2 - 0.001);
+            const largeArc = sweep > Math.PI ? 1 : 0;
+            const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+            const x2 = cx + r * Math.cos(startAngle + sweep), y2 = cy + r * Math.sin(startAngle + sweep);
+            const ix1 = cx + innerR * Math.cos(startAngle), iy1 = cy + innerR * Math.sin(startAngle);
+            const ix2 = cx + innerR * Math.cos(startAngle + sweep), iy2 = cy + innerR * Math.sin(startAngle + sweep);
+            const colorClass = s.isOther ? 'chart-cat-other' : `chart-cat-${categoryColorSlot(s.key)}`;
+            const pct = Math.round(fraction * 100);
+            const d = `M ${x1},${y1} A ${r},${r} 0 ${largeArc} 1 ${x2},${y2} L ${ix2},${iy2} A ${innerR},${innerR} 0 ${largeArc} 0 ${ix1},${iy1} Z`;
+            return `<path class="pie-slice ${colorClass}" d="${d}"><title>${escapeHtml(s.label)}: ${window.BWMoney.formatCents(s.value)} (${pct}%)</title></path>`;
+        }).join('');
+
+        const legend = slices.map((s) => {
+            const colorClass = s.isOther ? 'chart-cat-other' : `chart-cat-${categoryColorSlot(s.key)}`;
+            const pct = Math.round((s.value / total) * 100);
+            return `
+                <div class="pie-legend-row">
+                    <span class="pie-legend-swatch ${colorClass}"></span>
+                    <span class="pie-legend-label">${escapeHtml(s.label)}</span>
+                    <span class="pie-legend-value">${window.BWMoney.formatCents(s.value)} (${pct}%)</span>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="pie-chart-layout">
+                <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Spending by category">
+                    ${paths}
+                    <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" class="pie-center-label">${window.BWMoney.formatCents(total)}</text>
+                </svg>
+                <div class="pie-legend">${legend}</div>
+            </div>
+        `;
+    }
+
     // ── Widget builders — each returns a draggable .widget element, or null
     // for an unknown/removed widget type (defensive: a stored preference
     // could reference a type that no longer exists after a future change).
@@ -369,6 +462,14 @@
             const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
             div.innerHTML = `<div class="stat-label">${handle}Forecast — ${accountLabel(accountId)}</div><div class="widget-chart"></div>`;
             div.querySelector('.widget-chart').innerHTML = buildForecastSvg(rows, widget.thresholdCents);
+            return div;
+        }
+
+        if (type === 'spendingPie') {
+            div.classList.add('widget-wide');
+            const { rows } = await window.BWApi.apiFetch(`/api/reports/spending-by-category?${rangeQuery(periodRange(dateRangePreset))}`);
+            div.innerHTML = `<div class="stat-label">${handle}Spending by Category</div><div class="widget-chart"></div>`;
+            div.querySelector('.widget-chart').innerHTML = buildCategoryPieSvg(rows);
             return div;
         }
 

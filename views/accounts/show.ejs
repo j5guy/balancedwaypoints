@@ -168,9 +168,20 @@
     </div>
 
     <p class="muted" id="register-hint" style="font-size:0.85rem;" hidden>Drag a row by its handle (⠿) to reorder the register — the Balance column recalculates from the new order, top to bottom. Dragging switches "Sort by" (Table settings) to Manual, so your arrangement sticks instead of snapping back to date order.</p>
+
+    <div class="card" id="bulk-actions-bar" hidden style="display:flex;align-items:center;gap:12px;padding:10px 16px;">
+        <strong id="bulk-selected-count">0 selected</strong>
+        <select id="bulk-category-select" style="max-width:220px;">
+            <option value="">— choose category —</option>
+        </select>
+        <button type="button" class="btn btn-primary btn-sm" id="bulk-apply-category-btn">Set category</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="bulk-clear-btn">Clear selection</button>
+    </div>
+
     <div class="table-wrap">
         <table class="data-table register-table">
             <colgroup>
+                <col style="width:22px">
                 <col style="width:22px">
                 <col style="width:92px" data-col="date">
                 <col style="width:130px" data-col="payee">
@@ -184,6 +195,7 @@
             </colgroup>
             <thead>
                 <tr>
+                    <th><input type="checkbox" id="select-all-checkbox" title="Select all"></th>
                     <th></th>
                     <th data-col="date">Date</th>
                     <th data-col="payee">Payee</th>
@@ -198,6 +210,7 @@
             </thead>
             <tbody id="quick-add-tbody">
                 <tr class="quick-add-row">
+                    <td></td>
                     <td class="muted" style="text-align:center;">+</td>
                     <td data-col="date"><input type="date" id="qa-date"></td>
                     <td data-col="payee"><input type="text" id="qa-payee" list="payee-options" placeholder="Payee"></td>

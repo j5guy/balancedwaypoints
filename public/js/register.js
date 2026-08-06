@@ -12,6 +12,11 @@
     let currentBalanceCents = 0;
     let transactionsById = new Map();
     let preferences = null;
+    // Bulk category selection — ids of currently-checked rows. Cleared on
+    // every loadTransactions() reload rather than tracked across reloads,
+    // since the set of rendered rows (and which are even selectable) can
+    // change with the sort/filter/history-window preferences.
+    let selectedIds = new Set();
     // 'owner' unless this register belongs to an account someone else
     // shared with us (see accountsController.js's serialize) — gates every
     // write control below. Every reference-data fetch always carries
@@ -78,6 +83,8 @@
         renderAccountBalance();
 
         document.getElementById('category-options').innerHTML = categories.map(c => `<option value="${c.name}">`).join('');
+        document.getElementById('bulk-category-select').innerHTML = '<option value="">— choose category —</option>' +
+            categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
         const groupOptionsHtml = '<option value="">— pick a group —</option>' +
             categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
         document.getElementById('txn-category-new-group').innerHTML = groupOptionsHtml;
@@ -111,6 +118,8 @@
         document.querySelector('.quick-add-row').style.display = readonly ? 'none' : '';
         document.getElementById('txn-is-transfer').parentElement.style.display = isShared ? 'none' : '';
         document.querySelector('.page-register').classList.toggle('register-readonly', readonly);
+        document.getElementById('select-all-checkbox').closest('th').style.display = readonly ? 'none' : '';
+        if (readonly) document.getElementById('bulk-actions-bar').hidden = true;
     }
 
     // Resolves a typed category name to an id, creating the category (in the
@@ -185,7 +194,18 @@
         const amountClass = maskAmount ? 'money-masked' : (t.amountCents < 0 ? 'money-negative' : 'money-positive');
         const balanceClass = maskBalance ? 'money-masked' : (balanceCents < 0 ? 'money-negative' : 'money-positive');
         const isCleared = t.cleared !== 'pending';
+        // Bulk category selection is offered for plain transactions only —
+        // a transfer has no category at all, and a split transaction's
+        // category lives per-split (see startCellEdit's identical guard on
+        // the category cell), so both get a disabled, unchecked checkbox
+        // rather than being silently skipped by a bulk apply.
+        const bulkDisabled = accountRole === 'readonly' || !!t.transferId || (t.splits && t.splits.length > 0);
+        const bulkTitle = t.transferId ? "Transfers can't be bulk-edited"
+            : (t.splits && t.splits.length ? 'Split transactions must be edited individually' : 'Select for bulk actions');
         tr.innerHTML = `
+            <td class="row-select-cell" style="text-align:center;">
+                <input type="checkbox" class="row-select-checkbox" data-select-id="${t.id}" title="${bulkTitle}" ${bulkDisabled ? 'disabled' : ''}>
+            </td>
             <td class="drag-handle" title="Drag to reorder">⠿</td>
             <td class="editable-cell" data-col="date">${window.BWDate.formatDate(t.date)}</td>
             <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
@@ -206,6 +226,14 @@
         tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(t));
         tr.querySelector('[data-delete]').addEventListener('click', () => deleteTransaction(t.id));
         tr.querySelector('[data-cleared-toggle]').addEventListener('click', () => toggleCleared(t));
+        const selectCb = tr.querySelector('.row-select-checkbox');
+        if (!bulkDisabled) {
+            selectCb.checked = selectedIds.has(t.id);
+            selectCb.addEventListener('change', () => {
+                if (selectCb.checked) selectedIds.add(t.id); else selectedIds.delete(t.id);
+                updateBulkBar();
+            });
+        }
         tr.querySelectorAll('.editable-cell').forEach((td) => {
             td.addEventListener('click', () => startCellEdit(tr, td, t));
         });
@@ -464,6 +492,7 @@
         const balanceClass = maskBalance ? 'money-masked' : (occurrence.projectedBalanceCents < 0 ? 'money-negative' : 'money-positive');
         tr.innerHTML = `
             <td></td>
+            <td></td>
             <td data-col="date">${window.BWDate.formatDate(occurrence.date)}</td>
             <td data-col="payee">${s.payee ? s.payee.name : ''}</td>
             <td data-col="category">${category}</td>
@@ -673,7 +702,58 @@
         return from;
     }
 
+    // ── Bulk category edit ────────────────────────────────────────────
+    // Reflects selectedIds into the bar's count/visibility and the header
+    // "select all" checkbox's checked/indeterminate state. Called on every
+    // row checkbox change and after each register reload.
+    function updateBulkBar() {
+        const bar = document.getElementById('bulk-actions-bar');
+        document.getElementById('bulk-selected-count').textContent = `${selectedIds.size} selected`;
+        bar.hidden = selectedIds.size === 0;
+        const selectAll = document.getElementById('select-all-checkbox');
+        const boxes = [...document.querySelectorAll('#register-tbody .row-select-checkbox:not(:disabled)')];
+        selectAll.checked = boxes.length > 0 && boxes.every(cb => cb.checked);
+        selectAll.indeterminate = selectedIds.size > 0 && !selectAll.checked;
+    }
+
+    document.getElementById('select-all-checkbox').addEventListener('change', (e) => {
+        const checked = e.target.checked;
+        document.querySelectorAll('#register-tbody .row-select-checkbox:not(:disabled)').forEach((cb) => {
+            cb.checked = checked;
+            if (checked) selectedIds.add(cb.dataset.selectId);
+            else selectedIds.delete(cb.dataset.selectId);
+        });
+        updateBulkBar();
+    });
+
+    document.getElementById('bulk-clear-btn').addEventListener('click', () => {
+        selectedIds.clear();
+        document.querySelectorAll('#register-tbody .row-select-checkbox').forEach((cb) => { cb.checked = false; });
+        updateBulkBar();
+    });
+
+    document.getElementById('bulk-apply-category-btn').addEventListener('click', async () => {
+        const select = document.getElementById('bulk-category-select');
+        const categoryId = select.value;
+        if (!categoryId || selectedIds.size === 0) return;
+        const categoryName = select.options[select.selectedIndex].text;
+        if (!confirm(`Set category to "${categoryName}" for ${selectedIds.size} transaction(s)?`)) return;
+        clearError();
+        try {
+            await Promise.all([...selectedIds].map(id =>
+                window.BWApi.apiFetch(`/api/transactions/${id}`, { method: 'PUT', body: { category: categoryId } })
+            ));
+            select.value = '';
+            await loadReferenceData();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+            await loadTransactions();
+        }
+    });
+
     async function loadTransactions() {
+        selectedIds.clear();
         try {
             const from = historyFromDate();
             const sort = preferences.registerSort || 'newest';
@@ -689,8 +769,9 @@
 
             if (transactions.length === 0) {
                 if (upcomingRows.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="10" class="empty-state">${from ? 'No transactions in this time window.' : 'No transactions yet.'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="11" class="empty-state">${from ? 'No transactions in this time window.' : 'No transactions yet.'}</td></tr>`;
                 }
+                updateBulkBar();
                 return;
             }
             // Balance math always walks newest-to-oldest by date regardless
@@ -700,6 +781,7 @@
             const balanceOrder = sort === 'manual' ? transactions : [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
             const balanceById = computeRunningBalances(balanceOrder);
             transactions.forEach(t => tbody.appendChild(transactionRow(t, balanceById.get(t.id))));
+            updateBulkBar();
         } catch (err) {
             showError(err);
         }

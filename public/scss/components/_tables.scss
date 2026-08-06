@@ -155,7 +155,8 @@ table.register-table {
 .register-readonly {
     .register-table {
         .row-actions,
-        .cleared-toggle {
+        .cleared-toggle,
+        .row-select-cell {
             display: none;
         }
 

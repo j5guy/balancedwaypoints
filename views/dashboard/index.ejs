@@ -64,6 +64,21 @@
         </details>
 
         <details class="customize-section">
+            <summary>Account balances</summary>
+            <p class="muted" style="font-size:0.85rem;">One per account — shows its current balance and links straight to that account's register.</p>
+            <div id="balance-widget-list"></div>
+            <div class="form-row" style="margin-top:8px;">
+                <div class="form-group">
+                    <label for="add-balance-account">Account</label>
+                    <select id="add-balance-account"></select>
+                </div>
+                <div class="form-group" style="align-self:flex-end;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="add-balance-btn">+ Add</button>
+                </div>
+            </div>
+        </details>
+
+        <details class="customize-section">
             <summary>Account forecasts</summary>
             <p class="muted" style="font-size:0.85rem;">One per account — running balance from your chosen window in
             the past, projected out through scheduled transactions to your chosen window in the future, same as the

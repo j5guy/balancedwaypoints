@@ -33,6 +33,22 @@
     grid-column: 1 / -1;
 }
 
+// Account Balance widget only (see public/js/dashboard.js's buildWidget) —
+// the whole card navigates to that account's register on click, except the
+// drag handle itself (still needs its own grab cursor to read as
+// draggable, not clickable-through).
+.widget-clickable {
+    cursor: pointer;
+
+    &:hover {
+        box-shadow: 0 0 0 1px $border;
+    }
+
+    .drag-handle {
+        cursor: grab;
+    }
+}
+
 .widget-summary-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

@@ -31,7 +31,14 @@
     // its own catalog/category and its own add-form in the Customize modal
     // rather than reusing the totals add-row.
     const FORECAST_WIDGET = { type: 'forecast', label: 'Account Forecast' };
-    const WIDGET_LABELS = Object.fromEntries([...SINGLETON_WIDGETS, ...TOTALS_WIDGETS, FORECAST_WIDGET].map(w => [w.type, w.label]));
+    // Account Balance is also per-account like Forecast (no "All accounts"
+    // option — a balance is inherently one account's), but unlike every
+    // other widget it's not scoped to the dashboard's date-range preset at
+    // all (it's just the account's current balance, same figure the
+    // Accounts page shows) and it's clickable straight through to that
+    // account's register — see buildWidget's 'accountBalance' case.
+    const ACCOUNT_BALANCE_WIDGET = { type: 'accountBalance', label: 'Account Balance' };
+    const WIDGET_LABELS = Object.fromEntries([...SINGLETON_WIDGETS, ...TOTALS_WIDGETS, FORECAST_WIDGET, ACCOUNT_BALANCE_WIDGET].map(w => [w.type, w.label]));
     const DEFAULT_WIDGETS = [
         { id: 'summary', type: 'summary', accountId: null },
         { id: 'totalIncome', type: 'totalIncome', accountId: null },
@@ -477,6 +484,30 @@
             return div;
         }
 
+        if (type === 'accountBalance') {
+            const account = accounts.find(a => a.id === accountId);
+            if (!account) {
+                // The account was closed or its share was revoked since
+                // this widget was added — same defensive handling as a
+                // removed widget type, rather than crashing the whole grid.
+                div.innerHTML = `<div class="stat-label">${handle}Account Balance</div><div class="stat-value muted">Unknown account</div>`;
+                return div;
+            }
+            const balanceClass = account.balanceCents < 0 ? 'money-negative' : 'money-positive';
+            div.classList.add('widget-clickable');
+            div.title = `Open ${account.name}'s register`;
+            div.innerHTML = `<div class="stat-label">${handle}${account.name}</div><div class="stat-value ${balanceClass}">${window.BWMoney.formatCents(account.balanceCents)}</div>`;
+            // Ignore clicks on the drag handle itself — grabbing it to
+            // reorder shouldn't also navigate away. A genuine native drag
+            // doesn't fire a click afterward, so this only needs to guard
+            // against the handle, not against drag-in-progress.
+            div.addEventListener('click', (e) => {
+                if (e.target.closest('.drag-handle')) return;
+                window.location.href = `/accounts/${accountId}`;
+            });
+            return div;
+        }
+
         if (type === 'spendingPie') {
             div.classList.add('widget-wide');
             const { rows } = await window.BWApi.apiFetch(`/api/reports/spending-by-category?${rangeQuery(periodRange(dateRangePreset))}`);
@@ -516,6 +547,8 @@
     const addForecastFutureAmount = document.getElementById('add-forecast-future-amount');
     const addForecastFutureUnit = document.getElementById('add-forecast-future-unit');
     const addForecastThreshold = document.getElementById('add-forecast-threshold');
+    const balanceListEl = document.getElementById('balance-widget-list');
+    const addBalanceAccount = document.getElementById('add-balance-account');
     const alignSelect = document.getElementById('widget-align');
     let draftWidgets = [];
 
@@ -583,13 +616,41 @@
         });
     }
 
+    // No "All accounts" option here either — same reasoning as
+    // populateForecastAccountSelect, a balance is always one account's.
+    function populateBalanceAccountSelect() {
+        addBalanceAccount.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
+    function buildBalanceList() {
+        const instances = draftWidgets.filter(w => w.type === 'accountBalance');
+        if (instances.length === 0) {
+            balanceListEl.innerHTML = '<p class="muted" style="font-size:0.85rem;">None added yet.</p>';
+            return;
+        }
+        balanceListEl.innerHTML = instances.map(w => `
+            <div class="widget-instance-row">
+                <span>${accountLabel(w.accountId)}</span>
+                <button type="button" class="icon-btn" data-remove-balance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+            </div>
+        `).join('');
+        balanceListEl.querySelectorAll('[data-remove-balance]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeBalance);
+                buildBalanceList();
+            });
+        });
+    }
+
     document.getElementById('customize-dashboard-btn').addEventListener('click', () => {
         draftWidgets = currentWidgets.map(w => ({ ...w }));
         buildSingletonChecklist();
         populateAccountSelect();
         populateForecastAccountSelect();
+        populateBalanceAccountSelect();
         buildTotalsList();
         buildForecastList();
+        buildBalanceList();
         alignSelect.value = align;
         customizeOverlay.hidden = false;
     });
@@ -617,6 +678,13 @@
             thresholdCents: window.BWMoney.toCents(addForecastThreshold.value || 0)
         });
         buildForecastList();
+    });
+
+    document.getElementById('add-balance-btn').addEventListener('click', () => {
+        const accountId = addBalanceAccount.value;
+        if (!accountId) return;
+        draftWidgets.push({ id: makeWidgetId('accountBalance'), type: 'accountBalance', accountId });
+        buildBalanceList();
     });
 
     document.getElementById('save-widgets-btn').addEventListener('click', async () => {

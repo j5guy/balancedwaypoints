@@ -50,25 +50,35 @@
     async function loadAccounts() {
         const { accounts } = await window.BWApi.apiFetch('/api/accounts');
         const select = document.getElementById('import-account');
-        select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('') +
+        // With zero accounts, the sentinel option below would be the ONLY
+        // option — meaning the browser auto-selects it on load with no
+        // 'change' event ever firing (nothing actually changed), so the
+        // create-account form this listens for that event to reveal never
+        // shows. A blank placeholder, selected by default instead, forces
+        // an actual selection (and a real 'change' event) before anything
+        // happens — same reasoning applies whenever the previously-selected
+        // account no longer exists to fall back to (see selectFirstRealAccount).
+        const placeholder = accounts.length === 0 ? '<option value="" selected disabled>— select an account —</option>' : '';
+        select.innerHTML = placeholder + accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('') +
             `<option value="${NEW_ACCOUNT_VALUE}">+ Create a new account…</option>`;
         return accounts;
     }
 
     function selectFirstRealAccount() {
         const select = document.getElementById('import-account');
-        const firstReal = [...select.options].find(o => o.value !== NEW_ACCOUNT_VALUE);
-        if (firstReal) select.value = firstReal.value;
+        const firstReal = [...select.options].find(o => o.value && o.value !== NEW_ACCOUNT_VALUE);
+        select.value = firstReal ? firstReal.value : '';
     }
 
     // Preview is disabled until there's actually something to preview: a
     // chosen file, and a real account selected (picking "+ Create a new
     // account…" isn't itself a valid account — it just opens the inline
     // form below, and shouldn't be actionable until that's actually been
-    // submitted). Re-run after every event that could change either.
+    // submitted; the blank placeholder above isn't one either).
     function updatePreviewButtonState() {
         const hasFile = document.getElementById('import-file').files.length > 0;
-        const accountChosen = document.getElementById('import-account').value !== NEW_ACCOUNT_VALUE;
+        const accountValue = document.getElementById('import-account').value;
+        const accountChosen = accountValue && accountValue !== NEW_ACCOUNT_VALUE;
         previewBtn.disabled = !hasFile || !accountChosen;
     }
 

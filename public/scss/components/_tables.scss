@@ -80,6 +80,14 @@ table.register-table {
     }
 }
 
+.filter-row {
+    input {
+        font-size: 0.85rem;
+        padding: 6px 8px;
+        width: 100%;
+    }
+}
+
 .cleared-toggle {
     background: transparent;
     border: none;

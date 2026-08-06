@@ -17,6 +17,18 @@
     // since the set of rendered rows (and which are even selectable) can
     // change with the sort/filter/history-window preferences.
     let selectedIds = new Set();
+
+    // Live per-column register filter (see the "⌕" row in accounts/show.ejs,
+    // just below the quick-add row). Purely client-side over whatever's
+    // already loaded — typing never re-fetches, it just re-renders the
+    // cached transactions/balances/upcoming rows below (see
+    // renderRegisterRows). Balances are computed once from the FULL
+    // unfiltered list (loadTransactions) and just looked up per row here, so
+    // filtering never shifts a shown balance away from its real value.
+    let filterState = { date: '', payee: '', category: '', notes: '', tags: '', amount: '' };
+    let currentTransactions = [];
+    let currentBalanceById = new Map();
+    let currentUpcomingRows = [];
     // 'owner' unless this register belongs to an account someone else
     // shared with us (see accountsController.js's serialize) — gates every
     // write control below. Every reference-data fetch always carries
@@ -180,13 +192,23 @@
         });
     }
 
+    function isFiltering() {
+        return Object.values(filterState).some(v => v);
+    }
+
     function transactionRow(t, balanceCents) {
         const tr = document.createElement('tr');
         // Dragging works regardless of sort mode — see the reorder handler
         // in init() below, which switches the sort preference to 'manual'
         // the moment a row actually gets dragged, so the new position
         // sticks instead of snapping back to date order on next load.
-        tr.draggable = accountRole !== 'readonly';
+        // Disabled while a filter narrows the list: dragReorder posts
+        // top-to-bottom ids straight from the visible DOM order (see
+        // dragReorder.js), and services/database/transactions.js's reorder()
+        // renumbers sortOrder purely from that array's length/position — a
+        // partial (filtered) list would clobber every hidden row's sortOrder
+        // out from under it.
+        tr.draggable = accountRole !== 'readonly' && !isFiltering();
         tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
         const maskAmount = preferences.registerMask && preferences.registerMask.amount;
@@ -206,7 +228,7 @@
             <td class="row-select-cell" style="text-align:center;">
                 <input type="checkbox" class="row-select-checkbox" data-select-id="${t.id}" title="${bulkTitle}" ${bulkDisabled ? 'disabled' : ''}>
             </td>
-            <td class="drag-handle" title="Drag to reorder">⠿</td>
+            <td class="drag-handle" title="${isFiltering() ? 'Clear filters to reorder' : 'Drag to reorder'}">⠿</td>
             <td class="editable-cell" data-col="date">${window.BWDate.formatDate(t.date)}</td>
             <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
             <td class="editable-cell" data-col="category">${category}</td>
@@ -752,6 +774,53 @@
         }
     });
 
+    // Substring match, case-insensitive — empty filter fields always match.
+    // Amount compares against the same "-45.00" string the cell displays
+    // (not cents), so typing "45" or "-45" both find it without needing to
+    // know how the app stores money internally.
+    function matchesFilters(t) {
+        const f = filterState;
+        if (f.date && !window.BWDate.formatDate(t.date).toLowerCase().includes(f.date)) return false;
+        if (f.payee && !(t.payee ? t.payee.name : '').toLowerCase().includes(f.payee)) return false;
+        if (f.category) {
+            const categoryName = t.category ? t.category.name : (t.splits && t.splits.length ? 'split' : (t.transferAccount ? 'transfer' : ''));
+            if (!categoryName.toLowerCase().includes(f.category)) return false;
+        }
+        if (f.notes && !(t.notes || '').toLowerCase().includes(f.notes)) return false;
+        if (f.tags && !(t.tags || []).some(tag => tag.name.toLowerCase().includes(f.tags))) return false;
+        if (f.amount && !(t.amountCents / 100).toFixed(2).includes(f.amount)) return false;
+        return true;
+    }
+
+    // Re-renders #register-tbody from the cached currentTransactions /
+    // currentBalanceById / currentUpcomingRows — no network call, so typing
+    // in a filter box stays instant. loadTransactions() populates the cache;
+    // filter input handlers just call this directly.
+    function renderRegisterRows() {
+        const tbody = document.getElementById('register-tbody');
+        tbody.innerHTML = '';
+        currentUpcomingRows.forEach(row => tbody.appendChild(row));
+
+        if (currentTransactions.length === 0) {
+            if (currentUpcomingRows.length === 0) {
+                const from = historyFromDate();
+                tbody.innerHTML = `<tr><td colspan="11" class="empty-state">${from ? 'No transactions in this time window.' : 'No transactions yet.'}</td></tr>`;
+            }
+            updateBulkBar();
+            return;
+        }
+
+        const filtered = currentTransactions.filter(matchesFilters);
+        if (filtered.length === 0) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = '<td colspan="11" class="empty-state">No transactions match your filters.</td>';
+            tbody.appendChild(tr);
+        } else {
+            filtered.forEach(t => tbody.appendChild(transactionRow(t, currentBalanceById.get(t.id))));
+        }
+        updateBulkBar();
+    }
+
     async function loadTransactions() {
         selectedIds.clear();
         try {
@@ -760,28 +829,20 @@
             const url = `/api/transactions?account=${accountId}&sort=${sort}` + (from ? `&from=${from.toISOString()}` : '');
             const { transactions } = await window.BWApi.apiFetch(url);
             transactionsById = new Map(transactions.map(t => [t.id, t]));
-            const tbody = document.getElementById('register-tbody');
-            tbody.innerHTML = '';
+            currentTransactions = transactions;
             document.getElementById('register-hint').hidden = transactions.length < 2;
 
-            const upcomingRows = await loadUpcomingRows();
-            upcomingRows.forEach(row => tbody.appendChild(row));
+            currentUpcomingRows = await loadUpcomingRows();
 
-            if (transactions.length === 0) {
-                if (upcomingRows.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="11" class="empty-state">${from ? 'No transactions in this time window.' : 'No transactions yet.'}</td></tr>`;
-                }
-                updateBulkBar();
-                return;
-            }
             // Balance math always walks newest-to-oldest by date regardless
             // of display order — 'manual' is the one exception, where the
             // drag-and-drop order itself defines the running balance (see
-            // computeRunningBalances' doc comment).
+            // computeRunningBalances' doc comment). Computed from the FULL
+            // list even though a filter might be active, so balances stay
+            // correct — see renderRegisterRows.
             const balanceOrder = sort === 'manual' ? transactions : [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
-            const balanceById = computeRunningBalances(balanceOrder);
-            transactions.forEach(t => tbody.appendChild(transactionRow(t, balanceById.get(t.id))));
-            updateBulkBar();
+            currentBalanceById = computeRunningBalances(balanceOrder);
+            renderRegisterRows();
         } catch (err) {
             showError(err);
         }
@@ -900,6 +961,18 @@
         document.getElementById('txn-cleared').checked = t.cleared !== 'pending';
         document.getElementById('cancel-txn-btn').hidden = false;
 
+        // Converting an existing transaction into a transfer isn't
+        // supported — transfers are their own paired-transaction flow (see
+        // createTransfer in transactionsController.js), and update() has no
+        // path to it, so leaving this checkbox live during an edit let you
+        // check it, hit Save, and have it silently do a normal update
+        // instead (same "delete and recreate" limitation the transferId
+        // guard above already enforces the other direction). Force it off
+        // and hide it for the duration of this edit.
+        document.getElementById('txn-is-transfer').checked = false;
+        document.getElementById('txn-is-transfer').parentElement.hidden = true;
+        document.getElementById('txn-transfer-group').hidden = true;
+
         if (t.splits && t.splits.length) {
             document.getElementById('splits-editor').hidden = false;
             document.getElementById('txn-category-group').hidden = true;
@@ -927,6 +1000,7 @@
         document.getElementById('txn-category').value = '';
         document.getElementById('txn-category-new-group').value = '';
         document.getElementById('txn-is-transfer').checked = false;
+        document.getElementById('txn-is-transfer').parentElement.hidden = false;
         document.getElementById('txn-transfer-group').hidden = true;
         document.getElementById('txn-category-group').hidden = false;
         document.getElementById('splits-editor').hidden = true;
@@ -956,6 +1030,9 @@
         const amountCents = window.BWMoney.toCents(document.getElementById('txn-amount').value || 0);
         if (!date) return showError(new Error('Date is required'));
         if (!amountCents) return showError(new Error('Amount is required'));
+        if (editingId && document.getElementById('txn-is-transfer').checked) {
+            return showError(new Error("Can't turn an existing transaction into a transfer — delete it and create the transfer fresh instead"));
+        }
 
         try {
             if (document.getElementById('txn-is-transfer').checked && !editingId) {
@@ -1010,6 +1087,25 @@
             showError(err);
         }
     }
+
+    // ── Live filter row — narrows #register-tbody as you type, no re-fetch
+    // (see matchesFilters/renderRegisterRows above). Stays in its own tbody
+    // (see accounts/show.ejs), same as the quick-add row, so it survives
+    // loadTransactions()'s innerHTML wipe of #register-tbody.
+    const FILTER_FIELDS = ['date', 'payee', 'category', 'notes', 'tags', 'amount'];
+    FILTER_FIELDS.forEach((field) => {
+        document.getElementById(`filter-${field}`).addEventListener('input', (e) => {
+            filterState[field] = e.target.value.trim().toLowerCase();
+            renderRegisterRows();
+        });
+    });
+    document.getElementById('filter-clear-btn').addEventListener('click', () => {
+        FILTER_FIELDS.forEach((field) => {
+            filterState[field] = '';
+            document.getElementById(`filter-${field}`).value = '';
+        });
+        renderRegisterRows();
+    });
 
     // ── Quick-add row — a live "type straight into the table" entry point
     // for the common case (no transfer, no split). Stays in its own tbody

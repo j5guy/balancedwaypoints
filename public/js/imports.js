@@ -167,7 +167,11 @@
             });
             document.getElementById('preview-section').hidden = true;
             document.getElementById('preview-summary').textContent = '';
-            alert(`Imported ${result.created} transaction(s).`);
+            if (result.warnings && result.warnings.length) {
+                alert(`Imported ${result.created} transaction(s), but ${result.warnings.length} payee/category couldn't be resolved:\n\n${result.warnings.join('\n')}`);
+            } else {
+                alert(`Imported ${result.created} transaction(s).`);
+            }
             document.getElementById('import-file').value = '';
         } catch (err) {
             showError(err);

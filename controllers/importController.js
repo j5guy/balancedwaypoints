@@ -8,6 +8,7 @@ const tagsDb = require('../services/database/tags');
 const categoriesDb = require('../services/database/categories');
 const categoryGroupsDb = require('../services/database/categoryGroups');
 const { applyRules } = require('../services/rules/applyRules');
+const logger = require('../utils/logger');
 
 // Parses the uploaded file and returns rows enriched with a duplicate flag
 // and a rule-based category/tag suggestion — nothing is written to the
@@ -65,18 +66,45 @@ async function commit(req, res) {
     // whole batch is enough — no need to reset it per date.
     let sortOrder = Date.now();
 
+    // payee/category resolution used to be un-guarded — any failure there
+    // (a Mongo validation/cast error, an unexpected 11000 shape, etc.) would
+    // still let the transaction itself get created moments later, just with
+    // that field silently left null, and the client never learned anything
+    // went wrong. Wrapping each resolution means a failure is visible (in
+    // `warnings`, returned to the client, and logged with the actual row so
+    // it's traceable server-side) instead of quietly dropping data.
     let created = 0;
+    const warnings = [];
     for (const row of rows) {
-        const payee = row.payeeName ? await payeesDb.findOrCreateByName(row.payeeName, ownerId) : null;
+        const rowLabel = row.payeeName || row.notes || row.date || '(unlabeled row)';
+
+        let payee = null;
+        if (row.payeeName) {
+            try {
+                payee = await payeesDb.findOrCreateByName(row.payeeName, ownerId);
+            } catch (err) {
+                logger.error(`Import: failed to resolve payee "${row.payeeName}" for row "${rowLabel}": ${err.message}`);
+                warnings.push(`"${rowLabel}": couldn't create/find payee "${row.payeeName}" — ${err.message}`);
+            }
+        }
+
         const tags = await Promise.all((row.tagNames || []).map(name => tagsDb.findOrCreateByName(name, ownerId)));
 
         // No categoryId was picked (the CSV named a category that doesn't
         // exist yet) — create the group and category on the fly.
         let categoryId = row.categoryId || null;
         if (!categoryId && row.categoryName) {
-            const group = await categoryGroupsDb.findOrCreateByName(row.categoryGroupName || 'Imported', ownerId);
-            const category = group ? await categoriesDb.findOrCreateByName(row.categoryName, group._id, ownerId) : null;
-            categoryId = category ? category._id : null;
+            try {
+                const group = await categoryGroupsDb.findOrCreateByName(row.categoryGroupName || 'Imported', ownerId);
+                const category = group ? await categoriesDb.findOrCreateByName(row.categoryName, group._id, ownerId) : null;
+                categoryId = category ? category._id : null;
+                if (!categoryId) {
+                    warnings.push(`"${rowLabel}": couldn't create/find category "${row.categoryName}" in group "${row.categoryGroupName || 'Imported'}"`);
+                }
+            } catch (err) {
+                logger.error(`Import: failed to resolve category "${row.categoryName}" (group "${row.categoryGroupName}") for row "${rowLabel}": ${err.message}`);
+                warnings.push(`"${rowLabel}": couldn't create/find category "${row.categoryName}" — ${err.message}`);
+            }
         }
 
         await transactionsDb.create({
@@ -95,7 +123,7 @@ async function commit(req, res) {
         created++;
     }
 
-    res.status(201).json({ created });
+    res.status(201).json({ created, warnings });
 }
 
 module.exports = { preview, commit };

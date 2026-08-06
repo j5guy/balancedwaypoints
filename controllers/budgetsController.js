@@ -13,6 +13,10 @@ function serializeSummary(summary) {
             assignedCents: c.assignedCents,
             activityCents: c.activityCents,
             balanceCents: c.balanceCents
+        })),
+        incomeCategories: summary.incomeCategories.map(c => ({
+            category: { id: c.category._id, name: c.category.name, group: c.category.group._id || c.category.group },
+            activityCents: c.activityCents
         }))
     };
 }

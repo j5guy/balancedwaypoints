@@ -121,14 +121,21 @@
     // Doubles as the "Managing: [owner]" structure-only view for regular
     // groups too (see render()) — $ assignment stays owner-only, so there's
     // nothing to show there but the category list itself either way.
-    function incomeGroupSection(group, categoriesInGroup) {
+    // `groupActivityCents` is this month's total across the group's
+    // categories — null while managing another owner's structure (`forId`
+    // in render()), since $ data is owner-only at every share tier and
+    // there's nothing to sum in that view (see render()'s own comment).
+    function incomeGroupSection(group, categoriesInGroup, groupActivityCents) {
         const section = document.createElement('div');
         section.className = 'budget-group';
+        const totalHtml = groupActivityCents === null ? '' :
+            `<span class="money ${groupActivityCents < 0 ? 'money-negative' : 'money-positive'}" style="margin-left:auto;">${window.BWMoney.formatCents(groupActivityCents)}</span>`;
         section.innerHTML = `
-            <div class="budget-group-title">
+            <div class="budget-group-title" style="display:flex;align-items:center;">
                 ${group.name}
                 <button type="button" class="btn btn-secondary btn-sm" data-add-category style="margin-left:8px;">+ category</button>
                 <button type="button" class="icon-btn" data-delete-group title="Delete group" style="border:none;background:none;cursor:pointer;">🗑</button>
+                ${totalHtml}
             </div>
             <div class="income-category-list"></div>
         `;
@@ -198,7 +205,7 @@
             } else if (forId) {
                 budgetGroups.forEach(group => {
                     const cats = allCategories.filter(c => c.group === group.id);
-                    container.appendChild(incomeGroupSection(group, cats));
+                    container.appendChild(incomeGroupSection(group, cats, null));
                 });
             } else {
                 budgetGroups.forEach(group => {
@@ -221,7 +228,9 @@
             incomeContainer.innerHTML = '';
             incomeGroups.forEach(group => {
                 const cats = allCategories.filter(c => c.group === group.id);
-                incomeContainer.appendChild(incomeGroupSection(group, cats));
+                const groupActivityCents = forId ? null :
+                    summary.incomeCategories.filter(c => c.category.group === group.id).reduce((sum, c) => sum + c.activityCents, 0);
+                incomeContainer.appendChild(incomeGroupSection(group, cats, groupActivityCents));
             });
         } catch (err) {
             showError(err);

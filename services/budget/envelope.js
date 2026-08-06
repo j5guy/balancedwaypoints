@@ -67,6 +67,12 @@ async function activityForCategoryThroughMonth(categoryId, month, ownerId, { exa
 async function summary(month, ownerId) {
     const categories = await categoriesDb.list(ownerId);
     const budgetable = categories.filter(c => !c.group.isIncome);
+    // Income categories have no envelope (no assigned/balance — the whole
+    // point of "Ready to Assign" is that income isn't pre-allocated), so
+    // they're kept out of `budgetable`/categoryResults entirely. They still
+    // get their own activity-only figure here so the budget page can show a
+    // total per income group (see budgetsController.js's serializeSummary).
+    const incomeCategoriesList = categories.filter(c => c.group.isIncome);
     const budgetRows = await categoryBudgetsDb.upToMonth(month, ownerId);
 
     const assignedThroughMonthByCategory = new Map();
@@ -91,6 +97,11 @@ async function summary(month, ownerId) {
         };
     }));
 
+    const incomeCategoryResults = await Promise.all(incomeCategoriesList.map(async (category) => ({
+        category,
+        activityCents: await activityForCategoryThroughMonth(category._id, month, ownerId, { exact: true })
+    })));
+
     const totalCategoryBalance = categoryResults.reduce((sum, c) => sum + c.balanceCents, 0);
     const onBudgetBalance = await onBudgetAccountBalanceThroughMonth(month, ownerId);
     const readyToAssignCents = onBudgetBalance - totalCategoryBalance;
@@ -99,7 +110,8 @@ async function summary(month, ownerId) {
         month,
         readyToAssignCents,
         onBudgetBalanceCents: onBudgetBalance,
-        categories: categoryResults
+        categories: categoryResults,
+        incomeCategories: incomeCategoryResults
     };
 }
 

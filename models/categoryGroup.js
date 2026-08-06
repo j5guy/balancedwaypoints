@@ -9,6 +9,6 @@ const categoryGroupSchema = new mongoose.Schema({
     sortOrder: { type: Number, default: 0 }
 }, { timestamps: true });
 
-categoryGroupSchema.index({ owner: 1, name: 1 }, { unique: true });
+categoryGroupSchema.index({ owner: 1, name: 1, isIncome: 1 }, { unique: true });
 
 module.exports = mongoose.model('CategoryGroup', categoryGroupSchema);

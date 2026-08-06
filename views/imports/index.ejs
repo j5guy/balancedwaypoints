@@ -10,10 +10,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="import-account">Account</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <select id="import-account" style="flex:1;"></select>
-                    <button type="button" class="btn btn-secondary btn-sm" id="new-account-toggle-btn" title="Create a new account">+ New</button>
-                </div>
+                <select id="import-account"></select>
             </div>
             <div class="form-group">
                 <label for="import-format">Format</label>
@@ -28,7 +25,7 @@
             </div>
         </div>
 
-        <div class="form-row" id="new-account-form" hidden>
+        <div class="form-row new-account-row" id="new-account-form" hidden>
             <div class="form-group">
                 <label for="new-account-name">New account name</label>
                 <input type="text" id="new-account-name" placeholder="e.g. Chase Checking">
@@ -45,11 +42,9 @@
                     <option value="other">Other</option>
                 </select>
             </div>
-            <div class="form-group" style="align-self:flex-end;">
-                <div class="btn-row">
-                    <button type="button" class="btn btn-primary btn-sm" id="new-account-save-btn">Create</button>
-                    <button type="button" class="btn btn-secondary btn-sm" id="new-account-cancel-btn">Cancel</button>
-                </div>
+            <div class="new-account-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="new-account-save-btn">Create</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="new-account-cancel-btn">Cancel</button>
             </div>
         </div>
 

@@ -40,11 +40,25 @@
         return tr;
     }
 
+    // Sentinel option value for "+ Create a new account…" in the account
+    // picker itself — picking it (rather than a separate always-visible
+    // button) is what reveals the inline create-account row below, and
+    // reselecting a real account hides it again (see the picker's 'change'
+    // listener below).
+    const NEW_ACCOUNT_VALUE = '__new_account__';
+
     async function loadAccounts() {
         const { accounts } = await window.BWApi.apiFetch('/api/accounts');
         const select = document.getElementById('import-account');
-        select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+        select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('') +
+            `<option value="${NEW_ACCOUNT_VALUE}">+ Create a new account…</option>`;
         return accounts;
+    }
+
+    function selectFirstRealAccount() {
+        const select = document.getElementById('import-account');
+        const firstReal = [...select.options].find(o => o.value !== NEW_ACCOUNT_VALUE);
+        if (firstReal) select.value = firstReal.value;
     }
 
     async function loadAccountsAndCategories() {
@@ -86,14 +100,15 @@
     // and onBudget to true, same defaults the full Accounts page's form
     // uses (see public/js/accounts.js's resetForm); anything more specific
     // can still be edited from the Accounts page afterward.
-    document.getElementById('new-account-toggle-btn').addEventListener('click', () => {
-        const form = document.getElementById('new-account-form');
-        form.hidden = !form.hidden;
-        if (!form.hidden) document.getElementById('new-account-name').focus();
+    document.getElementById('import-account').addEventListener('change', (e) => {
+        const isNew = e.target.value === NEW_ACCOUNT_VALUE;
+        document.getElementById('new-account-form').hidden = !isNew;
+        if (isNew) document.getElementById('new-account-name').focus();
     });
     document.getElementById('new-account-cancel-btn').addEventListener('click', () => {
         document.getElementById('new-account-form').hidden = true;
         document.getElementById('new-account-name').value = '';
+        selectFirstRealAccount();
     });
     document.getElementById('new-account-save-btn').addEventListener('click', async () => {
         const name = document.getElementById('new-account-name').value.trim();
@@ -116,6 +131,9 @@
         errorBox.hidden = true;
         const fileInput = document.getElementById('import-file');
         if (!fileInput.files.length) return showError(new Error('Choose a file first'));
+        if (document.getElementById('import-account').value === NEW_ACCOUNT_VALUE) {
+            return showError(new Error('Finish creating the new account first (or pick an existing one)'));
+        }
 
         await refreshCategories();
         const formData = new FormData();

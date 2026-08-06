@@ -45,6 +45,19 @@ select {
     }
 }
 
+// A .form-row whose last child is a pair of action buttons rather than
+// another labeled field (e.g. the imports page's inline "create account"
+// row) — floats them to the row's input baseline instead of its top, and
+// keeps them from stretching to the row's full height the way a bare flex
+// item would.
+.new-account-actions {
+    display: flex;
+    gap: 8px;
+    align-self: flex-end;
+    margin-bottom: 18px;
+    flex: 0 0 auto;
+}
+
 .form-hint {
     font-size: 0.82rem;
     color: $text-muted;

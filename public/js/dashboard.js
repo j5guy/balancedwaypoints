@@ -524,13 +524,26 @@
         const elements = await Promise.all(currentWidgets.map(buildWidget));
         widgetsContainer.innerHTML = '';
         elements.forEach(el => { if (el) widgetsContainer.appendChild(el); });
-        window.BWDragReorder.makeSortable(widgetsContainer, async (ids) => {
-            // ids are just the dragged data-drag-id (widget.id) strings —
-            // map back to the full instance objects in their new order.
-            currentWidgets = ids.map(id => currentWidgets.find(w => w.id === id)).filter(Boolean);
-            await saveDashboardPrefs();
-        });
     }
+
+    // Attached once (not from inside renderWidgets, which reruns on every
+    // month switch/preset change/save) — makeSortable adds its listeners
+    // straight to `widgetsContainer` itself, a persistent element that only
+    // ever gets its CHILDREN replaced (see renderWidgets' innerHTML reset),
+    // never the container. Calling it again on every render just kept
+    // stacking a fresh, independent set of drag/drop listeners on top of
+    // every set from every prior render — each drop then fired ALL of them,
+    // each racing its own duplicate PUT to /api/auth/preferences. Whichever
+    // one happened to land last (not necessarily the one with the correct
+    // final order, since network timing isn't guaranteed) silently won,
+    // which is what made a reorder look saved right up until you switched
+    // months/pages and reloaded from the server's actual (wrong) state.
+    window.BWDragReorder.makeSortable(widgetsContainer, async (ids) => {
+        // ids are just the dragged data-drag-id (widget.id) strings — map
+        // back to the full instance objects in their new order.
+        currentWidgets = ids.map(id => currentWidgets.find(w => w.id === id)).filter(Boolean);
+        await saveDashboardPrefs();
+    });
 
     // ── Customize modal ──────────────────────────────────────────────
     // Edits happen on a draft copy so Cancel can discard them cleanly —

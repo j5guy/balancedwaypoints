@@ -43,6 +43,18 @@ select {
         flex: 1;
         min-width: 160px;
     }
+
+    // `.form-row`'s `display: flex` and the browser's built-in
+    // `[hidden] { display: none }` have equal specificity (one class
+    // selector each), so whichever is declared later in the cascade wins —
+    // that's this stylesheet, not the UA default, so a hidden .form-row
+    // rendered as a flex row anyway. This reasserts `hidden` at the same
+    // specificity as the rule above, so toggling the attribute actually
+    // hides rows like the imports page's "new account" form or the
+    // register's "convert to transfer" picker.
+    &[hidden] {
+        display: none;
+    }
 }
 
 // A .form-row whose last child is a pair of action buttons rather than

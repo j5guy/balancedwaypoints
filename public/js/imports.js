@@ -61,6 +61,17 @@
         if (firstReal) select.value = firstReal.value;
     }
 
+    // Preview is disabled until there's actually something to preview: a
+    // chosen file, and a real account selected (picking "+ Create a new
+    // account…" isn't itself a valid account — it just opens the inline
+    // form below, and shouldn't be actionable until that's actually been
+    // submitted). Re-run after every event that could change either.
+    function updatePreviewButtonState() {
+        const hasFile = document.getElementById('import-file').files.length > 0;
+        const accountChosen = document.getElementById('import-account').value !== NEW_ACCOUNT_VALUE;
+        previewBtn.disabled = !hasFile || !accountChosen;
+    }
+
     async function loadAccountsAndCategories() {
         const [accounts] = await Promise.all([
             loadAccounts(),
@@ -75,6 +86,7 @@
         if (preselect && accounts.some(a => a.id === preselect)) {
             document.getElementById('import-account').value = preselect;
         }
+        updatePreviewButtonState();
     }
 
     // Re-fetched fresh right before every preview (not just once on page
@@ -104,11 +116,14 @@
         const isNew = e.target.value === NEW_ACCOUNT_VALUE;
         document.getElementById('new-account-form').hidden = !isNew;
         if (isNew) document.getElementById('new-account-name').focus();
+        updatePreviewButtonState();
     });
+    document.getElementById('import-file').addEventListener('change', updatePreviewButtonState);
     document.getElementById('new-account-cancel-btn').addEventListener('click', () => {
         document.getElementById('new-account-form').hidden = true;
         document.getElementById('new-account-name').value = '';
         selectFirstRealAccount();
+        updatePreviewButtonState();
     });
     document.getElementById('new-account-save-btn').addEventListener('click', async () => {
         const name = document.getElementById('new-account-name').value.trim();
@@ -122,6 +137,7 @@
             document.getElementById('import-account').value = created.id;
             document.getElementById('new-account-form').hidden = true;
             document.getElementById('new-account-name').value = '';
+            updatePreviewButtonState();
         } catch (err) {
             showError(err);
         }

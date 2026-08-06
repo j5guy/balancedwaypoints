@@ -10,7 +10,10 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="import-account">Account</label>
-                <select id="import-account"></select>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="import-account" style="flex:1;"></select>
+                    <button type="button" class="btn btn-secondary btn-sm" id="new-account-toggle-btn" title="Create a new account">+ New</button>
+                </div>
             </div>
             <div class="form-group">
                 <label for="import-format">Format</label>
@@ -24,6 +27,32 @@
                 <input type="file" id="import-file" accept=".csv,.ofx,.qfx">
             </div>
         </div>
+
+        <div class="form-row" id="new-account-form" hidden>
+            <div class="form-group">
+                <label for="new-account-name">New account name</label>
+                <input type="text" id="new-account-name" placeholder="e.g. Chase Checking">
+            </div>
+            <div class="form-group">
+                <label for="new-account-type">Type</label>
+                <select id="new-account-type">
+                    <option value="checking">Checking</option>
+                    <option value="savings">Savings</option>
+                    <option value="credit">Credit card</option>
+                    <option value="cash">Cash</option>
+                    <option value="investment">Investment</option>
+                    <option value="loan">Loan</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+                <div class="btn-row">
+                    <button type="button" class="btn btn-primary btn-sm" id="new-account-save-btn">Create</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="new-account-cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
         <button type="button" class="btn btn-primary" id="preview-btn">Preview</button>
     </div>
 

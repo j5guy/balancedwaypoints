@@ -40,20 +40,84 @@
         return tr;
     }
 
-    async function loadAccountsAndCategories() {
-        const [accountsRes, categoriesRes] = await Promise.all([
-            window.BWApi.apiFetch('/api/accounts'),
-            window.BWApi.apiFetch('/api/categories')
-        ]);
-        categories = categoriesRes.categories;
-        document.getElementById('import-account').innerHTML = accountsRes.accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    async function loadAccounts() {
+        const { accounts } = await window.BWApi.apiFetch('/api/accounts');
+        const select = document.getElementById('import-account');
+        select.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+        return accounts;
     }
+
+    async function loadAccountsAndCategories() {
+        const [accounts] = await Promise.all([
+            loadAccounts(),
+            refreshCategories()
+        ]);
+
+        // Deep-linked from an account register's "Import" button (see
+        // accounts/show.ejs) — preselects that account instead of leaving
+        // whichever one happened to sort first.
+        const params = new URLSearchParams(window.location.search);
+        const preselect = params.get('account');
+        if (preselect && accounts.some(a => a.id === preselect)) {
+            document.getElementById('import-account').value = preselect;
+        }
+    }
+
+    // Re-fetched fresh right before every preview (not just once on page
+    // load) — otherwise a category created earlier in the same session (via
+    // this page's own "+ Create" option on a prior import, or elsewhere)
+    // would still be missing from `categories` here. previewRow's dropdown
+    // only marks a <select> as pointing at an existing category when that
+    // id is actually present in `categories`; if it's stale/missing, the
+    // suggestion silently falls back to "— none —" AND skips the
+    // "+ Create" fallback too (since the server-side suggestion already had
+    // a matching id) — the category gets dropped from the import entirely
+    // with no error. includeArchived matches what the server's own preview()
+    // suggestion-matching considers (see controllers/importController.js),
+    // so an archived category can't cause the same silent drop either.
+    async function refreshCategories() {
+        const { categories: fresh } = await window.BWApi.apiFetch('/api/categories?includeArchived=true');
+        categories = fresh;
+        return categories;
+    }
+
+    // ── Create a new account without leaving the import page ─────────
+    // Minimal fields only (name + type) — starting balance defaults to 0
+    // and onBudget to true, same defaults the full Accounts page's form
+    // uses (see public/js/accounts.js's resetForm); anything more specific
+    // can still be edited from the Accounts page afterward.
+    document.getElementById('new-account-toggle-btn').addEventListener('click', () => {
+        const form = document.getElementById('new-account-form');
+        form.hidden = !form.hidden;
+        if (!form.hidden) document.getElementById('new-account-name').focus();
+    });
+    document.getElementById('new-account-cancel-btn').addEventListener('click', () => {
+        document.getElementById('new-account-form').hidden = true;
+        document.getElementById('new-account-name').value = '';
+    });
+    document.getElementById('new-account-save-btn').addEventListener('click', async () => {
+        const name = document.getElementById('new-account-name').value.trim();
+        if (!name) return showError(new Error('Account name is required'));
+        try {
+            const created = await window.BWApi.apiFetch('/api/accounts', {
+                method: 'POST',
+                body: { name, type: document.getElementById('new-account-type').value, startingBalanceCents: 0, onBudget: true }
+            });
+            await loadAccounts();
+            document.getElementById('import-account').value = created.id;
+            document.getElementById('new-account-form').hidden = true;
+            document.getElementById('new-account-name').value = '';
+        } catch (err) {
+            showError(err);
+        }
+    });
 
     previewBtn.addEventListener('click', async () => {
         errorBox.hidden = true;
         const fileInput = document.getElementById('import-file');
         if (!fileInput.files.length) return showError(new Error('Choose a file first'));
 
+        await refreshCategories();
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
         formData.append('accountId', document.getElementById('import-account').value);

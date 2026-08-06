@@ -132,6 +132,13 @@
         document.querySelector('.page-register').classList.toggle('register-readonly', readonly);
         document.getElementById('select-all-checkbox').closest('th').style.display = readonly ? 'none' : '';
         if (readonly) document.getElementById('bulk-actions-bar').hidden = true;
+        // The Import page's account picker only ever lists accounts you own
+        // (see /api/accounts — accountsController.js's list()), so linking
+        // there from a shared account's register would just land on the
+        // picker showing none of the accounts you meant, silently defaulted
+        // to whichever owned account sorts first. Owner-only avoids that
+        // dead end rather than trying to teach imports about shared access.
+        document.getElementById('import-link').style.display = isShared ? 'none' : '';
     }
 
     // Resolves a typed category name to an id, creating the category (in the

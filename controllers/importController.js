@@ -91,18 +91,30 @@ async function commit(req, res) {
         const tags = await Promise.all((row.tagNames || []).map(name => tagsDb.findOrCreateByName(name, ownerId)));
 
         // No categoryId was picked (the CSV named a category that doesn't
-        // exist yet) — create the group and category on the fly.
+        // exist yet) — create the group and category on the fly. Group and
+        // category resolution are logged/reported SEPARATELY (rather than
+        // one combined "couldn't resolve category" message) because a null
+        // result with no thrown error could come from either step, and
+        // which one it is changes where the actual bug lives.
         let categoryId = row.categoryId || null;
         if (!categoryId && row.categoryName) {
+            const groupName = row.categoryGroupName || 'Imported';
             try {
-                const group = await categoryGroupsDb.findOrCreateByName(row.categoryGroupName || 'Imported', ownerId);
-                const category = group ? await categoriesDb.findOrCreateByName(row.categoryName, group._id, ownerId) : null;
-                categoryId = category ? category._id : null;
-                if (!categoryId) {
-                    warnings.push(`"${rowLabel}": couldn't create/find category "${row.categoryName}" in group "${row.categoryGroupName || 'Imported'}"`);
+                const group = await categoryGroupsDb.findOrCreateByName(groupName, ownerId);
+                if (!group) {
+                    logger.error(`Import: categoryGroupsDb.findOrCreateByName("${groupName}", ${ownerId}) returned falsy with no error, for row "${rowLabel}"`);
+                    warnings.push(`"${rowLabel}": category group "${groupName}" didn't resolve (no error thrown — see server log)`);
+                } else {
+                    const category = await categoriesDb.findOrCreateByName(row.categoryName, group._id, ownerId);
+                    if (!category) {
+                        logger.error(`Import: categoriesDb.findOrCreateByName("${row.categoryName}", group=${group._id}, ${ownerId}) returned falsy with no error, for row "${rowLabel}"`);
+                        warnings.push(`"${rowLabel}": category "${row.categoryName}" didn't resolve inside group "${groupName}" (id ${group._id}, no error thrown — see server log)`);
+                    } else {
+                        categoryId = category._id;
+                    }
                 }
             } catch (err) {
-                logger.error(`Import: failed to resolve category "${row.categoryName}" (group "${row.categoryGroupName}") for row "${rowLabel}": ${err.message}`);
+                logger.error(`Import: exception resolving category "${row.categoryName}" (group "${groupName}") for row "${rowLabel}": ${err.stack || err.message}`);
                 warnings.push(`"${rowLabel}": couldn't create/find category "${row.categoryName}" — ${err.message}`);
             }
         }

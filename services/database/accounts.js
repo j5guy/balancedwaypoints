@@ -50,15 +50,23 @@ const forceRemove = async (id, ownerId) => {
 };
 
 // Current balance = starting balance + signed sum of every transaction
-// posted against this account.
-const balanceFor = async (accountId, ownerId) => {
-    const account = await Account.findOne({ _id: accountId, owner: ownerId }).exec();
-    if (!account) return null;
+// posted against this account. Split out from balanceFor() below so a
+// caller that's already resolved account access some other way (e.g.
+// services/database/accountShares.js's resolveAccountAccess, for a shared
+// account a collaborator doesn't own) can compute a balance without also
+// re-checking ownership here.
+const balanceForAccountDoc = async (account) => {
     const [agg] = await Transaction.aggregate([
         { $match: { owner: account.owner, account: account._id } },
         { $group: { _id: null, total: { $sum: '$amountCents' } } }
     ]);
     return account.startingBalanceCents + (agg ? agg.total : 0);
+};
+
+const balanceFor = async (accountId, ownerId) => {
+    const account = await Account.findOne({ _id: accountId, owner: ownerId }).exec();
+    if (!account) return null;
+    return balanceForAccountDoc(account);
 };
 
 const balancesForAll = async (ownerId) => {
@@ -78,4 +86,4 @@ const balancesForAll = async (ownerId) => {
     }));
 };
 
-module.exports = { list, findById, create, update, remove, forceRemove, balanceFor, balancesForAll, ForceDeleteError };
+module.exports = { list, findById, create, update, remove, forceRemove, balanceFor, balanceForAccountDoc, balancesForAll, ForceDeleteError };

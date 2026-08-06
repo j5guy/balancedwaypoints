@@ -1,5 +1,6 @@
 const transactions = require('../services/database/transactions');
 const rulesDb = require('../services/database/rules');
+const accountShares = require('../services/database/accountShares');
 const { applyRules } = require('../services/rules/applyRules');
 
 function serialize(t) {
@@ -34,21 +35,54 @@ function validateSplits(amountCents, splits) {
     return null;
 }
 
+// Every handler below resolves access via the account in play (not a flat
+// req.session.userId match, per Phase 1) — see services/database/accountShares.js's
+// resolveAccountAccess. `write` callers additionally require role !== 'readonly'.
+// Returns the resolved access object, or writes the error response itself
+// and returns null (so callers can just `if (!access) return;`).
+async function requireAccountAccess(req, res, accountId, { write = false } = {}) {
+    if (!accountId) {
+        res.status(400).json({ error: 'account is required' });
+        return null;
+    }
+    const access = await accountShares.resolveAccountAccess(accountId, req.session.userId);
+    if (!access) {
+        res.status(404).json({ error: 'Not found' });
+        return null;
+    }
+    if (write && access.role === 'readonly') {
+        res.status(403).json({ error: 'You have read-only access to this account' });
+        return null;
+    }
+    return access;
+}
+
 async function list(req, res) {
     const { account, category, tag, payee, from, to, limit, sort } = req.query;
-    const items = await transactions.list(req.session.userId, { account, category, tag, payee, from, to, limit: limit ? Number(limit) : undefined, sort });
+    // No account filter = "everything I own" (existing Phase 1 behavior) —
+    // shared access is inherently per-account, so there's no equivalent
+    // "everything shared with me" cross-account query.
+    const ownerId = account
+        ? (await requireAccountAccess(req, res, account))?.ownerId
+        : req.session.userId;
+    if (account && !ownerId) return;
+
+    const items = await transactions.list(ownerId, { account, category, tag, payee, from, to, limit: limit ? Number(limit) : undefined, sort });
     res.json({ transactions: items.map(serialize) });
 }
 
 async function get(req, res) {
-    const t = await transactions.findById(req.params.id, req.session.userId);
+    const t = await transactions.findByIdRaw(req.params.id);
     if (!t) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, t.account);
+    if (!access) return;
     res.json(serialize(t));
 }
 
 async function create(req, res) {
     const { account, date, payee, amountCents, category, splits, cleared, tags, notes } = req.body || {};
-    if (!account) return res.status(400).json({ error: 'account is required' });
+    const access = await requireAccountAccess(req, res, account, { write: true });
+    if (!access) return;
     if (!date) return res.status(400).json({ error: 'date is required' });
     if (amountCents === undefined || amountCents === null) return res.status(400).json({ error: 'amountCents is required' });
 
@@ -56,7 +90,7 @@ async function create(req, res) {
     if (splitError) return res.status(400).json({ error: splitError });
 
     const t = await transactions.create({
-        owner: req.session.userId,
+        owner: access.ownerId,
         account, date, payee: payee || null,
         amountCents: Number(amountCents),
         category: splits && splits.length ? null : (category || null),
@@ -65,7 +99,7 @@ async function create(req, res) {
         tags: tags || [],
         notes: notes || ''
     });
-    const populated = await transactions.findById(t._id, req.session.userId);
+    const populated = await transactions.findById(t._id, access.ownerId);
     res.status(201).json(serialize(populated));
 }
 
@@ -76,13 +110,26 @@ async function createTransfer(req, res) {
     if (!date) return res.status(400).json({ error: 'date is required' });
     if (!amountCents) return res.status(400).json({ error: 'amountCents is required' });
 
-    const { outgoing, incoming } = await transactions.createTransfer({ owner: req.session.userId, fromAccount, toAccount, date, amountCents: Number(amountCents), notes });
+    const fromAccess = await requireAccountAccess(req, res, fromAccount, { write: true });
+    if (!fromAccess) return;
+    const toAccess = await requireAccountAccess(req, res, toAccount, { write: true });
+    if (!toAccess) return;
+    // No cross-owner transfers in v1 — see the Phase 2 plan. Both accounts
+    // must belong to the same owner (yourself, or someone you have
+    // readwrite access to), even if you reached them via different shares.
+    if (String(fromAccess.ownerId) !== String(toAccess.ownerId)) {
+        return res.status(400).json({ error: "Can't transfer between accounts with different owners" });
+    }
+
+    const { outgoing, incoming } = await transactions.createTransfer({ owner: fromAccess.ownerId, fromAccount, toAccount, date, amountCents: Number(amountCents), notes });
     res.status(201).json({ outgoing: serialize(outgoing), incoming: serialize(incoming) });
 }
 
 async function update(req, res) {
-    const existing = await transactions.findById(req.params.id, req.session.userId);
+    const existing = await transactions.findByIdRaw(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, existing.account, { write: true });
+    if (!access) return;
     if (existing.transferId) return res.status(400).json({ error: 'Transfer transactions cannot be edited directly — delete and recreate the transfer instead' });
 
     const { account, date, payee, amountCents, category, splits, cleared, tags, notes } = req.body || {};
@@ -90,6 +137,22 @@ async function update(req, res) {
     const effectiveSplits = splits !== undefined ? splits : existing.splits;
     const splitError = validateSplits(effectiveAmount, effectiveSplits);
     if (splitError) return res.status(400).json({ error: splitError });
+
+    // Moving a transaction to a different account requires write access to
+    // THAT account too — and, same reasoning as createTransfer's no-cross-
+    // owner-transfers rule, the target must belong to the SAME owner as the
+    // source. The transaction's own `owner` field doesn't change here (still
+    // access.ownerId below), so a cross-owner move would otherwise leave it
+    // pointing at one owner's account while stamped with a different
+    // owner — invisible to that owner's own reports, which match Transaction
+    // by `owner` directly rather than joining through Account.
+    if (account !== undefined && String(account) !== String(existing.account)) {
+        const targetAccess = await requireAccountAccess(req, res, account, { write: true });
+        if (!targetAccess) return;
+        if (String(targetAccess.ownerId) !== String(access.ownerId)) {
+            return res.status(400).json({ error: "Can't move a transaction to an account with a different owner" });
+        }
+    }
 
     const data = {};
     if (account !== undefined) data.account = account;
@@ -102,18 +165,20 @@ async function update(req, res) {
     if (tags !== undefined) data.tags = tags;
     if (notes !== undefined) data.notes = notes;
 
-    const t = await transactions.update(req.params.id, data, req.session.userId);
+    const t = await transactions.update(req.params.id, data, access.ownerId);
     res.json(serialize(t));
 }
 
 async function remove(req, res) {
-    const existing = await transactions.findById(req.params.id, req.session.userId);
+    const existing = await transactions.findByIdRaw(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, existing.account, { write: true });
+    if (!access) return;
 
     if (existing.transferId) {
-        await transactions.removeTransferPair(existing.transferId, req.session.userId);
+        await transactions.removeTransferPair(existing.transferId, access.ownerId);
     } else {
-        await transactions.remove(req.params.id, req.session.userId);
+        await transactions.remove(req.params.id, access.ownerId);
     }
     res.status(204).end();
 }
@@ -122,18 +187,29 @@ async function remove(req, res) {
 // a dedicated action, separate from update(), because it needs to work even
 // for transfer-linked or schedule-created rows that update() otherwise
 // locks down; sortOrder is purely cosmetic and never affects balances.
+// `account` identifies which register this reorder came from (all ids are
+// expected to belong to it) so access only needs resolving once.
 async function reorder(req, res) {
-    const { ids } = req.body || {};
+    const { ids, account } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array' });
-    await transactions.reorder(ids, req.session.userId);
+    const access = await requireAccountAccess(req, res, account, { write: true });
+    if (!access) return;
+    await transactions.reorder(ids, access.ownerId);
     res.status(204).end();
 }
 
 // Runs the active ruleset against a candidate (not-yet-saved) transaction
 // and returns suggested category/payee/tags — never writes anything.
+// `account` is optional — omitted means "my own rules" (e.g. previewing
+// outside any specific register), same as Phase 1.
 async function previewRules(req, res) {
-    const { payee, notes, amountCents } = req.body || {};
-    const rules = await rulesDb.findActive(req.session.userId);
+    const { payee, notes, amountCents, account } = req.body || {};
+    const ownerId = account
+        ? (await requireAccountAccess(req, res, account))?.ownerId
+        : req.session.userId;
+    if (account && !ownerId) return;
+
+    const rules = await rulesDb.findActive(ownerId);
     const result = await applyRules(rules, { payee, notes, amountCents: Number(amountCents) || 0 });
     res.json(result);
 }

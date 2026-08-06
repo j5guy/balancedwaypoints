@@ -151,6 +151,23 @@ h1, h2, h3 {
     flex-wrap: wrap;
 }
 
+// The "Managing: [owner]" switcher (views/components/ownerSwitcher.ejs) —
+// sits at the top of the main content on pages that support acting as a
+// readwrite collaborator (Budget/Payees/Rules/Schedules).
+.owner-switcher {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    color: $text-muted;
+
+    select {
+        font-size: 0.85rem;
+        padding: 4px 8px;
+    }
+}
+
 .empty-state {
     text-align: center;
     padding: 48px 24px;

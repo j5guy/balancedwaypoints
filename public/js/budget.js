@@ -6,10 +6,20 @@
     let month = window.BWDate.todayDateInputValue().slice(0, 7); // 'YYYY-MM', local calendar day
     let groups = [];
     let allCategories = [];
+    let ownerSwitcher = { forOwnerId: () => null };
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
         errorBox.hidden = false;
+    }
+
+    // See public/js/payees.js's identical helper. Only covers Categories/
+    // CategoryGroups here — the $ assignment endpoints (/api/budgets/...)
+    // stay owner-only at every share tier (see the Phase 2 plan), so this
+    // is never appended to those.
+    function forQuery() {
+        const id = ownerSwitcher.forOwnerId();
+        return id ? `?for=${id}` : '';
     }
 
     function monthLabel(m) {
@@ -49,7 +59,7 @@
             const name = prompt(`New category name in "${group.name}":`);
             if (!name || !name.trim()) return;
             try {
-                await window.BWApi.apiFetch('/api/categories', { method: 'POST', body: { name: name.trim(), group: group.id } });
+                await window.BWApi.apiFetch(`/api/categories${forQuery()}`, { method: 'POST', body: { name: name.trim(), group: group.id } });
                 render();
             } catch (err) {
                 showError(err);
@@ -66,7 +76,7 @@
     async function deleteGroup(group) {
         if (!confirm(`Delete the group "${group.name}"? It must be empty — move or delete its categories first.`)) return;
         try {
-            await window.BWApi.apiFetch(`/api/category-groups/${group.id}`, { method: 'DELETE' });
+            await window.BWApi.apiFetch(`/api/category-groups/${group.id}${forQuery()}`, { method: 'DELETE' });
             render();
         } catch (err) {
             showError(err);
@@ -108,6 +118,9 @@
     // simpler read-mostly list: just names, plus the same "+ category" add
     // affordance the budgetable groups get. No drag-reorder here — ordering
     // income categories isn't worth the complexity for a secondary list.
+    // Doubles as the "Managing: [owner]" structure-only view for regular
+    // groups too (see render()) — $ assignment stays owner-only, so there's
+    // nothing to show there but the category list itself either way.
     function incomeGroupSection(group, categoriesInGroup) {
         const section = document.createElement('div');
         section.className = 'budget-group';
@@ -138,7 +151,7 @@
             const name = prompt(`New income category name in "${group.name}":`);
             if (!name || !name.trim()) return;
             try {
-                await window.BWApi.apiFetch('/api/categories', { method: 'POST', body: { name: name.trim(), group: group.id } });
+                await window.BWApi.apiFetch(`/api/categories${forQuery()}`, { method: 'POST', body: { name: name.trim(), group: group.id } });
                 render();
             } catch (err) {
                 showError(err);
@@ -150,24 +163,43 @@
 
     async function render() {
         document.getElementById('month-label').textContent = monthLabel(month);
+        const forId = ownerSwitcher.forOwnerId();
+        // $ assignment (month nav, Ready to Assign, "Copy budget from") is
+        // owner-only at every share tier — hidden entirely while managing
+        // someone else's Categories/CategoryGroups, leaving just the
+        // structure-only list below (see the Phase 2 plan).
+        document.querySelector('.month-nav').style.display = forId ? 'none' : '';
+        document.getElementById('rta-banner').style.display = forId ? 'none' : '';
+        document.getElementById('copy-budget-form').hidden = true;
+        document.querySelector('.budget-row-head').style.display = forId ? 'none' : '';
+        document.getElementById('budget-management-hint').hidden = !forId;
+        document.getElementById('budget-drag-hint').hidden = !!forId;
         try {
-            const [summary, groupsRes, categoriesRes] = await Promise.all([
-                window.BWApi.apiFetch(`/api/budgets/${month}`),
-                window.BWApi.apiFetch('/api/category-groups'),
-                window.BWApi.apiFetch('/api/categories')
+            const [groupsRes, categoriesRes] = await Promise.all([
+                window.BWApi.apiFetch(`/api/category-groups${forQuery()}`),
+                window.BWApi.apiFetch(`/api/categories${forQuery()}`)
             ]);
             groups = groupsRes.categoryGroups;
             allCategories = categoriesRes.categories;
 
-            const rtaEl = document.getElementById('rta-value');
-            const banner = document.getElementById('rta-banner');
-            rtaEl.textContent = window.BWMoney.formatCents(summary.readyToAssignCents);
-            banner.classList.toggle('rta-negative', summary.readyToAssignCents < 0);
+            let summary = null;
+            if (!forId) {
+                summary = await window.BWApi.apiFetch(`/api/budgets/${month}`);
+                const rtaEl = document.getElementById('rta-value');
+                const banner = document.getElementById('rta-banner');
+                rtaEl.textContent = window.BWMoney.formatCents(summary.readyToAssignCents);
+                banner.classList.toggle('rta-negative', summary.readyToAssignCents < 0);
+            }
 
             container.innerHTML = '';
             const budgetGroups = groups.filter(g => !g.isIncome).sort((a, b) => a.sortOrder - b.sortOrder);
             if (budgetGroups.length === 0) {
                 container.innerHTML = '<div class="empty-state">No category groups yet — add one above.</div>';
+            } else if (forId) {
+                budgetGroups.forEach(group => {
+                    const cats = allCategories.filter(c => c.group === group.id);
+                    container.appendChild(incomeGroupSection(group, cats));
+                });
             } else {
                 budgetGroups.forEach(group => {
                     const rows = summary.categories.filter(c => c.category.group === group.id);
@@ -233,7 +265,7 @@
         const name = document.getElementById('group-name').value.trim();
         if (!name) return;
         try {
-            await window.BWApi.apiFetch('/api/category-groups', {
+            await window.BWApi.apiFetch(`/api/category-groups${forQuery()}`, {
                 method: 'POST',
                 body: { name, isIncome: document.getElementById('group-is-income').checked }
             });
@@ -285,7 +317,7 @@
     deleteConfirmBtn.addEventListener('click', async () => {
         if (!pendingDeleteCategory || deleteConfirmInput.value !== pendingDeleteCategory.name) return;
         try {
-            await window.BWApi.apiFetch(`/api/categories/${pendingDeleteCategory.id}`, {
+            await window.BWApi.apiFetch(`/api/categories/${pendingDeleteCategory.id}${forQuery()}`, {
                 method: 'DELETE',
                 body: { reassignTo: deleteReassignSelect.value || null }
             });
@@ -296,5 +328,11 @@
         }
     });
 
-    render();
+    (async function init() {
+        ownerSwitcher = await window.BWOwnerSwitcher.init(() => {
+            document.getElementById('new-group-form').hidden = true;
+            render();
+        });
+        render();
+    })();
 })();

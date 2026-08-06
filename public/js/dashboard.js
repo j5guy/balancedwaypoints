@@ -156,8 +156,20 @@
 
     async function loadAccounts() {
         try {
-            const res = await window.BWApi.apiFetch('/api/accounts');
-            accounts = (res.accounts || []).filter(a => !a.closed);
+            const [ownedRes, sharedRes] = await Promise.all([
+                window.BWApi.apiFetch('/api/accounts'),
+                window.BWApi.apiFetch('/api/accounts/shared-with-me')
+            ]);
+            const owned = (ownedRes.accounts || []).filter(a => !a.closed);
+            // Labeled "Account (Owner)" to disambiguate from your own — a
+            // Summary/Total Income/Total Expense/Net Budget/Forecast widget
+            // can point at one shared account (services/reports/summary.js's
+            // ownerForAccount), even though Reports/Dashboard totals
+            // otherwise stay owner-only (see the Phase 2 plan). Net Worth/
+            // Cash Flow/Spending-by-Category are whole-household singletons
+            // with no account filter at all, so they're untouched by this.
+            const shared = (sharedRes.accounts || []).filter(a => !a.closed).map(a => ({ ...a, name: `${a.name} (${a.ownerName})` }));
+            accounts = [...owned, ...shared];
         } catch (err) {
             accounts = [];
         }

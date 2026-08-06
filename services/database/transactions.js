@@ -38,6 +38,13 @@ const list = (ownerId, { account, category, tag, payee, from, to, limit, sort } 
 };
 
 const findById = (id, ownerId) => Transaction.findOne({ _id: id, owner: ownerId }).populate(populateOpts).exec();
+// No owner filter — for controllers/transactionsController.js's id-scoped
+// actions (get/update/remove/reorder), which now need to read a
+// transaction's `account` FIRST, then resolve access via
+// services/database/accountShares.js's resolveAccountAccess (a collaborator
+// isn't the transaction's `owner`, so the owner-scoped findById above can't
+// be used until access — and the real owner — is known).
+const findByIdRaw = (id) => Transaction.findById(id).populate(populateOpts).exec();
 const findByImportedIds = (importedIds, ownerId) => Transaction.find({ owner: ownerId, importedId: { $in: importedIds } }).exec();
 
 const create = (data) => Transaction.create(data);
@@ -102,6 +109,6 @@ const sumForCategoryMonth = async (categoryId, month, ownerId) => {
 };
 
 module.exports = {
-    list, findById, findByImportedIds, create, update, remove,
+    list, findById, findByIdRaw, findByImportedIds, create, update, remove,
     createTransfer, removeTransferPair, reorder, sumForAccount, sumForCategoryMonth
 };

@@ -147,3 +147,24 @@ table.register-table {
         background: $bg-secondary;
     }
 }
+
+// Read-only shared-account register (see public/js/register.js's
+// applyAccessControls) — the quick-add row and full-form link are already
+// hidden by JS; this covers the per-row controls transactionRow() renders
+// fresh on every load, so there's no per-row toggle to wire up separately.
+.register-readonly {
+    .register-table {
+        .row-actions,
+        .cleared-toggle {
+            display: none;
+        }
+
+        .editable-cell {
+            cursor: default;
+
+            &:hover {
+                box-shadow: none;
+            }
+        }
+    }
+}

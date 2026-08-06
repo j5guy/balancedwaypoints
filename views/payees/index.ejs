@@ -1,6 +1,7 @@
 <%- include('../components/head', { title: title }) %>
 <%- include('../components/nav') %>
 <main class="page page-payees">
+    <%- include('../components/ownerSwitcher') %>
     <div class="page-header">
         <h1>Payees</h1>
         <button type="button" class="btn btn-primary" id="new-payee-btn">Add payee</button>
@@ -46,4 +47,4 @@
         </table>
     </div>
 </main>
-<%- include('../components/footer', { pageScripts: ['/js/payees.js'] }) %>
+<%- include('../components/footer', { pageScripts: ['/js/ownerSwitcher.js', '/js/payees.js'] }) %>

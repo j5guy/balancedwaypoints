@@ -4,10 +4,17 @@
     const errorBox = document.getElementById('rules-error');
     const newForm = document.getElementById('new-rule-form');
     let categories = [];
+    let ownerSwitcher = { forOwnerId: () => null };
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
         errorBox.hidden = false;
+    }
+
+    // See public/js/payees.js's identical helper.
+    function forQuery() {
+        const id = ownerSwitcher.forOwnerId();
+        return id ? `?for=${id}` : '';
     }
 
     function conditionRow(field, operator, value) {
@@ -119,7 +126,7 @@
         `;
         tr.querySelector('[data-active-toggle]').addEventListener('change', async (e) => {
             try {
-                await window.BWApi.apiFetch(`/api/rules/${rule.id}`, { method: 'PUT', body: { active: e.target.checked } });
+                await window.BWApi.apiFetch(`/api/rules/${rule.id}${forQuery()}`, { method: 'PUT', body: { active: e.target.checked } });
             } catch (err) {
                 e.target.checked = !e.target.checked;
                 showError(err);
@@ -128,7 +135,7 @@
         tr.querySelector('[data-delete]').addEventListener('click', async () => {
             if (!confirm(`Delete rule "${rule.name}"?`)) return;
             try {
-                await window.BWApi.apiFetch(`/api/rules/${rule.id}`, { method: 'DELETE' });
+                await window.BWApi.apiFetch(`/api/rules/${rule.id}${forQuery()}`, { method: 'DELETE' });
                 load();
             } catch (err) {
                 showError(err);
@@ -140,8 +147,8 @@
     async function load() {
         try {
             const [rulesRes, categoriesRes] = await Promise.all([
-                window.BWApi.apiFetch('/api/rules'),
-                window.BWApi.apiFetch('/api/categories')
+                window.BWApi.apiFetch(`/api/rules${forQuery()}`),
+                window.BWApi.apiFetch(`/api/categories${forQuery()}`)
             ]);
             categories = categoriesRes.categories;
             tbody.innerHTML = '';
@@ -159,7 +166,7 @@
         const name = document.getElementById('rule-name').value.trim();
         if (!name) return showError(new Error('Name is required'));
         try {
-            await window.BWApi.apiFetch('/api/rules', {
+            await window.BWApi.apiFetch(`/api/rules${forQuery()}`, {
                 method: 'POST',
                 body: {
                     name,
@@ -179,5 +186,11 @@
         }
     });
 
-    load();
+    (async function init() {
+        ownerSwitcher = await window.BWOwnerSwitcher.init(() => {
+            newForm.hidden = true;
+            load();
+        });
+        load();
+    })();
 })();

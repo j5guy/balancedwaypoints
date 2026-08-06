@@ -19,12 +19,14 @@
             <td class="money ${balanceClass}">${window.BWMoney.formatCents(account.balanceCents)}</td>
             <td>${account.onBudget ? 'Yes' : 'No'}</td>
             <td class="row-actions">
+                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-share title="Share">🔗</button>
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
                 <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
             </td>
         `;
         tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(account));
         tr.querySelector('[data-delete]').addEventListener('click', () => openDeleteModal(account));
+        tr.querySelector('[data-share]').addEventListener('click', () => openShareModal(account));
         return tr;
     }
 
@@ -42,6 +44,36 @@
             accounts.sort((a, b) => a.name.localeCompare(b.name)).forEach(a => tbody.appendChild(accountRow(a)));
         } catch (err) {
             showError(err);
+        }
+    }
+
+    // ── "Shared with me" — a distinct, non-owned list; no edit/delete/share
+    // actions since a collaborator can't manage the account itself.
+    async function loadSharedWithMe() {
+        const section = document.getElementById('shared-with-me-section');
+        const sharedTbody = document.getElementById('shared-with-me-tbody');
+        try {
+            const { accounts } = await window.BWApi.apiFetch('/api/accounts/shared-with-me');
+            if (accounts.length === 0) {
+                section.hidden = true;
+                return;
+            }
+            section.hidden = false;
+            sharedTbody.innerHTML = '';
+            accounts.forEach((a) => {
+                const balanceClass = a.balanceCents < 0 ? 'money-negative' : 'money-positive';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><a href="/accounts/${a.id}" class="link-plain">${a.name}</a></td>
+                    <td>${a.ownerName}</td>
+                    <td style="text-transform:capitalize;">${a.role === 'readwrite' ? 'Read-write' : 'Read-only'}</td>
+                    <td class="money ${balanceClass}">${window.BWMoney.formatCents(a.balanceCents)}</td>
+                    <td></td>
+                `;
+                sharedTbody.appendChild(tr);
+            });
+        } catch (err) {
+            section.hidden = true;
         }
     }
 
@@ -167,5 +199,105 @@
         }
     });
 
+    // ── Sharing — owner-only. Mirrors the delete modal's overlay pattern;
+    // the share list re-fetches from the server after every add/remove/
+    // permission change rather than patching the DOM in place, since this
+    // modal is opened rarely enough that the extra round trip doesn't matter.
+    let sharingAccount = null;
+    const shareOverlay = document.getElementById('share-account-overlay');
+    const shareError = document.getElementById('share-account-error');
+    const shareListTbody = document.getElementById('share-list-tbody');
+    const shareAddEmail = document.getElementById('share-add-email');
+    const shareAddPermission = document.getElementById('share-add-permission');
+
+    function showShareError(err) {
+        shareError.textContent = err.message || 'Something went wrong';
+        shareError.hidden = false;
+    }
+
+    function shareRow(share) {
+        const tr = document.createElement('tr');
+        const person = share.sharedWith ? (share.sharedWith.displayName || share.sharedWith.email) : 'Unknown';
+        tr.innerHTML = `
+            <td>${person}</td>
+            <td>
+                <select data-permission>
+                    <option value="readonly"${share.permission === 'readonly' ? ' selected' : ''}>Read-only</option>
+                    <option value="readwrite"${share.permission === 'readwrite' ? ' selected' : ''}>Read-write</option>
+                </select>
+            </td>
+            <td class="row-actions"><button type="button" class="btn btn-danger btn-sm icon-btn" data-remove title="Remove">🗑</button></td>
+        `;
+        tr.querySelector('[data-permission]').addEventListener('change', async (e) => {
+            try {
+                await window.BWApi.apiFetch(`/api/accounts/${sharingAccount.id}/shares/${share.id}`, { method: 'PUT', body: { permission: e.target.value } });
+            } catch (err) {
+                showShareError(err);
+                loadShares();
+            }
+        });
+        tr.querySelector('[data-remove]').addEventListener('click', async () => {
+            try {
+                await window.BWApi.apiFetch(`/api/accounts/${sharingAccount.id}/shares/${share.id}`, { method: 'DELETE' });
+                loadShares();
+            } catch (err) {
+                showShareError(err);
+            }
+        });
+        return tr;
+    }
+
+    async function loadShares() {
+        try {
+            const { shares } = await window.BWApi.apiFetch(`/api/accounts/${sharingAccount.id}/shares`);
+            shareListTbody.innerHTML = '';
+            if (shares.length === 0) {
+                shareListTbody.innerHTML = '<tr><td colspan="3" class="empty-state">Not shared with anyone yet.</td></tr>';
+                return;
+            }
+            shares.forEach(s => shareListTbody.appendChild(shareRow(s)));
+        } catch (err) {
+            showShareError(err);
+        }
+    }
+
+    function openShareModal(account) {
+        sharingAccount = account;
+        document.getElementById('share-account-name').textContent = account.name;
+        shareError.hidden = true;
+        shareAddEmail.value = '';
+        shareAddPermission.value = 'readonly';
+        shareOverlay.hidden = false;
+        loadShares();
+    }
+
+    function closeShareModal() {
+        sharingAccount = null;
+        shareOverlay.hidden = true;
+        load();
+    }
+
+    document.getElementById('share-close-btn').addEventListener('click', closeShareModal);
+    shareOverlay.addEventListener('click', (e) => {
+        if (e.target === shareOverlay) closeShareModal();
+    });
+
+    document.getElementById('share-add-btn').addEventListener('click', async () => {
+        const email = shareAddEmail.value.trim();
+        if (!email) return;
+        shareError.hidden = true;
+        try {
+            await window.BWApi.apiFetch(`/api/accounts/${sharingAccount.id}/shares`, {
+                method: 'POST',
+                body: { email, permission: shareAddPermission.value }
+            });
+            shareAddEmail.value = '';
+            loadShares();
+        } catch (err) {
+            showShareError(err);
+        }
+    });
+
     load();
+    loadSharedWithMe();
 })();

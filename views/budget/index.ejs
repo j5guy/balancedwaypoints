@@ -1,6 +1,7 @@
 <%- include('../components/head', { title: title }) %>
 <%- include('../components/nav') %>
 <main class="page page-budget">
+    <%- include('../components/ownerSwitcher') %>
     <div class="page-header">
         <h1>Budget</h1>
         <button type="button" class="btn btn-secondary btn-sm" id="new-group-btn">Add category group</button>
@@ -52,7 +53,11 @@
         </div>
     </div>
 
-    <p class="muted" style="font-size:0.85rem;">Drag a category or group by its handle (⠿) to reorder.</p>
+    <p class="muted" style="font-size:0.85rem;" id="budget-management-hint" hidden>
+        You're managing this person's Categories and Category Groups — dollar assignment (Ready to Assign, monthly
+        budgeting) stays theirs alone, so only the category structure is shown here.
+    </p>
+    <p class="muted" style="font-size:0.85rem;" id="budget-drag-hint">Drag a category or group by its handle (⠿) to reorder.</p>
     <div class="budget-row-head">
         <span>Category</span><span>Assigned</span><span>Activity</span><span>Available</span>
     </div>
@@ -90,4 +95,4 @@
         </div>
     </div>
 </div>
-<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/budget.js'] }) %>
+<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/ownerSwitcher.js', '/js/budget.js'] }) %>

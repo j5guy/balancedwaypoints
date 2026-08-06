@@ -7,10 +7,38 @@
     let categories = [];
     let payees = [];
     let editingId = null;
+    let ownerSwitcher = { forOwnerId: () => null };
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
         errorBox.hidden = false;
+    }
+
+    // See public/js/payees.js's identical helper. Only used for the list/
+    // reference-data reads here — create/update/delete/auto-toggle resolve
+    // access via the schedule's own `account` field server-side instead
+    // (see controllers/schedulesController.js), since schedules are
+    // per-account rather than owner-wide.
+    function forQuery() {
+        const id = ownerSwitcher.forOwnerId();
+        return id ? `?for=${id}` : '';
+    }
+
+    // The Account dropdown needs a different source depending on who we're
+    // managing: our own accounts, or — when acting as an owner via the
+    // switcher — only the accounts of THEIRS we specifically hold readwrite
+    // on (schedules stay account-scoped even under "full management", see
+    // the Phase 2 plan's access-tiers table). There's no endpoint that lists
+    // another owner's full account set, so this is necessarily narrower
+    // than "every account that owner has."
+    async function loadAccountOptions() {
+        const forId = ownerSwitcher.forOwnerId();
+        if (!forId) {
+            const { accounts } = await window.BWApi.apiFetch('/api/accounts');
+            return accounts;
+        }
+        const { accounts } = await window.BWApi.apiFetch('/api/accounts/shared-with-me');
+        return accounts.filter(a => String(a.ownerId) === String(forId) && a.role === 'readwrite');
     }
 
     function row(schedule) {
@@ -54,13 +82,13 @@
 
     async function load() {
         try {
-            const [schedulesRes, accountsRes, categoriesRes, payeesRes] = await Promise.all([
-                window.BWApi.apiFetch('/api/schedules'),
-                window.BWApi.apiFetch('/api/accounts'),
-                window.BWApi.apiFetch('/api/categories'),
-                window.BWApi.apiFetch('/api/payees')
+            const [schedulesRes, accountOptions, categoriesRes, payeesRes] = await Promise.all([
+                window.BWApi.apiFetch(`/api/schedules${forQuery()}`),
+                loadAccountOptions(),
+                window.BWApi.apiFetch(`/api/categories${forQuery()}`),
+                window.BWApi.apiFetch(`/api/payees${forQuery()}`)
             ]);
-            accounts = accountsRes.accounts;
+            accounts = accountOptions;
             categories = categoriesRes.categories;
             payees = payeesRes.payees;
             document.getElementById('sched-account').innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
@@ -84,11 +112,11 @@
         const existing = payees.find(p => p.name.toLowerCase() === name.toLowerCase());
         if (existing) return existing.id;
         try {
-            const created = await window.BWApi.apiFetch('/api/payees', { method: 'POST', body: { name } });
+            const created = await window.BWApi.apiFetch(`/api/payees${forQuery()}`, { method: 'POST', body: { name } });
             payees.push(created);
             return created.id;
         } catch (err) {
-            const refreshed = await window.BWApi.apiFetch('/api/payees');
+            const refreshed = await window.BWApi.apiFetch(`/api/payees${forQuery()}`);
             payees = refreshed.payees;
             const match = payees.find(p => p.name.toLowerCase() === name.toLowerCase());
             return match ? match.id : null;
@@ -177,5 +205,11 @@
         }
     });
 
-    load();
+    (async function init() {
+        ownerSwitcher = await window.BWOwnerSwitcher.init(() => {
+            resetForm();
+            load();
+        });
+        load();
+    })();
 })();

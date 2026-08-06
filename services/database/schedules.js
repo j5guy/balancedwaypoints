@@ -20,10 +20,13 @@ const listActiveForAccount = (accountId, ownerId) => Schedule.find({ owner: owne
     .populate(['account', 'payee', 'category', 'occurrenceOverrides.payee', 'occurrenceOverrides.category'])
     .exec();
 
-// Raw (unpopulated) fetch — for mutating flows (posting, setting overrides)
-// where we want plain ObjectId refs to hand to Transaction.create(), not
-// populated documents, and need the real Mongoose document to call .save().
-const findRawById = (id, ownerId) => Schedule.findOne({ _id: id, owner: ownerId }).exec();
+// Unscoped — used to discover a schedule's own `account` before access has
+// been resolved (mirrors services/database/transactions.js's findByIdRaw).
+// Also doubles as the raw fetch mutating flows (posting, setting overrides)
+// need — plain ObjectId refs to hand to Transaction.create(), not populated
+// documents, and the real Mongoose document to call .save() on. Never
+// returned to a client without an access check first.
+const findByIdRaw = (id) => Schedule.findById(id).exec();
 
 // Applies a new occurrence override, reconciling it against whatever
 // overrides already exist so ranges never overlap (see
@@ -57,5 +60,5 @@ const remove = (id, ownerId) => Schedule.findOneAndDelete({ _id: id, owner: owne
 
 module.exports = {
     list, findById, findDue, findNotifiable, create, update, remove,
-    listActiveForAccount, findRawById, setOccurrenceOverride
+    listActiveForAccount, findByIdRaw, setOccurrenceOverride
 };

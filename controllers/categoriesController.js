@@ -1,4 +1,5 @@
 const categories = require('../services/database/categories');
+const { resolveActingOwner } = require('../services/authz/actingOwner');
 
 function serialize(category) {
     return {
@@ -11,20 +12,24 @@ function serialize(category) {
 }
 
 async function list(req, res) {
+    const ctx = await resolveActingOwner(req, res);
+    if (!ctx) return;
     const includeArchived = req.query.includeArchived === 'true';
-    const items = await categories.list(req.session.userId, { includeArchived });
+    const items = await categories.list(ctx.ownerId, { includeArchived });
     res.json({ categories: items.map(serialize) });
 }
 
 async function create(req, res) {
+    const ctx = await resolveActingOwner(req, res, { write: true });
+    if (!ctx) return;
     const name = String((req.body || {}).name || '').trim();
     const { group, sortOrder } = req.body || {};
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (!group) return res.status(400).json({ error: 'group is required' });
 
     try {
-        const category = await categories.create({ owner: req.session.userId, name, group, sortOrder: Number(sortOrder) || 0 });
-        const populated = await categories.findById(category._id, req.session.userId);
+        const category = await categories.create({ owner: ctx.ownerId, name, group, sortOrder: Number(sortOrder) || 0 });
+        const populated = await categories.findById(category._id, ctx.ownerId);
         res.status(201).json(serialize(populated));
     } catch (err) {
         if (err.code === 11000) return res.status(409).json({ error: 'A category with that name already exists in this group' });
@@ -33,6 +38,8 @@ async function create(req, res) {
 }
 
 async function update(req, res) {
+    const ctx = await resolveActingOwner(req, res, { write: true });
+    if (!ctx) return;
     const { name, group, sortOrder, archived } = req.body || {};
     const data = {};
     if (name !== undefined) data.name = String(name).trim();
@@ -41,9 +48,9 @@ async function update(req, res) {
     if (archived !== undefined) data.archived = !!archived;
 
     try {
-        const category = await categories.update(req.params.id, data, req.session.userId);
+        const category = await categories.update(req.params.id, data, ctx.ownerId);
         if (!category) return res.status(404).json({ error: 'Not found' });
-        const populated = await categories.findById(category._id, req.session.userId);
+        const populated = await categories.findById(category._id, ctx.ownerId);
         res.json(serialize(populated));
     } catch (err) {
         if (err.code === 11000) return res.status(409).json({ error: 'A category with that name already exists in this group' });
@@ -52,30 +59,33 @@ async function update(req, res) {
 }
 
 async function remove(req, res) {
+    const ctx = await resolveActingOwner(req, res, { write: true });
+    if (!ctx) return;
+
     // No `reassignTo` key at all in the body = the plain old behavior
     // (block outright if anything still uses it). Present (even as an
     // explicit null, meaning "move everything to no category") = the new
     // reassign-then-delete flow the UI's delete-confirmation modal drives.
     const hasReassignInstruction = req.body && Object.prototype.hasOwnProperty.call(req.body, 'reassignTo');
     if (!hasReassignInstruction) {
-        const category = await categories.remove(req.params.id, req.session.userId);
+        const category = await categories.remove(req.params.id, ctx.ownerId);
         if (!category) return res.status(409).json({ error: 'Category is used by existing transactions — reassign or archive it instead' });
         return res.status(204).end();
     }
 
     const reassignTo = req.body.reassignTo || null;
     if (reassignTo) {
-        const target = await categories.findById(reassignTo, req.session.userId);
+        const target = await categories.findById(reassignTo, ctx.ownerId);
         if (!target) return res.status(400).json({ error: 'Replacement category not found' });
         if (String(reassignTo) === String(req.params.id)) return res.status(400).json({ error: "Can't reassign a category to itself" });
     } else {
-        const splitConflict = await categories.hasSplitReferences(req.params.id, req.session.userId);
+        const splitConflict = await categories.hasSplitReferences(req.params.id, ctx.ownerId);
         if (splitConflict) {
             return res.status(400).json({ error: 'Some transactions use this category in a split — pick a replacement category (splits can\'t be set to "no category")' });
         }
     }
 
-    const category = await categories.reassignAndRemove(req.params.id, reassignTo, req.session.userId);
+    const category = await categories.reassignAndRemove(req.params.id, reassignTo, ctx.ownerId);
     if (!category) return res.status(404).json({ error: 'Not found' });
     res.status(204).end();
 }

@@ -5,10 +5,19 @@
     const form = document.getElementById('payee-form');
     let categories = [];
     let editingId = null;
+    let ownerSwitcher = { forOwnerId: () => null };
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
         errorBox.hidden = false;
+    }
+
+    // Appended to every fetch/write below — a no-op (?for=) when managing
+    // your own data, or the "Managing: [owner]" switcher's current
+    // selection (see public/js/ownerSwitcher.js).
+    function forQuery() {
+        const id = ownerSwitcher.forOwnerId();
+        return id ? `?for=${id}` : '';
     }
 
     function categoryOptionsHtml(selectedId) {
@@ -34,7 +43,7 @@
         tr.querySelector('[data-delete]').addEventListener('click', async () => {
             if (!confirm(`Delete payee "${payee.name}"?`)) return;
             try {
-                await window.BWApi.apiFetch(`/api/payees/${payee.id}`, { method: 'DELETE' });
+                await window.BWApi.apiFetch(`/api/payees/${payee.id}${forQuery()}`, { method: 'DELETE' });
                 load();
             } catch (err) {
                 showError(err);
@@ -46,8 +55,8 @@
     async function load() {
         try {
             const [payeesRes, categoriesRes] = await Promise.all([
-                window.BWApi.apiFetch('/api/payees'),
-                window.BWApi.apiFetch('/api/categories')
+                window.BWApi.apiFetch(`/api/payees${forQuery()}`),
+                window.BWApi.apiFetch(`/api/categories${forQuery()}`)
             ]);
             categories = categoriesRes.categories;
             document.getElementById('payee-default-category').innerHTML = categoryOptionsHtml();
@@ -103,9 +112,9 @@
         };
         try {
             if (editingId) {
-                await window.BWApi.apiFetch(`/api/payees/${editingId}`, { method: 'PUT', body });
+                await window.BWApi.apiFetch(`/api/payees/${editingId}${forQuery()}`, { method: 'PUT', body });
             } else {
-                await window.BWApi.apiFetch('/api/payees', { method: 'POST', body });
+                await window.BWApi.apiFetch(`/api/payees${forQuery()}`, { method: 'POST', body });
             }
             resetForm();
             load();
@@ -114,5 +123,11 @@
         }
     });
 
-    load();
+    (async function init() {
+        ownerSwitcher = await window.BWOwnerSwitcher.init((forOwnerId) => {
+            resetForm();
+            load();
+        });
+        load();
+    })();
 })();

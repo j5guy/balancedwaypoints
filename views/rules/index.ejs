@@ -1,6 +1,7 @@
 <%- include('../components/head', { title: title }) %>
 <%- include('../components/nav') %>
 <main class="page page-rules">
+    <%- include('../components/ownerSwitcher') %>
     <div class="page-header">
         <h1>Rules</h1>
         <button type="button" class="btn btn-primary" id="new-rule-btn">Add rule</button>
@@ -45,4 +46,4 @@
         </table>
     </div>
 </main>
-<%- include('../components/footer', { pageScripts: ['/js/rules.js'] }) %>
+<%- include('../components/footer', { pageScripts: ['/js/ownerSwitcher.js', '/js/rules.js'] }) %>

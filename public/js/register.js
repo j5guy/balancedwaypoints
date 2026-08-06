@@ -12,6 +12,12 @@
     let currentBalanceCents = 0;
     let transactionsById = new Map();
     let preferences = null;
+    // 'owner' unless this register belongs to an account someone else
+    // shared with us (see accountsController.js's serialize) — gates every
+    // write control below. Every reference-data fetch always carries
+    // ?account=<accountId> too, which is a harmless no-op when it resolves
+    // to yourself (see services/authz/actingOwner.js's resolveActingOwner).
+    let accountRole = 'owner';
 
     const COLUMN_LABELS = {
         date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
@@ -50,23 +56,26 @@
     }
 
     async function loadReferenceData() {
-        const [accountsRes, categoriesRes, categoryGroupsRes, payeesRes] = await Promise.all([
+        // Fetched by id (not the owned-only /api/accounts list) since this
+        // register may belong to an account someone else shared with us —
+        // GET /api/accounts/:id resolves access via any share role and
+        // reports back which one (see accountsController.js's get()).
+        const [account, accountsRes, categoriesRes, categoryGroupsRes, payeesRes] = await Promise.all([
+            window.BWApi.apiFetch(`/api/accounts/${accountId}`),
             window.BWApi.apiFetch('/api/accounts'),
-            window.BWApi.apiFetch('/api/categories'),
-            window.BWApi.apiFetch('/api/category-groups'),
-            window.BWApi.apiFetch('/api/payees')
+            window.BWApi.apiFetch(`/api/categories?account=${accountId}`),
+            window.BWApi.apiFetch(`/api/category-groups?account=${accountId}`),
+            window.BWApi.apiFetch(`/api/payees?account=${accountId}`)
         ]);
+        accountRole = account.role;
         accounts = accountsRes.accounts;
         categories = categoriesRes.categories;
         categoryGroups = categoryGroupsRes.categoryGroups;
         payees = payeesRes.payees;
 
-        const account = accounts.find(a => a.id === accountId);
-        document.getElementById('account-name').textContent = account ? account.name : 'Register';
-        if (account) {
-            currentBalanceCents = account.balanceCents;
-            renderAccountBalance();
-        }
+        document.getElementById('account-name').textContent = account.name;
+        currentBalanceCents = account.balanceCents;
+        renderAccountBalance();
 
         document.getElementById('category-options').innerHTML = categories.map(c => `<option value="${c.name}">`).join('');
         const groupOptionsHtml = '<option value="">— pick a group —</option>' +
@@ -74,10 +83,34 @@
         document.getElementById('txn-category-new-group').innerHTML = groupOptionsHtml;
         document.getElementById('qa-category-new-group').innerHTML = '<option value="">new category group...</option>' +
             categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        // Transfers are only offered between your own accounts — a shared
+        // account's owner may have other accounts we can't see or transfer
+        // to/from (no cross-owner transfers at all, per
+        // transactionsController.js's createTransfer), so the transfer
+        // option is hidden entirely for a shared register (see
+        // applyAccessControls below).
         document.getElementById('txn-transfer-account').innerHTML = accounts
             .filter(a => a.id !== accountId)
             .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
         document.getElementById('payee-options').innerHTML = payees.map(p => `<option value="${p.name}">`).join('');
+        applyAccessControls();
+    }
+
+    // Hides every write control when we only have read-only access to this
+    // account's register — a readwrite share still gets the full editing
+    // UI (per the Phase 2 access tiers), just scoped to this one account.
+    // Adds a page-level class (.register-readonly, see
+    // public/scss/components/_tables.scss) that CSS uses to hide each row's
+    // edit/delete buttons and disable click-to-edit cells, since those are
+    // generated per-row in transactionRow() rather than being fixed
+    // elements this function could grab once.
+    function applyAccessControls() {
+        const readonly = accountRole === 'readonly';
+        const isShared = accountRole !== 'owner';
+        document.getElementById('toggle-advanced-form-link').parentElement.style.display = readonly ? 'none' : '';
+        document.querySelector('.quick-add-row').style.display = readonly ? 'none' : '';
+        document.getElementById('txn-is-transfer').parentElement.style.display = isShared ? 'none' : '';
+        document.querySelector('.page-register').classList.toggle('register-readonly', readonly);
     }
 
     // Resolves a typed category name to an id, creating the category (in the
@@ -88,7 +121,7 @@
         const existing = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
         if (existing) return existing.id;
         if (!groupId) throw new Error(`"${name}" isn't an existing category — pick a group to create it in`);
-        const created = await window.BWApi.apiFetch('/api/categories', { method: 'POST', body: { name, group: groupId } });
+        const created = await window.BWApi.apiFetch(`/api/categories?account=${accountId}`, { method: 'POST', body: { name, group: groupId } });
         categories.push(created);
         return created.id;
     }
@@ -144,7 +177,7 @@
         // in init() below, which switches the sort preference to 'manual'
         // the moment a row actually gets dragged, so the new position
         // sticks instead of snapping back to date order on next load.
-        tr.draggable = true;
+        tr.draggable = accountRole !== 'readonly';
         tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
         const maskAmount = preferences.registerMask && preferences.registerMask.amount;
@@ -235,6 +268,7 @@
 
     function startCellEdit(tr, td, t) {
         if (editingCell) return;
+        if (accountRole === 'readonly') return;
         if (t.transferId) {
             alert("Transfers can't be edited directly — delete and recreate the transfer instead.");
             return;
@@ -300,6 +334,7 @@
     // sets 'reconciled', only flips between 'pending' and 'cleared'. Updates
     // the button in place rather than reloading the whole register.
     async function toggleCleared(t) {
+        if (accountRole === 'readonly') return;
         const next = t.cleared === 'pending' ? 'cleared' : 'pending';
         try {
             const updated = await window.BWApi.apiFetch(`/api/transactions/${t.id}`, { method: 'PUT', body: { cleared: next } });
@@ -439,10 +474,15 @@
             <td data-col="cleared"></td>
             <td class="row-actions">
                 <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>
-                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-occ-actions title="Edit or post this occurrence">⋯</button>
+                ${accountRole === 'readonly' ? '' : '<button type="button" class="btn btn-secondary btn-sm icon-btn" data-occ-actions title="Edit or post this occurrence">⋯</button>'}
             </td>
         `;
-        tr.querySelector('[data-occ-actions]').addEventListener('click', () => openOccurrenceModal(occurrence));
+        // Readonly access can still see upcoming occurrences (the access
+        // table's "view upcoming only") but not open the edit/post modal —
+        // matching schedulesController.js's requireAccountAccess({write:true})
+        // on setOccurrenceOverride/postOccurrence.
+        const actionsBtn = tr.querySelector('[data-occ-actions]');
+        if (actionsBtn) actionsBtn.addEventListener('click', () => openOccurrenceModal(occurrence));
         return tr;
     }
 
@@ -717,7 +757,7 @@
         try {
             const suggestion = await window.BWApi.apiFetch('/api/transactions/preview-rules', {
                 method: 'POST',
-                body: { payee: payeeName, notes: document.getElementById('txn-notes').value, amountCents }
+                body: { payee: payeeName, notes: document.getElementById('txn-notes').value, amountCents, account: accountId }
             });
             if (suggestion.categoryId) document.getElementById('txn-category').value = suggestion.categoryId;
             if (suggestion.payeeName) document.getElementById('txn-payee').value = suggestion.payeeName;
@@ -733,11 +773,11 @@
         const existing = payees.find(p => p.name.toLowerCase() === name.toLowerCase());
         if (existing) return existing.id;
         try {
-            const created = await window.BWApi.apiFetch('/api/payees', { method: 'POST', body: { name } });
+            const created = await window.BWApi.apiFetch(`/api/payees?account=${accountId}`, { method: 'POST', body: { name } });
             payees.push(created);
             return created.id;
         } catch (err) {
-            const refreshed = await window.BWApi.apiFetch('/api/payees');
+            const refreshed = await window.BWApi.apiFetch(`/api/payees?account=${accountId}`);
             payees = refreshed.payees;
             const match = payees.find(p => p.name.toLowerCase() === name.toLowerCase());
             return match ? match.id : null;
@@ -749,10 +789,10 @@
         const ids = [];
         for (const name of names) {
             try {
-                const created = await window.BWApi.apiFetch('/api/tags', { method: 'POST', body: { name } });
+                const created = await window.BWApi.apiFetch(`/api/tags?account=${accountId}`, { method: 'POST', body: { name } });
                 ids.push(created.id);
             } catch (err) {
-                const { tags } = await window.BWApi.apiFetch('/api/tags');
+                const { tags } = await window.BWApi.apiFetch(`/api/tags?account=${accountId}`);
                 const match = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
                 if (match) ids.push(match.id);
             }
@@ -762,6 +802,7 @@
 
     // ── Save / edit / delete ─────────────────────────────────────────
     function startEdit(t) {
+        if (accountRole === 'readonly') return;
         if (t.transferId) {
             alert("Transfers can't be edited directly — delete and recreate the transfer instead.");
             return;
@@ -877,6 +918,7 @@
     });
 
     async function deleteTransaction(id) {
+        if (accountRole === 'readonly') return;
         if (!confirm('Delete this transaction?')) return;
         try {
             await window.BWApi.apiFetch(`/api/transactions/${id}`, { method: 'DELETE' });

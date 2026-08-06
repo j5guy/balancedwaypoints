@@ -57,6 +57,18 @@
             <tbody id="accounts-tbody"></tbody>
         </table>
     </div>
+
+    <div id="shared-with-me-section" hidden>
+        <h2>Shared with me</h2>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr><th>Name</th><th>Owner</th><th>Permission</th><th>Balance</th><th></th></tr>
+                </thead>
+                <tbody id="shared-with-me-tbody"></tbody>
+            </table>
+        </div>
+    </div>
 </main>
 
 <div class="modal-overlay" id="delete-account-overlay" hidden>
@@ -83,6 +95,42 @@
             <div class="btn-row">
                 <button type="button" class="btn btn-danger" id="delete-account-force-btn" disabled>Force delete — remove account and all its records</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="share-account-overlay" hidden>
+    <div class="modal-card">
+        <h3>Share <span id="share-account-name"></span></h3>
+        <div id="share-account-error" class="form-error" hidden></div>
+
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr><th>Person</th><th>Permission</th><th></th></tr>
+                </thead>
+                <tbody id="share-list-tbody">
+                    <tr><td colspan="3" class="empty-state">Not shared with anyone yet.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="form-row" style="margin-top:16px;">
+            <div class="form-group">
+                <label for="share-add-email">Email</label>
+                <input type="email" id="share-add-email" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="share-add-permission">Permission</label>
+                <select id="share-add-permission">
+                    <option value="readonly">Read-only</option>
+                    <option value="readwrite">Read-write</option>
+                </select>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="share-add-btn">Add</button>
+            <button type="button" class="btn btn-secondary" id="share-close-btn">Close</button>
         </div>
     </div>
 </div>

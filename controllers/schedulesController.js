@@ -1,5 +1,7 @@
 const schedules = require('../services/database/schedules');
 const transactionsDb = require('../services/database/transactions');
+const accountShares = require('../services/database/accountShares');
+const { resolveActingOwner } = require('../services/authz/actingOwner');
 const { FREQUENCY_UNITS } = require('../models/schedule');
 const { projectSchedule, advanceNextDatePastPosted } = require('../services/schedules/occurrenceProjection');
 const { resolve: resolveOverride } = require('../services/schedules/occurrenceOverrides');
@@ -38,15 +40,51 @@ function validateSplits(amountCents, splits) {
     return null;
 }
 
+// Every write below resolves access via the schedule's own `account` (not
+// a flat req.session.userId match, or the `?for=` owner-switcher other
+// management controllers use) — schedules stay account-scoped even though
+// Categories/Payees/Tags/Rules go owner-wide once any readwrite share
+// exists. See services/database/accountShares.js's resolveAccountAccess
+// and the Phase 2 plan's access-tiers table. Mirrors
+// controllers/transactionsController.js's requireAccountAccess.
+async function requireAccountAccess(req, res, accountId, { write = false } = {}) {
+    if (!accountId) {
+        res.status(400).json({ error: 'account is required' });
+        return null;
+    }
+    const access = await accountShares.resolveAccountAccess(accountId, req.session.userId);
+    if (!access) {
+        res.status(404).json({ error: 'Not found' });
+        return null;
+    }
+    if (write && access.role === 'readonly') {
+        res.status(403).json({ error: 'You have read-only access to this account' });
+        return null;
+    }
+    return access;
+}
+
+// The one list endpoint that isn't keyed to a single account, so it uses
+// the `?for=<ownerId>` "Managing: [owner]" switcher instead — but unlike
+// Categories/Payees/Tags/Rules (owner-wide once any readwrite share
+// exists), schedules are additionally filtered down to just the accounts
+// the acting user specifically holds readwrite on.
 async function list(req, res) {
-    const items = await schedules.list(req.session.userId);
+    const ctx = await resolveActingOwner(req, res);
+    if (!ctx) return;
+    let items = await schedules.list(ctx.ownerId);
+    if (String(ctx.ownerId) !== String(req.session.userId)) {
+        const writable = await accountShares.listWritableAccountIds(req.session.userId, ctx.ownerId);
+        items = items.filter(s => writable.has(String((s.account && s.account._id) || s.account)));
+    }
     res.json({ schedules: items.map(serialize) });
 }
 
 async function create(req, res) {
     const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, notes, notifyByEmail } = req.body || {};
+    const access = await requireAccountAccess(req, res, account, { write: true });
+    if (!access) return;
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
-    if (!account) return res.status(400).json({ error: 'account is required' });
     if (amountCents === undefined) return res.status(400).json({ error: 'amountCents is required' });
     if (!nextDate) return res.status(400).json({ error: 'nextDate is required' });
     if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
@@ -54,7 +92,7 @@ async function create(req, res) {
     if (splitError) return res.status(400).json({ error: splitError });
 
     const schedule = await schedules.create({
-        owner: req.session.userId,
+        owner: access.ownerId,
         name: String(name).trim(), account, payee: payee || null,
         amountCents: Number(amountCents),
         category: splits && splits.length ? null : (category || null),
@@ -66,13 +104,30 @@ async function create(req, res) {
         notes: notes || '',
         notifyByEmail: !!notifyByEmail
     });
-    const populated = await schedules.findById(schedule._id, req.session.userId);
+    const populated = await schedules.findById(schedule._id, access.ownerId);
     res.status(201).json(serialize(populated));
 }
 
 async function update(req, res) {
+    const existing = await schedules.findByIdRaw(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, existing.account, { write: true });
+    if (!access) return;
+
     const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes, notifyByEmail } = req.body || {};
     if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
+
+    // Moving a schedule to a different account requires write access to
+    // THAT account too, and — same reasoning as transactionsController's
+    // account-move check — the target must belong to the SAME owner, since
+    // the schedule's own `owner` field doesn't change here.
+    if (account !== undefined && String(account) !== String(existing.account)) {
+        const targetAccess = await requireAccountAccess(req, res, account, { write: true });
+        if (!targetAccess) return;
+        if (String(targetAccess.ownerId) !== String(access.ownerId)) {
+            return res.status(400).json({ error: "Can't move a schedule to an account with a different owner" });
+        }
+    }
 
     const data = {};
     if (name !== undefined) data.name = String(name).trim();
@@ -90,15 +145,18 @@ async function update(req, res) {
     if (notes !== undefined) data.notes = notes;
     if (notifyByEmail !== undefined) data.notifyByEmail = !!notifyByEmail;
 
-    const schedule = await schedules.update(req.params.id, data, req.session.userId);
+    const schedule = await schedules.update(req.params.id, data, access.ownerId);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
-    const populated = await schedules.findById(schedule._id, req.session.userId);
+    const populated = await schedules.findById(schedule._id, access.ownerId);
     res.json(serialize(populated));
 }
 
 async function remove(req, res) {
-    const schedule = await schedules.remove(req.params.id, req.session.userId);
-    if (!schedule) return res.status(404).json({ error: 'Not found' });
+    const existing = await schedules.findByIdRaw(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, existing.account, { write: true });
+    if (!access) return;
+    await schedules.remove(req.params.id, access.ownerId);
     res.status(204).end();
 }
 
@@ -124,11 +182,12 @@ function serializeOccurrence(o) {
 // (see public/js/register.js). See services/schedules/occurrenceProjection.js.
 async function upcoming(req, res) {
     const { account, cutoff } = req.query;
-    if (!account) return res.status(400).json({ error: 'account is required' });
+    const access = await requireAccountAccess(req, res, account);
+    if (!access) return;
     const cutoffDate = cutoff ? new Date(cutoff) : new Date();
     const asOf = new Date();
 
-    const scheduleDocs = await schedules.listActiveForAccount(account, req.session.userId);
+    const scheduleDocs = await schedules.listActiveForAccount(account, access.ownerId);
     const occurrences = [];
     for (const schedule of scheduleDocs) {
         const projected = await projectSchedule(schedule, cutoffDate, asOf);
@@ -143,6 +202,11 @@ async function upcoming(req, res) {
 // services/schedules/occurrenceOverrides.js for how ranges are kept from
 // overlapping as edits/deletes accumulate).
 async function setOccurrenceOverride(req, res) {
+    const existing = await schedules.findByIdRaw(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, existing.account, { write: true });
+    if (!access) return;
+
     const { occurrenceDate, scope, count, skip, amountCents, category, payee, notes, splits } = req.body || {};
     if (!occurrenceDate) return res.status(400).json({ error: 'occurrenceDate is required' });
     if (!['single', 'count', 'forever'].includes(scope)) return res.status(400).json({ error: 'scope must be "single", "count", or "forever"' });
@@ -167,7 +231,7 @@ async function setOccurrenceOverride(req, res) {
             splits: splits || []
         };
     }
-    const schedule = await schedules.setOccurrenceOverride(req.params.id, entry, req.session.userId);
+    const schedule = await schedules.setOccurrenceOverride(req.params.id, entry, access.ownerId);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
     res.json(serialize(schedule));
 }
@@ -182,8 +246,10 @@ async function postOccurrence(req, res) {
     if (!['today', 'scheduled', 'custom'].includes(postTo)) return res.status(400).json({ error: 'postTo must be "today", "scheduled", or "custom"' });
     if (postTo === 'custom' && !customDate) return res.status(400).json({ error: 'customDate is required when postTo is "custom"' });
 
-    const schedule = await schedules.findRawById(req.params.id, req.session.userId);
+    const schedule = await schedules.findByIdRaw(req.params.id);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, schedule.account, { write: true });
+    if (!access) return;
 
     const occDate = new Date(occurrenceDate);
     const override = resolveOverride(schedule.occurrenceOverrides, occDate, schedule.frequency);
@@ -191,7 +257,7 @@ async function postOccurrence(req, res) {
     const postDate = postTo === 'today' ? new Date() : postTo === 'scheduled' ? occDate : new Date(customDate);
 
     const txn = await transactionsDb.create({
-        owner: req.session.userId,
+        owner: access.ownerId,
         account: schedule.account,
         date: postDate,
         payee: fields.payee,
@@ -204,7 +270,7 @@ async function postOccurrence(req, res) {
     });
     await advanceNextDatePastPosted(schedule);
 
-    const populated = await transactionsDb.findById(txn._id, req.session.userId);
+    const populated = await transactionsDb.findById(txn._id, access.ownerId);
     res.status(201).json({
         id: populated._id,
         account: populated.account,

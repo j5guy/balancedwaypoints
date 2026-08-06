@@ -8,6 +8,7 @@ function serializeUser(user) {
         email: user.email,
         displayName: user.displayName,
         isAdmin: user.isAdmin,
+        authSource: user.authSource,
         lastLoginAt: user.lastLoginAt,
         createdAt: user.createdAt
     };
@@ -16,6 +17,26 @@ function serializeUser(user) {
 async function listUsers(req, res) {
     const users = await usersDb.list();
     res.json({ users: users.map(serializeUser) });
+}
+
+// Only email/displayName — the two profile fields also user-editable by
+// LDAP self-heal (see authController.js's loginLdap) — not password,
+// authSource, or ldapUsername, which stay out of admin's reach here.
+async function updateUser(req, res) {
+    const email = String((req.body || {}).email || '').toLowerCase().trim();
+    const displayName = String((req.body || {}).displayName || '').trim();
+    if (!email) return res.status(400).json({ error: 'email is required' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
+    if (!displayName) return res.status(400).json({ error: 'displayName is required' });
+
+    const conflict = await usersDb.findByEmail(email);
+    if (conflict && String(conflict._id) !== String(req.params.id)) {
+        return res.status(409).json({ error: 'An account with that email already exists' });
+    }
+
+    const user = await usersDb.update(req.params.id, { email, displayName });
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    res.json(serializeUser(user));
 }
 
 async function setAdmin(req, res) {
@@ -126,6 +147,6 @@ async function testLdapSettings(req, res) {
 }
 
 module.exports = {
-    listUsers, setAdmin, removeUser,
+    listUsers, updateUser, setAdmin, removeUser,
     getLdapSettings, updateLdapSettings, resetLdapSettings, testLdapSettings
 };

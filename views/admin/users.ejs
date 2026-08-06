@@ -14,4 +14,25 @@
         </table>
     </div>
 </main>
+
+<div class="modal-overlay" id="edit-user-overlay" hidden>
+    <div class="modal-card">
+        <h3>Edit user</h3>
+        <p class="form-error" id="edit-user-error" hidden></p>
+        <div class="form-group">
+            <label for="edit-user-email">Email</label>
+            <input type="email" id="edit-user-email">
+        </div>
+        <div class="form-group">
+            <label for="edit-user-display-name">Display name</label>
+            <input type="text" id="edit-user-display-name">
+        </div>
+        <p class="form-hint" id="edit-user-ldap-hint" hidden>This is an LDAP account — logging in again with a
+        real <code>mail</code>/name set in the directory will overwrite whatever's saved here.</p>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-edit-user-btn">Save</button>
+            <button type="button" class="btn btn-secondary" id="cancel-edit-user-btn">Cancel</button>
+        </div>
+    </div>
+</div>
 <%- include('../components/footer', { pageScripts: ['/js/admin.js'] }) %>

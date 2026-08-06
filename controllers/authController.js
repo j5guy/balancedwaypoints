@@ -133,6 +133,27 @@ async function loginLdap(req, res) {
         });
         logger.info(`New LDAP-provisioned account: ${username}${isAdmin ? ' (admin)' : ''}`);
     } else {
+        // Self-heal: LDAP is the source of truth for these two fields. A
+        // directory entry missing `mail` at signup time falls back to a
+        // placeholder above (see the `!user` branch) — if the directory now
+        // returns a real value (attribute added later, or this run just
+        // returns something new), pick it up here instead of staying stuck
+        // on the placeholder forever. Skipped if the new email would belong
+        // to a different existing account already — never silently merge
+        // two accounts into one email.
+        const freshEmail = firstValue(entry.mail) ? firstValue(entry.mail).toLowerCase() : null;
+        const freshDisplayName = firstValue(entry.displayName) || firstValue(entry.cn) || null;
+        if (freshEmail && freshEmail !== user.email) {
+            const conflict = await usersDb.findByEmail(freshEmail);
+            if (!conflict || String(conflict._id) === String(user._id)) {
+                user.email = freshEmail;
+            } else {
+                logger.error(`LDAP login for "${username}": directory email "${freshEmail}" already belongs to a different account — not updating`);
+            }
+        }
+        if (freshDisplayName && freshDisplayName !== user.displayName) {
+            user.displayName = freshDisplayName;
+        }
         user.lastLoginAt = new Date();
         await user.save();
     }

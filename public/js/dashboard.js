@@ -485,6 +485,7 @@
         }
 
         if (type === 'accountBalance') {
+            div.classList.add('widget-balance');
             const account = accounts.find(a => a.id === accountId);
             if (!account) {
                 // The account was closed or its share was revoked since

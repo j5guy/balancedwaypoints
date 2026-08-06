@@ -129,6 +129,11 @@
         document.getElementById('toggle-advanced-form-link').parentElement.style.display = readonly ? 'none' : '';
         document.querySelector('.quick-add-row').style.display = readonly ? 'none' : '';
         document.getElementById('txn-is-transfer').parentElement.style.display = isShared ? 'none' : '';
+        // Same reasoning as the "is transfer" checkbox above — #accounts
+        // only ever lists accounts you own, so the "transfer to/from"
+        // picker would offer nothing usable (and the server would reject a
+        // cross-owner pick anyway) while managing a shared account.
+        document.getElementById('convert-to-transfer-btn').style.display = isShared ? 'none' : '';
         document.querySelector('.page-register').classList.toggle('register-readonly', readonly);
         document.getElementById('select-all-checkbox').closest('th').style.display = readonly ? 'none' : '';
         if (readonly) document.getElementById('bulk-actions-bar').hidden = true;
@@ -980,6 +985,14 @@
         document.getElementById('txn-is-transfer').parentElement.hidden = true;
         document.getElementById('txn-transfer-group').hidden = true;
 
+        // "Convert to transfer" covers the same gap — offered instead,
+        // since it actually works (delete-and-recreate behind one button;
+        // see convertToTransfer in transactionsController.js). Not for
+        // splits — the backend rejects those (a split has no single "this
+        // account's side" to make into a transfer).
+        document.getElementById('convert-to-transfer-btn').hidden = !!(t.splits && t.splits.length);
+        document.getElementById('convert-to-transfer-form').hidden = true;
+
         if (t.splits && t.splits.length) {
             document.getElementById('splits-editor').hidden = false;
             document.getElementById('txn-category-group').hidden = true;
@@ -1013,10 +1026,40 @@
         document.getElementById('splits-editor').hidden = true;
         document.getElementById('splits-list').innerHTML = '';
         document.getElementById('cancel-txn-btn').hidden = true;
+        document.getElementById('convert-to-transfer-btn').hidden = true;
+        document.getElementById('convert-to-transfer-form').hidden = true;
         document.getElementById('txn-form-card').hidden = true;
     }
 
     document.getElementById('cancel-txn-btn').addEventListener('click', resetForm);
+
+    // ── Convert an existing transaction to a transfer ────────────────
+    document.getElementById('convert-to-transfer-btn').addEventListener('click', () => {
+        const form = document.getElementById('convert-to-transfer-form');
+        form.hidden = !form.hidden;
+        if (!form.hidden) {
+            document.getElementById('convert-transfer-account').innerHTML = accounts
+                .filter(a => a.id !== accountId)
+                .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+        }
+    });
+    document.getElementById('convert-to-transfer-cancel-btn').addEventListener('click', () => {
+        document.getElementById('convert-to-transfer-form').hidden = true;
+    });
+    document.getElementById('convert-to-transfer-confirm-btn').addEventListener('click', async () => {
+        if (!editingId) return;
+        const toAccount = document.getElementById('convert-transfer-account').value;
+        if (!toAccount) return showError(new Error('Pick an account to transfer to/from'));
+        if (!confirm('This deletes the current entry and replaces it with a linked transfer pair. Continue?')) return;
+        try {
+            await window.BWApi.apiFetch(`/api/transactions/${editingId}/convert-to-transfer`, { method: 'POST', body: { toAccount } });
+            resetForm();
+            await loadReferenceData();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
 
     // The full form (transfers/splits/edit) is collapsed by default — the
     // quick-add row below the table handles the common case instead.

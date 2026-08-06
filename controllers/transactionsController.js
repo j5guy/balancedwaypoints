@@ -125,6 +125,57 @@ async function createTransfer(req, res) {
     res.status(201).json({ outgoing: serialize(outgoing), incoming: serialize(incoming) });
 }
 
+// Replaces a plain transaction with a transfer pair carrying the same date/
+// amount/notes — the register's "Convert to transfer" action, for when an
+// entry turns out to have been a transfer all along (see update()'s
+// transferId guard: there's no way to turn an existing single-sided entry
+// into one in place, only delete-and-recreate, which this does for you in
+// one step). Not wrapped in a DB transaction (this app has no replica set to
+// support one) — same sequential-writes tradeoff already accepted elsewhere
+// in this codebase (e.g. categories.js's reassignAndRemove).
+async function convertToTransfer(req, res) {
+    const existing = await transactions.findByIdRaw(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, existing.account, { write: true });
+    if (!access) return;
+    if (existing.transferId) return res.status(400).json({ error: 'This is already a transfer' });
+    if (existing.splits && existing.splits.length) {
+        return res.status(400).json({ error: "Split transactions can't be converted to a transfer — remove the splits first" });
+    }
+
+    const { toAccount } = req.body || {};
+    if (!toAccount) return res.status(400).json({ error: 'toAccount is required' });
+    if (String(toAccount) === String(existing.account)) {
+        return res.status(400).json({ error: "toAccount must be different from this transaction's own account" });
+    }
+    const toAccess = await requireAccountAccess(req, res, toAccount, { write: true });
+    if (!toAccess) return;
+    if (String(toAccess.ownerId) !== String(access.ownerId)) {
+        return res.status(400).json({ error: "Can't transfer between accounts with different owners" });
+    }
+
+    // The existing entry's own sign decides direction — a negative amount
+    // means money already left THIS account (so it's the "from" side), a
+    // positive one means it arrived here (so the picked account is actually
+    // the "from" side) — same as createTransfer's own -Math.abs/+Math.abs
+    // convention, just inferred instead of asked for, since the amount here
+    // is already fixed by the entry being converted.
+    const isOutgoing = existing.amountCents < 0;
+    const fromAccount = isOutgoing ? existing.account : toAccount;
+    const realToAccount = isOutgoing ? toAccount : existing.account;
+
+    await transactions.remove(req.params.id, access.ownerId);
+    const { outgoing, incoming } = await transactions.createTransfer({
+        owner: access.ownerId,
+        fromAccount,
+        toAccount: realToAccount,
+        date: existing.date,
+        amountCents: Math.abs(existing.amountCents),
+        notes: existing.notes
+    });
+    res.status(201).json({ outgoing: serialize(outgoing), incoming: serialize(incoming) });
+}
+
 async function update(req, res) {
     const existing = await transactions.findByIdRaw(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
@@ -214,4 +265,4 @@ async function previewRules(req, res) {
     res.json(result);
 }
 
-module.exports = { list, get, create, createTransfer, update, remove, reorder, previewRules };
+module.exports = { list, get, create, createTransfer, convertToTransfer, update, remove, reorder, previewRules };

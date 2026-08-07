@@ -1,0 +1,24 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-account-general">
+    <div class="page-header">
+        <h1>General</h1>
+    </div>
+    <div id="account-error" class="form-error" hidden></div>
+    <div id="account-success" class="form-success" hidden></div>
+
+    <div class="card">
+        <div class="form-group">
+            <label for="home-dashboard">When I log in, take me to</label>
+            <select id="home-dashboard">
+                <option value="dashboard">Dashboard</option>
+                <option value="budget">Budget</option>
+                <option value="accounts">Accounts</option>
+            </select>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-general-btn">Save</button>
+        </div>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/accountGeneral.js'] }) %>

@@ -49,4 +49,28 @@ router.get('/account', requireAuth, (req, res) => {
     res.render('account/index', { title: 'My Account' });
 });
 
+router.get('/account/general', requireAuth, (req, res) => {
+    res.render('account/general', { title: 'General' });
+});
+
+router.get('/account/notifications', requireAuth, (req, res) => {
+    res.render('account/notifications', { title: 'Email notifications' });
+});
+
+router.get('/account/mail-server', requireAuth, (req, res) => {
+    res.render('account/mailServer', { title: 'Mail server' });
+});
+
+router.get('/account/api-access', requireAuth, (req, res) => {
+    res.render('account/apiAccess', { title: 'API access' });
+});
+
+router.get('/account/appearance', requireAuth, (req, res) => {
+    res.render('account/appearance', { title: 'Appearance' });
+});
+
+router.get('/account/backups', requireAuth, (req, res) => {
+    res.render('account/backups', { title: 'Backups' });
+});
+
 module.exports = router;

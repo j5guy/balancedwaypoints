@@ -5,9 +5,16 @@
     const form = document.getElementById('schedule-form');
     let accounts = [];
     let categories = [];
+    let categoryGroups = [];
     let payees = [];
     let editingId = null;
     let ownerSwitcher = { forOwnerId: () => null };
+    // Live per-column filter (see the "Filter…" row in views/schedules/index.ejs,
+    // same pattern as the register's — see public/js/register.js's
+    // filterState/matchesFilters/renderRegisterRows). Purely client-side
+    // over whatever load() last fetched, so typing never re-fetches.
+    let currentSchedules = [];
+    let filterState = { name: '', account: '', payee: '', amount: '', category: '', nextdate: '', repeats: '' };
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -51,6 +58,16 @@
         document.getElementById('sched-transfer-account').innerHTML = accounts
             .filter(a => a.id !== currentAccount)
             .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
+    // Shared by load() and resolveCategorySelection() below (the latter
+    // re-populates after creating a category inline, so it shows up without
+    // a full page reload).
+    function populateCategoryOptions() {
+        document.getElementById('sched-category').innerHTML =
+            '<option value="">— none —</option>' +
+            categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+            '<option value="__new__">+ Create new category…</option>';
     }
 
     function row(schedule) {
@@ -98,32 +115,80 @@
         return tr;
     }
 
+    // Matches against the same text the table cells themselves show, so
+    // what you type lines up with what you're reading.
+    function matchesFilters(schedule) {
+        const f = filterState;
+        const account = accounts.find(a => a.id === schedule.account);
+        if (f.name && !schedule.name.toLowerCase().includes(f.name)) return false;
+        if (f.account && !(account ? account.name : '').toLowerCase().includes(f.account)) return false;
+        const payeeText = schedule.transferAccount ? `transfer ${schedule.transferAccount.name}` : (schedule.payee ? schedule.payee.name : '');
+        if (f.payee && !payeeText.toLowerCase().includes(f.payee)) return false;
+        if (f.amount && !(schedule.amountCents / 100).toFixed(2).includes(f.amount)) return false;
+        const categoryText = schedule.transferAccount ? 'transfer' : (schedule.category ? schedule.category.name : '');
+        if (f.category && !categoryText.toLowerCase().includes(f.category)) return false;
+        if (f.nextdate && !window.BWDate.formatDate(schedule.nextDate).toLowerCase().includes(f.nextdate)) return false;
+        const repeatsText = `every ${schedule.frequency.interval} ${schedule.frequency.unit}`;
+        if (f.repeats && !repeatsText.toLowerCase().includes(f.repeats)) return false;
+        return true;
+    }
+
+    function renderSchedulesTable() {
+        tbody.innerHTML = '';
+        if (currentSchedules.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No schedules yet.</td></tr>';
+            return;
+        }
+        const filtered = currentSchedules.filter(matchesFilters);
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No schedules match your filters.</td></tr>';
+            return;
+        }
+        filtered.forEach(s => tbody.appendChild(row(s)));
+    }
+
     async function load() {
         try {
-            const [schedulesRes, accountOptions, categoriesRes, payeesRes] = await Promise.all([
+            const [schedulesRes, accountOptions, categoriesRes, categoryGroupsRes, payeesRes] = await Promise.all([
                 window.BWApi.apiFetch(`/api/schedules${forQuery()}`),
                 loadAccountOptions(),
                 window.BWApi.apiFetch(`/api/categories${forQuery()}`),
+                window.BWApi.apiFetch(`/api/category-groups${forQuery()}`),
                 window.BWApi.apiFetch(`/api/payees${forQuery()}`)
             ]);
             accounts = accountOptions;
             categories = categoriesRes.categories;
+            categoryGroups = categoryGroupsRes.categoryGroups;
             payees = payeesRes.payees;
             document.getElementById('sched-account').innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-            document.getElementById('sched-category').innerHTML = '<option value="">— none —</option>' + categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            populateCategoryOptions();
+            document.getElementById('sched-new-category-group-select').innerHTML =
+                '<option value="">— pick a group —</option>' + categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
             document.getElementById('sched-payee-options').innerHTML = payees.map(p => `<option value="${p.name}">`).join('');
             populateTransferAccountOptions();
 
-            tbody.innerHTML = '';
-            if (schedulesRes.schedules.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No schedules yet.</td></tr>';
-                return;
-            }
-            schedulesRes.schedules.forEach(s => tbody.appendChild(row(s)));
+            currentSchedules = schedulesRes.schedules;
+            renderSchedulesTable();
         } catch (err) {
             showError(err);
         }
     }
+
+    // ── Live filter row — narrows #schedules-tbody as you type, no re-fetch.
+    const SCHED_FILTER_FIELDS = ['name', 'account', 'payee', 'amount', 'category', 'nextdate', 'repeats'];
+    SCHED_FILTER_FIELDS.forEach((field) => {
+        document.getElementById(`sched-filter-${field}`).addEventListener('input', (e) => {
+            filterState[field] = e.target.value.trim().toLowerCase();
+            renderSchedulesTable();
+        });
+    });
+    document.getElementById('sched-filter-clear-btn').addEventListener('click', () => {
+        SCHED_FILTER_FIELDS.forEach((field) => {
+            filterState[field] = '';
+            document.getElementById(`sched-filter-${field}`).value = '';
+        });
+        renderSchedulesTable();
+    });
 
     // Same create-if-missing pattern as the register's resolvePayee.
     async function resolvePayee(name) {
@@ -142,6 +207,33 @@
         }
     }
 
+    // Reads #sched-category — a plain existing-category id, or (when
+    // "+ Create new category…" is selected) creates one from the name/group
+    // fields revealed below it and returns the new id. Mirrors budget.js's
+    // inline "+ category" prompt, just as a form field instead of a prompt().
+    async function resolveCategorySelection() {
+        const value = document.getElementById('sched-category').value;
+        if (value !== '__new__') return value || null;
+        const name = document.getElementById('sched-new-category-name').value.trim();
+        const groupId = document.getElementById('sched-new-category-group-select').value;
+        if (!name) throw new Error('Enter a name for the new category');
+        if (!groupId) throw new Error('Pick a group for the new category');
+        const created = await window.BWApi.apiFetch(`/api/categories${forQuery()}`, { method: 'POST', body: { name, group: groupId } });
+        categories.push(created);
+        populateCategoryOptions();
+        document.getElementById('sched-category').value = created.id;
+        return created.id;
+    }
+
+    document.getElementById('sched-category').addEventListener('change', (e) => {
+        const isNew = e.target.value === '__new__';
+        document.getElementById('sched-new-category-fields').hidden = !isNew;
+        if (!isNew) {
+            document.getElementById('sched-new-category-name').value = '';
+            document.getElementById('sched-new-category-group-select').value = '';
+        }
+    });
+
     function startEdit(schedule) {
         editingId = schedule.id;
         document.getElementById('schedule-form-title').textContent = `Edit ${schedule.name}`;
@@ -155,6 +247,7 @@
         document.getElementById('sched-transfer-account').value = schedule.transferAccount ? schedule.transferAccount.id : '';
         document.getElementById('sched-payee').value = schedule.payee ? schedule.payee.name : '';
         document.getElementById('sched-category').value = schedule.category ? schedule.category.id : '';
+        document.getElementById('sched-new-category-fields').hidden = true;
         document.getElementById('sched-next-date').value = window.BWDate.toDateInputValue(schedule.nextDate);
         document.getElementById('sched-end-date').value = schedule.endDate ? window.BWDate.toDateInputValue(schedule.endDate) : '';
         document.getElementById('sched-interval').value = schedule.frequency.interval;
@@ -180,6 +273,9 @@
         document.getElementById('sched-transfer-account').value = '';
         document.getElementById('sched-payee').value = '';
         document.getElementById('sched-category').value = '';
+        document.getElementById('sched-new-category-fields').hidden = true;
+        document.getElementById('sched-new-category-name').value = '';
+        document.getElementById('sched-new-category-group-select').value = '';
         document.getElementById('sched-next-date').value = '';
         document.getElementById('sched-end-date').value = '';
         document.getElementById('sched-interval').value = '1';
@@ -237,7 +333,7 @@
             } else {
                 body.transferAccount = null;
                 body.payee = await resolvePayee(document.getElementById('sched-payee').value.trim());
-                body.category = document.getElementById('sched-category').value || null;
+                body.category = await resolveCategorySelection();
             }
             if (editingId) {
                 await window.BWApi.apiFetch(`/api/schedules/${editingId}`, { method: 'PUT', body });

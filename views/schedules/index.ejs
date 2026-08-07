@@ -40,6 +40,16 @@
                 <select id="sched-category"><option value="">— none —</option></select>
             </div>
         </div>
+        <div class="form-row" id="sched-new-category-fields" hidden>
+            <div class="form-group">
+                <label for="sched-new-category-name">New category name</label>
+                <input type="text" id="sched-new-category-name" placeholder="Category name">
+            </div>
+            <div class="form-group">
+                <label for="sched-new-category-group-select">Group</label>
+                <select id="sched-new-category-group-select"><option value="">— pick a group —</option></select>
+            </div>
+        </div>
         <div class="form-group" id="sched-transfer-group" hidden>
             <label for="sched-transfer-account">Transfer to</label>
             <select id="sched-transfer-account"></select>
@@ -94,6 +104,19 @@
     <div class="table-wrap">
         <table class="data-table">
             <thead><tr><th>Name</th><th>Account</th><th>Payee</th><th>Amount</th><th>Category</th><th>Next date</th><th>Repeats</th><th>Auto-enter</th><th></th></tr></thead>
+            <tbody id="schedules-filter-tbody">
+                <tr class="filter-row">
+                    <td><input type="text" id="sched-filter-name" placeholder="Filter…"></td>
+                    <td><input type="text" id="sched-filter-account" placeholder="Filter…"></td>
+                    <td><input type="text" id="sched-filter-payee" placeholder="Filter…"></td>
+                    <td><input type="text" id="sched-filter-amount" placeholder="Filter…"></td>
+                    <td><input type="text" id="sched-filter-category" placeholder="Filter…"></td>
+                    <td><input type="text" id="sched-filter-nextdate" placeholder="Filter…"></td>
+                    <td><input type="text" id="sched-filter-repeats" placeholder="Filter…"></td>
+                    <td></td>
+                    <td><button type="button" class="btn btn-secondary btn-sm icon-btn" id="sched-filter-clear-btn" title="Clear filters">✕</button></td>
+                </tr>
+            </tbody>
             <tbody id="schedules-tbody"></tbody>
         </table>
     </div>

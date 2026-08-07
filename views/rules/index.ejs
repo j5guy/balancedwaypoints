@@ -42,6 +42,16 @@
     <div class="table-wrap">
         <table class="data-table">
             <thead><tr><th>Priority</th><th>Name</th><th class="wrap">Conditions</th><th class="wrap">Actions</th><th>Active</th><th></th></tr></thead>
+            <tbody id="rules-filter-tbody">
+                <tr class="filter-row">
+                    <td><input type="text" id="rule-filter-priority" placeholder="Filter…"></td>
+                    <td><input type="text" id="rule-filter-name" placeholder="Filter…"></td>
+                    <td><input type="text" id="rule-filter-conditions" placeholder="Filter…"></td>
+                    <td><input type="text" id="rule-filter-actions" placeholder="Filter…"></td>
+                    <td></td>
+                    <td><button type="button" class="btn btn-secondary btn-sm icon-btn" id="rule-filter-clear-btn" title="Clear filters">✕</button></td>
+                </tr>
+            </tbody>
             <tbody id="rules-tbody"></tbody>
         </table>
     </div>

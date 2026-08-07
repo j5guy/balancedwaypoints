@@ -5,6 +5,12 @@
     const newForm = document.getElementById('new-rule-form');
     let categories = [];
     let ownerSwitcher = { forOwnerId: () => null };
+    // Live per-column filter (see the "Filter…" row in views/rules/index.ejs,
+    // same pattern as the register's — see public/js/register.js's
+    // filterState/matchesFilters/renderRegisterRows). Purely client-side
+    // over whatever load() last fetched, so typing never re-fetches.
+    let currentRules = [];
+    let filterState = { priority: '', name: '', conditions: '', actions: '' };
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -144,6 +150,32 @@
         return tr;
     }
 
+    // Matches against the same describeConditions()/describeActions() text
+    // the table cells themselves show, so what you type lines up with what
+    // you're reading.
+    function matchesFilters(rule) {
+        const f = filterState;
+        if (f.priority && !String(rule.priority).includes(f.priority)) return false;
+        if (f.name && !rule.name.toLowerCase().includes(f.name)) return false;
+        if (f.conditions && !describeConditions(rule.conditions).toLowerCase().includes(f.conditions)) return false;
+        if (f.actions && !describeActions(rule.actions).toLowerCase().includes(f.actions)) return false;
+        return true;
+    }
+
+    function renderRulesTable() {
+        tbody.innerHTML = '';
+        if (currentRules.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No rules yet.</td></tr>';
+            return;
+        }
+        const filtered = currentRules.filter(matchesFilters);
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No rules match your filters.</td></tr>';
+            return;
+        }
+        filtered.forEach(r => tbody.appendChild(row(r)));
+    }
+
     async function load() {
         try {
             const [rulesRes, categoriesRes] = await Promise.all([
@@ -151,16 +183,28 @@
                 window.BWApi.apiFetch(`/api/categories${forQuery()}`)
             ]);
             categories = categoriesRes.categories;
-            tbody.innerHTML = '';
-            if (rulesRes.rules.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No rules yet.</td></tr>';
-                return;
-            }
-            rulesRes.rules.sort((a, b) => a.priority - b.priority).forEach(r => tbody.appendChild(row(r)));
+            currentRules = rulesRes.rules.sort((a, b) => a.priority - b.priority);
+            renderRulesTable();
         } catch (err) {
             showError(err);
         }
     }
+
+    // ── Live filter row — narrows #rules-tbody as you type, no re-fetch.
+    const RULE_FILTER_FIELDS = ['priority', 'name', 'conditions', 'actions'];
+    RULE_FILTER_FIELDS.forEach((field) => {
+        document.getElementById(`rule-filter-${field}`).addEventListener('input', (e) => {
+            filterState[field] = e.target.value.trim().toLowerCase();
+            renderRulesTable();
+        });
+    });
+    document.getElementById('rule-filter-clear-btn').addEventListener('click', () => {
+        RULE_FILTER_FIELDS.forEach((field) => {
+            filterState[field] = '';
+            document.getElementById(`rule-filter-${field}`).value = '';
+        });
+        renderRulesTable();
+    });
 
     document.getElementById('save-rule-btn').addEventListener('click', async () => {
         const name = document.getElementById('rule-name').value.trim();

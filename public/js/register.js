@@ -558,7 +558,14 @@
         return tr;
     }
 
-    async function loadUpcomingRows() {
+    // `sort` matches the register's own display sort ('newest'/'oldest'/
+    // 'manual') so renderRegisterRows can place these rows to actually read
+    // in chronological order alongside the real transactions — 'oldest'
+    // flips the display pass below to soonest-first and gets rendered
+    // AFTER the real transactions instead of pinned above them; 'manual'
+    // has no inherent chronological direction (nothing here participates
+    // in drag-and-drop) so it's treated the same as 'newest'.
+    async function loadUpcomingRows(sort) {
         if (!preferences.upcomingSchedules.enabled) return [];
         try {
             const { amount, unit } = preferences.upcomingSchedules;
@@ -585,10 +592,13 @@
                 o.projectedBalanceCents = running;
             });
 
-            // ...then furthest-first for display, so the projection reads
-            // top-to-bottom the same "newest first" way the rest of the
-            // register does, landing right above today's real transactions.
-            occurrences.sort((a, b) => b.date - a.date);
+            // ...then re-sorted for display to match the chosen direction —
+            // furthest-first for 'newest'/'manual' (reads top-to-bottom the
+            // same way the register does, landing right above today's real
+            // transactions), soonest-first for 'oldest' (continues on from
+            // the newest real transaction, which sits at the bottom there).
+            if (sort === 'oldest') occurrences.sort((a, b) => a.date - b.date);
+            else occurrences.sort((a, b) => b.date - a.date);
             return occurrences.map(upcomingRow);
         } catch (err) {
             showError(err);
@@ -833,25 +843,32 @@
     function renderRegisterRows() {
         const tbody = document.getElementById('register-tbody');
         tbody.innerHTML = '';
-        currentUpcomingRows.forEach(row => tbody.appendChild(row));
+        // 'oldest' reads top-to-bottom from the past toward today, so
+        // upcoming (future) rows continue on AFTER the real transactions
+        // instead of being pinned above them, and in soonest-first order —
+        // see loadUpcomingRows' own sort, called with this same direction.
+        const upcomingAtBottom = (preferences.registerSort || 'newest') === 'oldest';
+        if (!upcomingAtBottom) currentUpcomingRows.forEach(row => tbody.appendChild(row));
 
-        if (currentTransactions.length === 0) {
-            if (currentUpcomingRows.length === 0) {
-                const from = historyFromDate();
-                tbody.innerHTML = `<tr><td colspan="11" class="empty-state">${from ? 'No transactions in this time window.' : 'No transactions yet.'}</td></tr>`;
-            }
+        if (currentTransactions.length === 0 && currentUpcomingRows.length === 0) {
+            const from = historyFromDate();
+            tbody.innerHTML = `<tr><td colspan="11" class="empty-state">${from ? 'No transactions in this time window.' : 'No transactions yet.'}</td></tr>`;
             updateBulkBar();
             return;
         }
 
-        const filtered = currentTransactions.filter(matchesFilters);
-        if (filtered.length === 0) {
-            const tr = document.createElement('tr');
-            tr.innerHTML = '<td colspan="11" class="empty-state">No transactions match your filters.</td>';
-            tbody.appendChild(tr);
-        } else {
-            filtered.forEach(t => tbody.appendChild(transactionRow(t, currentBalanceById.get(t.id))));
+        if (currentTransactions.length > 0) {
+            const filtered = currentTransactions.filter(matchesFilters);
+            if (filtered.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = '<td colspan="11" class="empty-state">No transactions match your filters.</td>';
+                tbody.appendChild(tr);
+            } else {
+                filtered.forEach(t => tbody.appendChild(transactionRow(t, currentBalanceById.get(t.id))));
+            }
         }
+
+        if (upcomingAtBottom) currentUpcomingRows.forEach(row => tbody.appendChild(row));
         updateBulkBar();
     }
 
@@ -866,7 +883,7 @@
             currentTransactions = transactions;
             document.getElementById('register-hint').hidden = transactions.length < 2;
 
-            currentUpcomingRows = await loadUpcomingRows();
+            currentUpcomingRows = await loadUpcomingRows(sort);
 
             // Balance math always walks newest-to-oldest by date regardless
             // of display order — 'manual' is the one exception, where the

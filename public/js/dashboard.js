@@ -300,6 +300,24 @@
     // red band is a fixed "danger zone" behind the line for any balance
     // under `thresholdCents`, not per-segment line coloring — reads more
     // like a low-balance warning strip than a line-color change would.
+    // Rounds to a "nice" (1/2/5 × 10^n) step so gridlines land on clean
+    // dollar amounts (e.g. $1,000, $2,000) rather than the chart's actual
+    // min/max — marks-and-anatomy.md's "round to clean numbers" guidance,
+    // just computed per-account since the balance range varies. Clamped to
+    // at least $1 so a pathologically tiny range can't divide-by-near-zero
+    // into an unreasonable number of lines.
+    function niceStepCents(rangeCents, targetLines) {
+        const roughDollars = Math.max(1, (rangeCents / 100) / targetLines);
+        const magnitude = Math.pow(10, Math.floor(Math.log10(roughDollars)));
+        const residual = roughDollars / magnitude;
+        let niceResidual;
+        if (residual < 1.5) niceResidual = 1;
+        else if (residual < 3.5) niceResidual = 2;
+        else if (residual < 7.5) niceResidual = 5;
+        else niceResidual = 10;
+        return niceResidual * magnitude * 100; // back to cents
+    }
+
     function buildForecastSvg(rows, thresholdCents) {
         if (rows.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
         const width = 400, height = 140;
@@ -326,16 +344,30 @@
         const dangerBottom = padTop + chartH;
         const dangerHeight = dangerBottom - thresholdY;
 
+        // Horizontal gridlines every "nice" ~$1,000-ish step instead of
+        // just the two extremes — reading off a projected balance partway
+        // through the chart needs more than one reference point on the
+        // scale. Drawn first so they sit behind the danger zone/line as the
+        // recessive base layer (dataviz: "gridlines / axes ... recessive").
+        const gridStep = niceStepCents(range, 4);
+        const gridLines = [];
+        for (let v = Math.ceil(min / gridStep) * gridStep; v <= max; v += gridStep) {
+            const y = yAt(v);
+            gridLines.push(`
+                <line class="forecast-grid-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}"></line>
+                <text class="trend-axis-label" x="${padLeft - 6}" y="${y + 3}" text-anchor="end">${window.BWMoney.formatCents(v)}</text>
+            `);
+        }
+
         const xLabels = axisLabelIndexes(rows.length).map(i => `
             <text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
         `).join('');
 
         return `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
+                ${gridLines.join('')}
                 ${dangerHeight > 0 ? `<rect class="forecast-danger-zone" x="${padLeft}" y="${thresholdY}" width="${chartW}" height="${dangerHeight}"></rect>` : ''}
                 <line class="forecast-threshold-line" x1="${padLeft}" y1="${thresholdY}" x2="${width - padRight}" y2="${thresholdY}"></line>
-                <text class="trend-axis-label" x="${padLeft - 6}" y="${padTop + 4}" text-anchor="end">${window.BWMoney.formatCents(max)}</text>
-                <text class="trend-axis-label" x="${padLeft - 6}" y="${dangerBottom + 4}" text-anchor="end">${window.BWMoney.formatCents(min)}</text>
                 <polyline class="forecast-line" points="${pastCoords.join(' ')}"></polyline>
                 <polyline class="forecast-line forecast-line-projected" points="${futureCoords.join(' ')}"></polyline>
                 ${xLabels}
@@ -470,7 +502,7 @@
         }
 
         if (type === 'forecast') {
-            div.classList.add('widget-wide');
+            div.classList.add('widget-full');
             const params = new URLSearchParams({
                 account: accountId || '',
                 pastAmount: widget.pastAmount,

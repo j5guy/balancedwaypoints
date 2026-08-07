@@ -143,6 +143,14 @@
 // zone is a fixed translucent red band below the customizable threshold,
 // not a per-segment line-color change — reads as a low-balance warning
 // strip regardless of whether the line is currently inside it.
+// Recessive $1,000-ish reference lines (public/js/dashboard.js's
+// niceStepCents) — same hairline treatment as .trend-zero-line above, just
+// repeated at every step instead of only at zero.
+.forecast-grid-line {
+    stroke: $border;
+    stroke-width: 1;
+}
+
 .forecast-line {
     fill: none;
     stroke: $accent;

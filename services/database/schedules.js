@@ -15,8 +15,17 @@ const findDue = (asOf = new Date()) => Schedule.find({ active: true, autoEnter: 
 // Used by the register's "upcoming" projection (see
 // services/schedules/occurrenceProjection.js) — populates the override
 // entries' own payee/category refs too, since an override can point to a
-// different payee/category than the base schedule.
-const listActiveForAccount = (accountId, ownerId) => Schedule.find({ owner: ownerId, account: accountId, active: true })
+// different payee/category than the base schedule. Matches `account` OR
+// `transferAccount` — a transfer schedule needs to show as an upcoming row
+// in BOTH accounts' registers, same as a posted transfer creates a real
+// Transaction on both sides (see controllers/schedulesController.js's
+// upcoming(), which normalizes the sign and picks the right counterpart
+// account depending on which side matched).
+const listActiveForAccount = (accountId, ownerId) => Schedule.find({
+    owner: ownerId,
+    active: true,
+    $or: [{ account: accountId }, { transferAccount: accountId }]
+})
     .populate(['account', 'payee', 'category', 'transferAccount', 'occurrenceOverrides.payee', 'occurrenceOverrides.category'])
     .exec();
 

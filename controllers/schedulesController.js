@@ -212,21 +212,34 @@ async function remove(req, res) {
     res.status(204).end();
 }
 
-function serializeOccurrence(o) {
+// `viewingIncomingSide` is only meaningful for a transfer schedule — true
+// when the account this projection was requested for is the schedule's
+// `transferAccount` (the receiving side) rather than its `account` (the
+// paying side). Determines which account shows as the counterparty and
+// which way the arrow points; upcoming()'s caller has already normalized
+// o.amountCents's sign to match.
+function serializeOccurrence(o, viewingIncomingSide) {
+    const schedule = o.schedule;
+    let transferAccount = null;
+    if (schedule.transferAccount) {
+        // occurrenceOverrides can change amount/notes for one occurrence
+        // but not which account a transfer schedule moves money to/from
+        // (see models/schedule.js), so the counterparty is always read off
+        // the base schedule, never an override.
+        transferAccount = viewingIncomingSide
+            ? { id: schedule.account._id || schedule.account, name: schedule.account.name, direction: 'in' }
+            : { id: schedule.transferAccount._id || schedule.transferAccount, name: schedule.transferAccount.name, direction: 'out' };
+    }
     return {
         date: o.occurrenceDate,
         isDue: o.isDue,
-        scheduleId: o.schedule._id,
+        scheduleId: schedule._id,
         schedule: {
-            id: o.schedule._id,
-            name: o.schedule.name,
+            id: schedule._id,
+            name: schedule.name,
             payee: o.payee ? { id: o.payee._id, name: o.payee.name } : null,
             category: o.category ? { id: o.category._id, name: o.category.name } : null,
-            // Always the base schedule's own transferAccount, never an
-            // override — occurrenceOverrides can change amount/notes for
-            // one occurrence but not which account a transfer schedule
-            // moves money to/from (see models/schedule.js).
-            transferAccount: o.schedule.transferAccount ? { id: o.schedule.transferAccount._id || o.schedule.transferAccount, name: o.schedule.transferAccount.name } : null,
+            transferAccount,
             notes: o.notes,
             amountCents: o.amountCents,
             splits: o.splits
@@ -248,9 +261,21 @@ async function upcoming(req, res) {
     const occurrences = [];
     for (const schedule of scheduleDocs) {
         const projected = await projectSchedule(schedule, cutoffDate, asOf);
-        projected.forEach(o => occurrences.push(o));
+        // A transfer schedule is attached to BOTH accounts' upcoming lists
+        // (see listActiveForAccount) — the schedule only stores one signed
+        // magnitude (models/schedule.js), so this normalizes it the same
+        // way services/database/transactions.js's createTransfer does once
+        // it's actually posted: negative on the paying side, positive on
+        // the receiving side, regardless of what sign was typed when the
+        // schedule was created.
+        const viewingIncomingSide = !!schedule.transferAccount &&
+            String(schedule.transferAccount._id || schedule.transferAccount) === String(account);
+        projected.forEach((o) => {
+            if (schedule.transferAccount) o.amountCents = viewingIncomingSide ? Math.abs(o.amountCents) : -Math.abs(o.amountCents);
+            occurrences.push(serializeOccurrence(o, viewingIncomingSide));
+        });
     }
-    res.json({ occurrences: occurrences.map(serializeOccurrence) });
+    res.json({ occurrences });
 }
 
 // Editing (or deleting, via skip:true) one occurrence / "this and the next

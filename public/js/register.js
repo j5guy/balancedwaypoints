@@ -522,9 +522,13 @@
         // Mirrors transactionRow()'s own transfer handling — a transfer
         // schedule has no payee/category (server clears them, see
         // controllers/schedulesController.js), so the Payee column shows
-        // where it's going and Category just reads "Transfer".
+        // the other side of the transfer and Category just reads "Transfer".
+        // s.transferAccount is already the CONTEXTUAL counterparty (the
+        // other account, whichever register you're viewing this from — see
+        // schedulesController.js's serializeOccurrence), with its own
+        // direction so the arrow points the right way either side.
         const category = s.category ? s.category.name : (s.splits && s.splits.length ? 'Split' : (s.transferAccount ? 'Transfer' : ''));
-        const payeeCell = s.transferAccount ? `→ ${s.transferAccount.name}` : (s.payee ? s.payee.name : '');
+        const payeeCell = s.transferAccount ? `${s.transferAccount.direction === 'in' ? '←' : '→'} ${s.transferAccount.name}` : (s.payee ? s.payee.name : '');
         const maskAmount = preferences.registerMask && preferences.registerMask.amount;
         const maskBalance = preferences.registerMask && preferences.registerMask.balance;
         const amountClass = maskAmount ? 'money-masked' : (s.amountCents < 0 ? 'money-negative' : 'money-positive');

@@ -10,6 +10,12 @@ const accountSchema = new mongoose.Schema({
     // envelope math (services/budget/envelope.js) but still show a balance.
     onBudget: { type: Boolean, default: true },
     startingBalanceCents: { type: Number, default: 0 },
+    // The register's own Forecast chart flags the first projected day the
+    // balance would drop below this (see services/reports/forecast.js's
+    // consumer, public/js/register.js's buildRegisterForecastSvg) — same
+    // idea as the Dashboard's per-widget-instance forecast threshold, just
+    // one persistent value per account instead of one per widget.
+    forecastThresholdCents: { type: Number, default: 0 },
     closed: { type: Boolean, default: false },
     notes: { type: String, trim: true, default: '' },
     sortOrder: { type: Number, default: 0 }

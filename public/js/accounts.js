@@ -87,6 +87,7 @@
         document.getElementById('acct-on-budget').checked = account.onBudget;
         document.getElementById('acct-closed-group').hidden = false;
         document.getElementById('acct-closed').checked = account.closed;
+        document.getElementById('acct-forecast-threshold').value = ((account.forecastThresholdCents || 0) / 100).toFixed(2);
         form.hidden = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -101,6 +102,7 @@
         document.getElementById('acct-on-budget').checked = true;
         document.getElementById('acct-closed-group').hidden = true;
         document.getElementById('acct-closed').checked = false;
+        document.getElementById('acct-forecast-threshold').value = '0';
         form.hidden = true;
     }
 
@@ -118,6 +120,7 @@
             name,
             type: document.getElementById('acct-type').value,
             startingBalanceCents: window.BWMoney.toCents(document.getElementById('acct-balance').value || 0),
+            forecastThresholdCents: window.BWMoney.toCents(document.getElementById('acct-forecast-threshold').value || 0),
             onBudget: document.getElementById('acct-on-budget').checked
         };
         if (editingId) body.closed = document.getElementById('acct-closed').checked;

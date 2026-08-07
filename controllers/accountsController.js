@@ -10,6 +10,7 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         type: account.type,
         onBudget: account.onBudget,
         startingBalanceCents: account.startingBalanceCents,
+        forecastThresholdCents: account.forecastThresholdCents || 0,
         closed: account.closed,
         notes: account.notes,
         sortOrder: account.sortOrder,
@@ -65,7 +66,7 @@ async function get(req, res) {
 }
 
 async function create(req, res) {
-    const { name, type, onBudget, startingBalanceCents, notes } = req.body || {};
+    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, notes } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
@@ -75,6 +76,7 @@ async function create(req, res) {
         type: type || 'checking',
         onBudget: onBudget !== false,
         startingBalanceCents: Number(startingBalanceCents) || 0,
+        forecastThresholdCents: Number(forecastThresholdCents) || 0,
         notes: notes || ''
     });
     res.status(201).json(serialize({ account, balanceCents: account.startingBalanceCents }));
@@ -85,7 +87,7 @@ async function create(req, res) {
 // forceRemove below, deliberately keep the plain req.session.userId owner
 // check rather than resolveAccountAccess.
 async function update(req, res) {
-    const { name, type, onBudget, startingBalanceCents, closed, notes, sortOrder } = req.body || {};
+    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, closed, notes, sortOrder } = req.body || {};
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
     const data = {};
@@ -93,6 +95,7 @@ async function update(req, res) {
     if (type !== undefined) data.type = type;
     if (onBudget !== undefined) data.onBudget = !!onBudget;
     if (startingBalanceCents !== undefined) data.startingBalanceCents = Number(startingBalanceCents) || 0;
+    if (forecastThresholdCents !== undefined) data.forecastThresholdCents = Number(forecastThresholdCents) || 0;
     if (closed !== undefined) data.closed = !!closed;
     if (notes !== undefined) data.notes = notes;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;

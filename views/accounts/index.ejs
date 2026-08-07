@@ -42,6 +42,11 @@
                 <input type="checkbox" id="acct-closed">
                 <label for="acct-closed">Closed</label>
             </div>
+            <div class="form-group">
+                <label for="acct-forecast-threshold">Forecast low-balance threshold</label>
+                <input type="number" id="acct-forecast-threshold" step="0.01" value="0">
+                <p class="form-hint">This account's Forecast chart flags the first projected day the balance would drop below this.</p>
+            </div>
         </div>
         <div class="btn-row">
             <button type="button" class="btn btn-primary" id="save-account-btn">Save</button>

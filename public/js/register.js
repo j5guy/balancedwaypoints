@@ -35,6 +35,11 @@
     // ?account=<accountId> too, which is a harmless no-op when it resolves
     // to yourself (see services/authz/actingOwner.js's resolveActingOwner).
     let accountRole = 'owner';
+    // Set from the account itself (see loadReferenceData) rather than a
+    // register/user preference — same idea as the Dashboard's per-widget
+    // forecast threshold, just one persistent value per account (see
+    // models/account.js) instead of one per widget instance.
+    let forecastThresholdCents = 0;
 
     const COLUMN_LABELS = {
         date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
@@ -85,6 +90,7 @@
             window.BWApi.apiFetch(`/api/payees?account=${accountId}`)
         ]);
         accountRole = account.role;
+        forecastThresholdCents = account.forecastThresholdCents || 0;
         accounts = accountsRes.accounts;
         categories = categoriesRes.categories;
         categoryGroups = categoryGroupsRes.categoryGroups;
@@ -789,20 +795,42 @@
         return [0, Math.floor((count - 1) / 2), count - 1];
     }
 
+    // Same "nice" as dashboard.js's identical findThresholdCrossings —
+    // every distinct FUTURE dip below the threshold, not just the first
+    // match in `rows` overall (past-then-future, so a historical dip could
+    // otherwise hide every actually-upcoming one) and not one row per day
+    // of a multi-day dip, just the moment each one starts. `wasBelow`
+    // resets the moment the projected segment starts, so an account
+    // already under threshold today still gets its first projected day
+    // flagged.
+    function findThresholdCrossings(rows, thresholdCents) {
+        const crossings = [];
+        let inProjected = false;
+        let wasBelow = false;
+        rows.forEach((r, i) => {
+            if (r.projected && !inProjected) { inProjected = true; wasBelow = false; }
+            if (!inProjected) return;
+            const isBelow = r.balanceCents < thresholdCents;
+            if (isBelow && !wasBelow) crossings.push({ ...r, index: i });
+            wasBelow = isBelow;
+        });
+        return crossings;
+    }
+
     // Same shape/mark classes as dashboard.js's buildForecastSvg, just a
     // much wider virtual canvas (full register width instead of one grid
     // cell) and an explicit "today" line — at this size the solid/dashed
     // line-style change alone is easy to miss as the past/projected
-    // boundary. thresholdCents is fixed at $0 (no per-register setting) —
-    // this is flagging "would this go negative", not a customizable
-    // danger line.
-    function buildRegisterForecastSvg(rows) {
+    // boundary. thresholdCents comes from the account itself
+    // (models/account.js's forecastThresholdCents, see loadReferenceData)
+    // rather than a per-widget-instance setting — one persistent value per
+    // account, defaulting to $0 (flagging an overdraft) until set otherwise.
+    function buildRegisterForecastSvg(rows, thresholdCents) {
         if (rows.length < 2) return { html: '<div class="empty-state">Not enough data yet.</div>', columns: [] };
         const width = 1400, height = 280;
         const padLeft = 72, padRight = 12, padTop = 16, padBottom = 28;
         const chartW = width - padLeft - padRight;
         const chartH = height - padTop - padBottom;
-        const thresholdCents = 0;
         const values = rows.map(r => r.balanceCents);
         const min = Math.min(0, thresholdCents, ...values);
         const max = Math.max(0, thresholdCents, ...values);
@@ -838,12 +866,12 @@
             <text class="trend-axis-label" x="${xAt(i)}" y="${height - 8}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
         `).join('');
 
-        // Marks + calls out the FIRST point (chronologically) the balance
-        // actually dips below $0, rather than a dot on every day it stays
-        // under — see dashboard.js's identical buildForecastSvg logic.
-        const hitIndex = rows.findIndex(r => r.balanceCents < thresholdCents);
-        const marker = hitIndex === -1 ? '' : `<circle class="forecast-threshold-marker" cx="${xAt(hitIndex)}" cy="${yAt(rows[hitIndex].balanceCents)}" r="5"></circle>`;
-        const callout = hitIndex === -1 ? '' : `<div class="forecast-warning">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(rows[hitIndex].date)} — projected balance ${window.BWMoney.formatCents(rows[hitIndex].balanceCents)}</div>`;
+        // Marks + calls out every FUTURE dip below the threshold (see
+        // findThresholdCrossings) — not a dot on every day a dip stays
+        // under, just the moment it starts.
+        const crossings = findThresholdCrossings(rows, thresholdCents);
+        const markers = crossings.map(c => `<circle class="forecast-threshold-marker" cx="${xAt(c.index)}" cy="${yAt(c.balanceCents)}" r="5"></circle>`).join('');
+        const callouts = crossings.map(c => `<div class="forecast-warning">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(c.date)} — projected balance ${window.BWMoney.formatCents(c.balanceCents)}</div>`).join('');
 
         const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
@@ -854,10 +882,10 @@
                 <text class="trend-axis-label" x="${todayX}" y="${padTop - 4}" text-anchor="middle">Today</text>
                 <polyline class="forecast-line" points="${pastCoords.join(' ')}"></polyline>
                 <polyline class="forecast-line forecast-line-projected" points="${futureCoords.join(' ')}"></polyline>
-                ${marker}
+                ${markers}
                 ${xLabels}
             </svg>
-            ${callout}
+            ${callouts}
         `;
         const columns = rows.map((r, i) => ({
             x: xAt(i),
@@ -888,7 +916,7 @@
                 futureUnit: upcoming.unit || 'days'
             });
             const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
-            const { html, columns, bounds } = buildRegisterForecastSvg(rows);
+            const { html, columns, bounds } = buildRegisterForecastSvg(rows, forecastThresholdCents);
             chartEl.innerHTML = html;
             // #register-forecast-chart is a static element from the EJS
             // (always in the DOM), unlike the Dashboard's widgets — no need

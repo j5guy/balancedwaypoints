@@ -260,20 +260,14 @@ async function upcoming(req, res) {
     const scheduleDocs = await schedules.listActiveForAccount(account, access.ownerId);
     const occurrences = [];
     for (const schedule of scheduleDocs) {
-        const projected = await projectSchedule(schedule, cutoffDate, asOf);
-        // A transfer schedule is attached to BOTH accounts' upcoming lists
-        // (see listActiveForAccount) — the schedule only stores one signed
-        // magnitude (models/schedule.js), so this normalizes it the same
-        // way services/database/transactions.js's createTransfer does once
-        // it's actually posted: negative on the paying side, positive on
-        // the receiving side, regardless of what sign was typed when the
-        // schedule was created.
+        // projectSchedule normalizes a transfer schedule's amount sign for
+        // whichever account this is (see occurrenceProjection.js) — this
+        // just needs the same "which side" flag again for serializeOccurrence
+        // to pick the right counterparty account/arrow direction to display.
+        const projected = await projectSchedule(schedule, cutoffDate, asOf, account);
         const viewingIncomingSide = !!schedule.transferAccount &&
             String(schedule.transferAccount._id || schedule.transferAccount) === String(account);
-        projected.forEach((o) => {
-            if (schedule.transferAccount) o.amountCents = viewingIncomingSide ? Math.abs(o.amountCents) : -Math.abs(o.amountCents);
-            occurrences.push(serializeOccurrence(o, viewingIncomingSide));
-        });
+        projected.forEach((o) => occurrences.push(serializeOccurrence(o, viewingIncomingSide)));
     }
     res.json({ occurrences });
 }

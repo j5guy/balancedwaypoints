@@ -50,12 +50,30 @@ async function advanceNextDatePastPosted(schedule, posted) {
 // Projects every not-yet-posted, not-deleted occurrence of `schedule` from
 // its (self-healed) nextDate out to `cutoff`, merging in any
 // occurrenceOverrides and flagging ones at/before `asOf` as due.
-async function projectSchedule(schedule, cutoff, asOf = new Date()) {
+//
+// `viewingAccountId` is only meaningful for a transfer schedule — it's
+// attached to BOTH accounts (see services/database/schedules.js's
+// listActiveForAccount) but only stores one signed magnitude, so this
+// normalizes it here, once, for every caller: negative on the paying side,
+// positive on the receiving side, the same way
+// services/database/transactions.js's createTransfer signs the two real
+// Transaction legs once a transfer schedule actually posts. Both
+// controllers/schedulesController.js's upcoming() (the register's "upcoming"
+// rows) and services/reports/forecast.js's futureSegment() (the Forecast
+// widget) call this, and both need this same normalization — centralizing
+// it here means neither has to re-derive it, and neither can drift out of
+// sync with the other or with how a posted transfer actually signs its
+// amounts.
+async function projectSchedule(schedule, cutoff, asOf = new Date(), viewingAccountId = null) {
     const posted = await postedOccurrenceSet(schedule._id);
     const frequency = schedule.frequency;
     const endDate = schedule.endDate ? new Date(schedule.endDate) : null;
 
     let date = await advanceNextDatePastPosted(schedule, posted);
+
+    const isTransfer = !!schedule.transferAccount;
+    const viewingIncomingSide = isTransfer && viewingAccountId != null &&
+        String(schedule.transferAccount._id || schedule.transferAccount) === String(viewingAccountId);
 
     const occurrences = [];
     let steps = 0;
@@ -63,10 +81,12 @@ async function projectSchedule(schedule, cutoff, asOf = new Date()) {
         if (!posted.has(date.getTime())) {
             const override = resolveOverride(schedule.occurrenceOverrides, date, frequency);
             if (!override || !override.skip) {
+                let amountCents = override ? override.amountCents : schedule.amountCents;
+                if (isTransfer) amountCents = viewingIncomingSide ? Math.abs(amountCents) : -Math.abs(amountCents);
                 occurrences.push({
                     schedule,
                     occurrenceDate: new Date(date),
-                    amountCents: override ? override.amountCents : schedule.amountCents,
+                    amountCents,
                     category: override ? override.category : schedule.category,
                     payee: override ? override.payee : schedule.payee,
                     notes: override ? override.notes : schedule.notes,

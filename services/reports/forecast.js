@@ -64,11 +64,17 @@ async function pastSegment(accountId, pastAmount, pastUnit, currentBalanceCents,
 // Future segment: one point per projected schedule occurrence (not one per
 // day — daily granularity isn't meaningful when nothing's happening between
 // occurrences) out to a cutoff derived from the requested future window.
-// Reuses projectSchedule as-is (models/schedule.js's occurrenceOverrides and
-// already-posted occurrences are handled there) rather than re-deriving
-// recurrence math — this is the same projection the register's "upcoming"
-// list uses (services/schedules/occurrenceProjection.js), just summed into
+// Reuses projectSchedule (models/schedule.js's occurrenceOverrides,
+// already-posted occurrences, AND transfer-schedule sign normalization are
+// all handled there — see occurrenceProjection.js) rather than re-deriving
+// any of that — this is the same projection the register's "upcoming" list
+// uses (controllers/schedulesController.js's upcoming()), just summed into
 // a running balance server-side instead of left as a raw occurrence list.
+// listActiveForAccount finds a transfer schedule from EITHER side (the
+// paying account or the receiving one), so passing accountId through to
+// projectSchedule here is what makes money transferring INTO this account
+// actually show up as an increase in its forecast, not just schedules that
+// pay out of it.
 async function futureSegment(accountId, futureAmount, futureUnit, currentBalanceCents, ownerId) {
     const asOf = new Date();
     const cutoff = addUnits(asOf, futureAmount, futureUnit);
@@ -76,7 +82,7 @@ async function futureSegment(accountId, futureAmount, futureUnit, currentBalance
     const scheduleDocs = await schedulesDb.listActiveForAccount(accountId, ownerId);
     const occurrences = [];
     for (const schedule of scheduleDocs) {
-        const projected = await projectSchedule(schedule, cutoff, asOf);
+        const projected = await projectSchedule(schedule, cutoff, asOf, accountId);
         occurrences.push(...projected);
     }
     occurrences.sort((a, b) => a.occurrenceDate - b.occurrenceDate);

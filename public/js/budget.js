@@ -122,17 +122,18 @@
     // groups too (see render()) — $ assignment stays owner-only, so there's
     // nothing to show there but the category list itself either way.
     // `groupActivityCents` is this month's total across the group's
-    // categories — null while managing another owner's structure (`forId`
-    // in render()), since $ data is owner-only at every share tier and
-    // there's nothing to sum in that view (see render()'s own comment).
-    function incomeGroupSection(group, categoriesInGroup, groupActivityCents) {
+    // categories, `categoryActivityById` is the same broken out per
+    // category — both null while managing another owner's structure
+    // (`forId` in render()), since $ data is owner-only at every share tier
+    // and there's nothing to show in that view (see render()'s own comment).
+    function incomeGroupSection(group, categoriesInGroup, groupActivityCents, categoryActivityById) {
         const section = document.createElement('div');
         section.className = 'budget-group';
         const totalHtml = groupActivityCents === null ? '' :
             `<span class="money ${groupActivityCents < 0 ? 'money-negative' : 'money-positive'}" style="margin-left:auto;">${window.BWMoney.formatCents(groupActivityCents)}</span>`;
         section.innerHTML = `
             <div class="budget-group-title" style="display:flex;align-items:center;">
-                ${group.name}
+                ${group.name} <span class="muted" style="font-weight:normal;margin-left:4px;">(${categoriesInGroup.length})</span>
                 <button type="button" class="btn btn-secondary btn-sm" data-add-category style="margin-left:8px;">+ category</button>
                 <button type="button" class="icon-btn" data-delete-group title="Delete group" style="border:none;background:none;cursor:pointer;">🗑</button>
                 ${totalHtml}
@@ -144,10 +145,14 @@
             list.innerHTML = '<div class="muted" style="padding:6px 14px;">No categories yet.</div>';
         } else {
             categoriesInGroup.forEach((c) => {
+                const activityCents = categoryActivityById ? (categoryActivityById.get(c.id) || 0) : null;
+                const amountHtml = activityCents === null ? '' :
+                    `<span class="money ${activityCents < 0 ? 'money-negative' : 'money-positive'}" style="margin-left:auto;margin-right:12px;">${window.BWMoney.formatCents(activityCents)}</span>`;
                 const row = document.createElement('div');
                 row.style.cssText = 'padding:8px 14px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;';
                 row.innerHTML = `
                     <span>${c.name}</span>
+                    ${amountHtml}
                     <button type="button" class="icon-btn" data-delete-category title="Delete category" style="border:none;background:none;cursor:pointer;">🗑</button>
                 `;
                 row.querySelector('[data-delete-category]').addEventListener('click', () => openDeleteCategoryModal(c));
@@ -205,7 +210,7 @@
             } else if (forId) {
                 budgetGroups.forEach(group => {
                     const cats = allCategories.filter(c => c.group === group.id);
-                    container.appendChild(incomeGroupSection(group, cats, null));
+                    container.appendChild(incomeGroupSection(group, cats, null, null));
                 });
             } else {
                 budgetGroups.forEach(group => {
@@ -228,9 +233,14 @@
             incomeContainer.innerHTML = '';
             incomeGroups.forEach(group => {
                 const cats = allCategories.filter(c => c.group === group.id);
-                const groupActivityCents = forId ? null :
-                    summary.incomeCategories.filter(c => c.category.group === group.id).reduce((sum, c) => sum + c.activityCents, 0);
-                incomeContainer.appendChild(incomeGroupSection(group, cats, groupActivityCents));
+                let groupActivityCents = null;
+                let categoryActivityById = null;
+                if (!forId) {
+                    const rows = summary.incomeCategories.filter(c => c.category.group === group.id);
+                    groupActivityCents = rows.reduce((sum, c) => sum + c.activityCents, 0);
+                    categoryActivityById = new Map(rows.map(c => [c.category.id, c.activityCents]));
+                }
+                incomeContainer.appendChild(incomeGroupSection(group, cats, groupActivityCents, categoryActivityById));
             });
         } catch (err) {
             showError(err);

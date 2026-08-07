@@ -25,17 +25,29 @@ async function runDueSchedules() {
     const due = await schedulesDb.findDue();
     for (const schedule of due) {
         try {
-            await transactionsDb.create({
-                owner: schedule.owner,
-                account: schedule.account,
-                date: schedule.nextDate,
-                payee: schedule.payee,
-                amountCents: schedule.amountCents,
-                category: schedule.category,
-                splits: schedule.splits,
-                notes: schedule.notes,
-                schedule: schedule._id
-            });
+            if (schedule.transferAccount) {
+                await transactionsDb.createTransfer({
+                    owner: schedule.owner,
+                    fromAccount: schedule.account,
+                    toAccount: schedule.transferAccount,
+                    date: schedule.nextDate,
+                    amountCents: schedule.amountCents,
+                    notes: schedule.notes,
+                    schedule: schedule._id
+                });
+            } else {
+                await transactionsDb.create({
+                    owner: schedule.owner,
+                    account: schedule.account,
+                    date: schedule.nextDate,
+                    payee: schedule.payee,
+                    amountCents: schedule.amountCents,
+                    category: schedule.category,
+                    splits: schedule.splits,
+                    notes: schedule.notes,
+                    schedule: schedule._id
+                });
+            }
 
             const next = nextOccurrence(schedule.nextDate, schedule.frequency);
             const stillActive = !schedule.endDate || next <= schedule.endDate;

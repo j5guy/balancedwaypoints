@@ -519,7 +519,12 @@
         const s = occurrence.schedule;
         const tr = document.createElement('tr');
         tr.className = 'upcoming-row';
-        const category = s.category ? s.category.name : (s.splits && s.splits.length ? 'Split' : '');
+        // Mirrors transactionRow()'s own transfer handling — a transfer
+        // schedule has no payee/category (server clears them, see
+        // controllers/schedulesController.js), so the Payee column shows
+        // where it's going and Category just reads "Transfer".
+        const category = s.category ? s.category.name : (s.splits && s.splits.length ? 'Split' : (s.transferAccount ? 'Transfer' : ''));
+        const payeeCell = s.transferAccount ? `→ ${s.transferAccount.name}` : (s.payee ? s.payee.name : '');
         const maskAmount = preferences.registerMask && preferences.registerMask.amount;
         const maskBalance = preferences.registerMask && preferences.registerMask.balance;
         const amountClass = maskAmount ? 'money-masked' : (s.amountCents < 0 ? 'money-negative' : 'money-positive');
@@ -528,7 +533,7 @@
             <td></td>
             <td></td>
             <td data-col="date">${window.BWDate.formatDate(occurrence.date)}</td>
-            <td data-col="payee">${s.payee ? s.payee.name : ''}</td>
+            <td data-col="payee">${payeeCell}</td>
             <td data-col="category">${category}</td>
             <td class="wrap" data-col="notes">${s.notes || ''}</td>
             <td data-col="tags"></td>
@@ -596,8 +601,17 @@
         document.getElementById('occ-modal-subtitle').textContent = `${s.name} — ${window.BWDate.formatDate(occurrence.date)}`;
 
         const hasSplits = s.splits && s.splits.length > 0;
+        const isTransfer = !!s.transferAccount;
         document.getElementById('occ-edit-fields').hidden = hasSplits;
         document.getElementById('occ-edit-splits-note').hidden = !hasSplits;
+        // Amount/notes still apply per-occurrence for a transfer schedule —
+        // only payee/category don't (the server clears them, see
+        // controllers/schedulesController.js), and which account it
+        // transfers to isn't something an occurrence override can change
+        // (see models/schedule.js).
+        document.getElementById('occ-edit-transfer-note').hidden = hasSplits || !isTransfer;
+        document.getElementById('occ-payee-group').hidden = isTransfer;
+        document.getElementById('occ-category-group').hidden = isTransfer;
 
         document.getElementById('occ-amount').value = (s.amountCents / 100).toFixed(2);
         document.getElementById('occ-payee').value = s.payee ? s.payee.name : '';
@@ -638,13 +652,17 @@
         if (!occurrenceContext) return;
         try {
             const amountCents = window.BWMoney.toCents(document.getElementById('occ-amount').value || 0);
-            const payeeId = await resolvePayee(document.getElementById('occ-payee').value.trim());
-            const categoryName = document.getElementById('occ-category').value.trim();
+            const isTransfer = !!occurrenceContext.schedule.transferAccount;
+            let payeeId = null;
             let categoryId = null;
-            if (categoryName) {
-                const existing = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
-                if (!existing) throw new Error(`"${categoryName}" isn't an existing category — pick one from the list`);
-                categoryId = existing.id;
+            if (!isTransfer) {
+                payeeId = await resolvePayee(document.getElementById('occ-payee').value.trim());
+                const categoryName = document.getElementById('occ-category').value.trim();
+                if (categoryName) {
+                    const existing = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
+                    if (!existing) throw new Error(`"${categoryName}" isn't an existing category — pick one from the list`);
+                    categoryId = existing.id;
+                }
             }
             const scope = document.querySelector('input[name="occ-scope"]:checked').value;
             await window.BWApi.apiFetch(`/api/schedules/${occurrenceContext.schedule.id}/occurrence`, {

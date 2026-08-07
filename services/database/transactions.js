@@ -53,11 +53,15 @@ const remove = (id, ownerId) => Transaction.findOneAndDelete({ _id: id, owner: o
 
 // Both sides of a transfer share a transferId so editing/deleting one can
 // keep the other in sync (see updateTransferPair/removeTransferPair below).
-const createTransfer = async ({ owner, fromAccount, toAccount, date, amountCents, notes }) => {
+// `schedule`/`scheduleOccurrenceDate` are optional — set on both legs when
+// this transfer fulfills a transfer schedule (see
+// services/schedules/scheduler.js and controllers/schedulesController.js's
+// postOccurrence), same two fields a plain scheduled transaction gets.
+const createTransfer = async ({ owner, fromAccount, toAccount, date, amountCents, notes, schedule = null, scheduleOccurrenceDate = null }) => {
     const transferId = new mongoose.Types.ObjectId();
     const [outgoing, incoming] = await Transaction.create([
-        { owner, account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, notes },
-        { owner, account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, notes }
+        { owner, account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate },
+        { owner, account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate }
     ]);
     return { outgoing, incoming };
 };

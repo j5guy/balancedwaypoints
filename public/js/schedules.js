@@ -41,16 +41,34 @@
         return accounts.filter(a => String(a.ownerId) === String(forId) && a.role === 'readwrite');
     }
 
+    // "Transfer to" always excludes whichever account is currently picked
+    // in the Account field above it — same reasoning as the register's own
+    // txn-transfer-account, and re-run whenever that field changes (see the
+    // sched-account listener in init() below) since this form lets you pick
+    // the account, unlike the register where it's fixed to the page you're on.
+    function populateTransferAccountOptions() {
+        const currentAccount = document.getElementById('sched-account').value;
+        document.getElementById('sched-transfer-account').innerHTML = accounts
+            .filter(a => a.id !== currentAccount)
+            .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
     function row(schedule) {
         const tr = document.createElement('tr');
         const account = accounts.find(a => a.id === schedule.account);
         const amountClass = schedule.amountCents < 0 ? 'money-negative' : 'money-positive';
+        // A transfer schedule has no payee/category (server clears them —
+        // see controllers/schedulesController.js) — show where it's going
+        // across both columns instead, same "Transfer" idea the register's
+        // own transactionRow() uses for posted transfers.
+        const payeeCell = schedule.transferAccount ? `→ ${schedule.transferAccount.name}` : (schedule.payee ? schedule.payee.name : '');
+        const categoryCell = schedule.transferAccount ? 'Transfer' : (schedule.category ? schedule.category.name : '');
         tr.innerHTML = `
             <td>${schedule.name}${schedule.dueSoon ? ' <span class="badge badge-warn">Due soon</span>' : ''}${schedule.notifyByEmail ? ' <span class="badge" title="Emails everyone with a mail server configured when due">✉</span>' : ''}</td>
             <td>${account ? account.name : ''}</td>
-            <td>${schedule.payee ? schedule.payee.name : ''}</td>
+            <td>${payeeCell}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(schedule.amountCents)}</td>
-            <td>${schedule.category ? schedule.category.name : ''}</td>
+            <td>${categoryCell}</td>
             <td>${window.BWDate.formatDate(schedule.nextDate)}</td>
             <td>every ${schedule.frequency.interval} ${schedule.frequency.unit}</td>
             <td><input type="checkbox" data-auto-toggle ${schedule.autoEnter ? 'checked' : ''}></td>
@@ -94,6 +112,7 @@
             document.getElementById('sched-account').innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
             document.getElementById('sched-category').innerHTML = '<option value="">— none —</option>' + categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
             document.getElementById('sched-payee-options').innerHTML = payees.map(p => `<option value="${p.name}">`).join('');
+            populateTransferAccountOptions();
 
             tbody.innerHTML = '';
             if (schedulesRes.schedules.length === 0) {
@@ -129,6 +148,11 @@
         document.getElementById('sched-name').value = schedule.name;
         document.getElementById('sched-account').value = schedule.account;
         document.getElementById('sched-amount').value = (schedule.amountCents / 100).toFixed(2);
+        populateTransferAccountOptions();
+        document.getElementById('sched-is-transfer').checked = !!schedule.transferAccount;
+        document.getElementById('sched-transfer-group').hidden = !schedule.transferAccount;
+        document.getElementById('sched-category-group').hidden = !!schedule.transferAccount;
+        document.getElementById('sched-transfer-account').value = schedule.transferAccount ? schedule.transferAccount.id : '';
         document.getElementById('sched-payee').value = schedule.payee ? schedule.payee.name : '';
         document.getElementById('sched-category').value = schedule.category ? schedule.category.id : '';
         document.getElementById('sched-next-date').value = window.BWDate.toDateInputValue(schedule.nextDate);
@@ -149,6 +173,11 @@
         document.getElementById('sched-name').value = '';
         document.getElementById('sched-account').value = accounts[0] ? accounts[0].id : '';
         document.getElementById('sched-amount').value = '';
+        document.getElementById('sched-is-transfer').checked = false;
+        document.getElementById('sched-transfer-group').hidden = true;
+        document.getElementById('sched-category-group').hidden = false;
+        populateTransferAccountOptions();
+        document.getElementById('sched-transfer-account').value = '';
         document.getElementById('sched-payee').value = '';
         document.getElementById('sched-category').value = '';
         document.getElementById('sched-next-date').value = '';
@@ -168,20 +197,28 @@
         form.hidden = false;
     });
     document.getElementById('cancel-schedule-btn').addEventListener('click', resetForm);
+
+    document.getElementById('sched-account').addEventListener('change', populateTransferAccountOptions);
+    document.getElementById('sched-is-transfer').addEventListener('change', (e) => {
+        document.getElementById('sched-transfer-group').hidden = !e.target.checked;
+        document.getElementById('sched-category-group').hidden = e.target.checked;
+    });
+
     document.getElementById('save-schedule-btn').addEventListener('click', async () => {
         const name = document.getElementById('sched-name').value.trim();
         const amountCents = window.BWMoney.toCents(document.getElementById('sched-amount').value || 0);
         const nextDate = document.getElementById('sched-next-date').value;
         if (!name || !amountCents || !nextDate) return showError(new Error('Name, amount, and next date are required'));
+        const isTransfer = document.getElementById('sched-is-transfer').checked;
+        if (isTransfer && !document.getElementById('sched-transfer-account').value) {
+            return showError(new Error('Pick which account this transfers to'));
+        }
 
         try {
-            const payeeId = await resolvePayee(document.getElementById('sched-payee').value.trim());
             const body = {
                 name,
                 account: document.getElementById('sched-account').value,
                 amountCents,
-                payee: payeeId,
-                category: document.getElementById('sched-category').value || null,
                 nextDate,
                 endDate: document.getElementById('sched-end-date').value || null,
                 frequency: {
@@ -193,6 +230,15 @@
                 autoEnter: document.getElementById('sched-auto-enter').checked,
                 notifyByEmail: document.getElementById('sched-notify-email').checked
             };
+            if (isTransfer) {
+                body.transferAccount = document.getElementById('sched-transfer-account').value;
+                body.payee = null;
+                body.category = null;
+            } else {
+                body.transferAccount = null;
+                body.payee = await resolvePayee(document.getElementById('sched-payee').value.trim());
+                body.category = document.getElementById('sched-category').value || null;
+            }
             if (editingId) {
                 await window.BWApi.apiFetch(`/api/schedules/${editingId}`, { method: 'PUT', body });
             } else {

@@ -17,6 +17,7 @@ function serialize(schedule) {
         amountCents: schedule.amountCents,
         category: schedule.category ? { id: schedule.category._id, name: schedule.category.name } : null,
         splits: schedule.splits,
+        transferAccount: schedule.transferAccount ? { id: schedule.transferAccount._id || schedule.transferAccount, name: schedule.transferAccount.name } : null,
         frequency: schedule.frequency,
         nextDate: schedule.nextDate,
         endDate: schedule.endDate,
@@ -81,22 +82,47 @@ async function list(req, res) {
 }
 
 async function create(req, res) {
-    const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, notes, notifyByEmail } = req.body || {};
+    const { name, account, payee, amountCents, category, splits, transferAccount, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, notes, notifyByEmail } = req.body || {};
     const access = await requireAccountAccess(req, res, account, { write: true });
     if (!access) return;
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (amountCents === undefined) return res.status(400).json({ error: 'amountCents is required' });
     if (!nextDate) return res.status(400).json({ error: 'nextDate is required' });
     if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
-    const splitError = validateSplits(amountCents, splits);
-    if (splitError) return res.status(400).json({ error: splitError });
+
+    // A transfer schedule (mirrors the register's own "this is a transfer"
+    // toggle) needs write access to BOTH accounts, and both must belong to
+    // the same owner — same rules as a one-off transfer
+    // (transactionsController.js's createTransfer) and update()'s account-
+    // move check below. It also isn't categorized: payee/category/splits
+    // are cleared rather than trusted from the request.
+    let categorization;
+    if (transferAccount) {
+        if (String(transferAccount) === String(account)) {
+            return res.status(400).json({ error: "Account and transfer account can't be the same" });
+        }
+        const transferAccess = await requireAccountAccess(req, res, transferAccount, { write: true });
+        if (!transferAccess) return;
+        if (String(transferAccess.ownerId) !== String(access.ownerId)) {
+            return res.status(400).json({ error: "Can't transfer to an account with a different owner" });
+        }
+        categorization = { transferAccount, payee: null, category: null, splits: [] };
+    } else {
+        const splitError = validateSplits(amountCents, splits);
+        if (splitError) return res.status(400).json({ error: splitError });
+        categorization = {
+            transferAccount: null,
+            payee: payee || null,
+            category: splits && splits.length ? null : (category || null),
+            splits: splits || []
+        };
+    }
 
     const schedule = await schedules.create({
         owner: access.ownerId,
-        name: String(name).trim(), account, payee: payee || null,
+        name: String(name).trim(), account,
         amountCents: Number(amountCents),
-        category: splits && splits.length ? null : (category || null),
-        splits: splits || [],
+        ...categorization,
         frequency: frequency || { unit: 'months', interval: 1 },
         nextDate, endDate: endDate || null,
         autoEnter: !!autoEnter,
@@ -114,7 +140,7 @@ async function update(req, res) {
     const access = await requireAccountAccess(req, res, existing.account, { write: true });
     if (!access) return;
 
-    const { name, account, payee, amountCents, category, splits, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes, notifyByEmail } = req.body || {};
+    const { name, account, payee, amountCents, category, splits, transferAccount, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes, notifyByEmail } = req.body || {};
     if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
 
     // Moving a schedule to a different account requires write access to
@@ -132,10 +158,7 @@ async function update(req, res) {
     const data = {};
     if (name !== undefined) data.name = String(name).trim();
     if (account !== undefined) data.account = account;
-    if (payee !== undefined) data.payee = payee || null;
     if (amountCents !== undefined) data.amountCents = Number(amountCents);
-    if (splits !== undefined) { data.splits = splits; data.category = splits.length ? null : (category || null); }
-    else if (category !== undefined) data.category = category || null;
     if (frequency !== undefined) data.frequency = frequency;
     if (nextDate !== undefined) data.nextDate = nextDate;
     if (endDate !== undefined) data.endDate = endDate || null;
@@ -144,6 +167,35 @@ async function update(req, res) {
     if (active !== undefined) data.active = !!active;
     if (notes !== undefined) data.notes = notes;
     if (notifyByEmail !== undefined) data.notifyByEmail = !!notifyByEmail;
+
+    // Same mutual-exclusivity rule as create(), applied against whatever
+    // the final account/transferAccount pair resolves to once this update
+    // is applied — covers both "this request changes transferAccount" and
+    // "this request moves account into conflict with an unchanged
+    // transferAccount". Re-checks write access on the transfer side even
+    // when it isn't changing this request, since a share could have been
+    // revoked since the schedule was created.
+    const finalAccount = account !== undefined ? account : existing.account;
+    const finalTransferAccount = transferAccount !== undefined ? (transferAccount || null) : existing.transferAccount;
+    if (finalTransferAccount) {
+        if (String(finalTransferAccount) === String(finalAccount)) {
+            return res.status(400).json({ error: "Account and transfer account can't be the same" });
+        }
+        const transferAccess = await requireAccountAccess(req, res, finalTransferAccount, { write: true });
+        if (!transferAccess) return;
+        if (String(transferAccess.ownerId) !== String(access.ownerId)) {
+            return res.status(400).json({ error: "Can't transfer to an account with a different owner" });
+        }
+        if (transferAccount !== undefined) data.transferAccount = transferAccount;
+        data.payee = null;
+        data.category = null;
+        data.splits = [];
+    } else {
+        if (transferAccount !== undefined) data.transferAccount = null;
+        if (payee !== undefined) data.payee = payee || null;
+        if (splits !== undefined) { data.splits = splits; data.category = splits.length ? null : (category || null); }
+        else if (category !== undefined) data.category = category || null;
+    }
 
     const schedule = await schedules.update(req.params.id, data, access.ownerId);
     if (!schedule) return res.status(404).json({ error: 'Not found' });
@@ -170,6 +222,11 @@ function serializeOccurrence(o) {
             name: o.schedule.name,
             payee: o.payee ? { id: o.payee._id, name: o.payee.name } : null,
             category: o.category ? { id: o.category._id, name: o.category.name } : null,
+            // Always the base schedule's own transferAccount, never an
+            // override — occurrenceOverrides can change amount/notes for
+            // one occurrence but not which account a transfer schedule
+            // moves money to/from (see models/schedule.js).
+            transferAccount: o.schedule.transferAccount ? { id: o.schedule.transferAccount._id || o.schedule.transferAccount, name: o.schedule.transferAccount.name } : null,
             notes: o.notes,
             amountCents: o.amountCents,
             splits: o.splits
@@ -250,24 +307,47 @@ async function postOccurrence(req, res) {
     if (!schedule) return res.status(404).json({ error: 'Not found' });
     const access = await requireAccountAccess(req, res, schedule.account, { write: true });
     if (!access) return;
+    // A transfer schedule needs write access to BOTH sides to post, same as
+    // creating a one-off transfer directly would (transactionsController.js's
+    // createTransfer) — otherwise a readwrite share on just the "from" side
+    // could be used as a backdoor into an account you don't have access to.
+    if (schedule.transferAccount) {
+        const transferAccess = await requireAccountAccess(req, res, schedule.transferAccount, { write: true });
+        if (!transferAccess) return;
+    }
 
     const occDate = new Date(occurrenceDate);
     const override = resolveOverride(schedule.occurrenceOverrides, occDate, schedule.frequency);
     const fields = override || schedule;
     const postDate = postTo === 'today' ? new Date() : postTo === 'scheduled' ? occDate : new Date(customDate);
 
-    const txn = await transactionsDb.create({
-        owner: access.ownerId,
-        account: schedule.account,
-        date: postDate,
-        payee: fields.payee,
-        amountCents: fields.amountCents,
-        category: fields.category,
-        splits: fields.splits,
-        notes: fields.notes,
-        schedule: schedule._id,
-        scheduleOccurrenceDate: occDate
-    });
+    let txn;
+    if (schedule.transferAccount) {
+        const { outgoing } = await transactionsDb.createTransfer({
+            owner: access.ownerId,
+            fromAccount: schedule.account,
+            toAccount: schedule.transferAccount,
+            date: postDate,
+            amountCents: fields.amountCents,
+            notes: fields.notes,
+            schedule: schedule._id,
+            scheduleOccurrenceDate: occDate
+        });
+        txn = outgoing;
+    } else {
+        txn = await transactionsDb.create({
+            owner: access.ownerId,
+            account: schedule.account,
+            date: postDate,
+            payee: fields.payee,
+            amountCents: fields.amountCents,
+            category: fields.category,
+            splits: fields.splits,
+            notes: fields.notes,
+            schedule: schedule._id,
+            scheduleOccurrenceDate: occDate
+        });
+    }
     await advanceNextDatePastPosted(schedule);
 
     const populated = await transactionsDb.findById(txn._id, access.ownerId);
@@ -278,6 +358,7 @@ async function postOccurrence(req, res) {
         payee: populated.payee ? { id: populated.payee._id, name: populated.payee.name } : null,
         amountCents: populated.amountCents,
         category: populated.category ? { id: populated.category._id, name: populated.category.name } : null,
+        transferAccount: populated.transferAccount || null,
         notes: populated.notes
     });
 }

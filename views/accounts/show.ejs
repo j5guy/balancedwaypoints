@@ -278,11 +278,11 @@
                     <label for="occ-amount">Amount</label>
                     <input type="number" id="occ-amount" step="0.01" placeholder="-45.00">
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="occ-payee-group">
                     <label for="occ-payee">Payee</label>
                     <input type="text" id="occ-payee" list="payee-options" placeholder="Payee">
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="occ-category-group">
                     <label for="occ-category">Category</label>
                     <input type="text" id="occ-category" list="category-options" placeholder="Category">
                 </div>
@@ -294,6 +294,9 @@
         </div>
         <p class="form-hint" id="occ-edit-splits-note" hidden>
             This schedule uses split categories — edit the schedule itself (from the Schedules page) to change its amounts. You can still delete occurrences below.
+        </p>
+        <p class="form-hint" id="occ-edit-transfer-note" hidden>
+            This schedule transfers to another account — edit the schedule itself (from the Schedules page) to change which account. You can still change the amount/notes for just this occurrence below.
         </p>
 
         <div class="form-group">

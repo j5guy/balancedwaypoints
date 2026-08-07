@@ -39,6 +39,14 @@ const scheduleSchema = new mongoose.Schema({
     amountCents: { type: Number, required: true },
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null },
     splits: { type: [splitSchema], default: [] },
+    // When set, this schedule posts a transfer (see
+    // services/database/transactions.js's createTransfer) between `account`
+    // and this one instead of a plain categorized transaction — mirrors the
+    // register's own "this is a transfer" toggle. Mutually exclusive with
+    // payee/category/splits, same convention as models/transaction.js's own
+    // transferAccount field; controllers/schedulesController.js enforces
+    // that rather than the schema, matching how Transaction does it too.
+    transferAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
     frequency: {
         unit: { type: String, enum: FREQUENCY_UNITS, default: 'months' },
         interval: { type: Number, default: 1, min: 1 }

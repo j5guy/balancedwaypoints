@@ -25,7 +25,11 @@
                 <p class="form-hint">Negative for money out (rent, bills), positive for money in (paycheck, income).</p>
             </div>
         </div>
-        <div class="form-row">
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="sched-is-transfer">
+            <label for="sched-is-transfer">This is a transfer to another account</label>
+        </div>
+        <div class="form-row" id="sched-category-group">
             <div class="form-group">
                 <label for="sched-payee">Payee</label>
                 <input type="text" id="sched-payee" list="sched-payee-options" placeholder="Payee name">
@@ -35,6 +39,10 @@
                 <label for="sched-category">Category</label>
                 <select id="sched-category"><option value="">— none —</option></select>
             </div>
+        </div>
+        <div class="form-group" id="sched-transfer-group" hidden>
+            <label for="sched-transfer-account">Transfer to</label>
+            <select id="sched-transfer-account"></select>
         </div>
         <div class="form-row">
             <div class="form-group">

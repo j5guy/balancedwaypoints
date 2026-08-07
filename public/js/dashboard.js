@@ -371,6 +371,17 @@
             <text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
         `).join('');
 
+        // Marks + calls out the FIRST point (chronologically — rows are
+        // already ordered past-to-future) the balance actually dips below
+        // the threshold, rather than a dot on every day it stays under —
+        // that's the one moment the chart's story is actually about (see
+        // dataviz's "label selectively" guidance). Text sits outside the
+        // SVG since a coordinate label risks colliding with the axis/grid
+        // labels at this widget's compact size.
+        const hitIndex = rows.findIndex(r => r.balanceCents < thresholdCents);
+        const marker = hitIndex === -1 ? '' : `<circle class="forecast-threshold-marker" cx="${xAt(hitIndex)}" cy="${yAt(rows[hitIndex].balanceCents)}" r="4"></circle>`;
+        const callout = hitIndex === -1 ? '' : `<div class="forecast-warning">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(rows[hitIndex].date)} — projected balance ${window.BWMoney.formatCents(rows[hitIndex].balanceCents)}</div>`;
+
         return `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
                 ${gridLines.join('')}
@@ -378,8 +389,10 @@
                 <line class="forecast-threshold-line" x1="${padLeft}" y1="${thresholdY}" x2="${width - padRight}" y2="${thresholdY}"></line>
                 <polyline class="forecast-line" points="${pastCoords.join(' ')}"></polyline>
                 <polyline class="forecast-line forecast-line-projected" points="${futureCoords.join(' ')}"></polyline>
+                ${marker}
                 ${xLabels}
             </svg>
+            ${callout}
         `;
     }
 

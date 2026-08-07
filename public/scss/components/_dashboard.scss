@@ -182,6 +182,23 @@
     stroke-dasharray: 2 2;
 }
 
+// The one point (first chronologically) the balance actually crosses below
+// the threshold — see buildForecastSvg/buildRegisterForecastSvg's hitIndex.
+// Surface-color ring (same mechanism as any end-marker — see the dataviz
+// skill's "surface ring" spacer) keeps the dot legible where it sits
+// directly on the line.
+.forecast-threshold-marker {
+    fill: $red;
+    stroke: $bg-card;
+    stroke-width: 2;
+}
+
+.forecast-warning {
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: $red;
+}
+
 // Marks "today" on a forecast chart, where the solid past segment meets
 // the dashed projected one — used by the bigger register-page forecast
 // (public/js/register.js's buildRegisterForecastSvg) where that junction

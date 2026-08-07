@@ -147,6 +147,34 @@ table.register-table {
     }
 }
 
+// Collapsible forecast chart at the top of a register (accounts/show.ejs,
+// public/js/register.js's buildRegisterForecastSvg) — same mark classes as
+// the Dashboard's Account Balance forecast widget (public/scss/components/
+// _dashboard.scss), just bigger and full-width instead of one grid cell.
+.register-forecast-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    h3 {
+        margin: 0;
+    }
+}
+
+// aspect-ratio (not a fixed height) keeps the rendered box's proportions
+// matched to buildRegisterForecastSvg's 1400×280 viewBox exactly, so it
+// actually stretches to fill the register's full width instead of the
+// browser needing to letterbox empty space or the SVG distorting its own
+// text to compensate for a mismatched box — see the Dashboard's identical
+// fix (public/scss/components/_dashboard.scss's .widget-full override).
+#register-forecast-chart svg {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1400 / 280;
+    display: block;
+    margin-top: 8px;
+}
+
 .upcoming-row {
     font-style: italic;
     color: $text-muted;

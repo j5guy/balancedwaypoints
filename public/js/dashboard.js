@@ -318,9 +318,17 @@
         return niceResidual * magnitude * 100; // back to cents
     }
 
+    // Wider virtual canvas than the other trend widgets (400) — this is the
+    // one chart that goes full-width (.widget-full, see buildWidget), and a
+    // 400-wide viewBox under a fixed-height CSS box left most of a wide
+    // container empty (preserveAspectRatio scales to the *height*-bound
+    // factor, pinned to the left) instead of actually stretching. Paired
+    // with the aspect-ratio CSS override below, which keeps the rendered
+    // box's proportions matched to this viewBox so nothing needs to letterbox
+    // or distort text to fill the width.
     function buildForecastSvg(rows, thresholdCents) {
         if (rows.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
-        const width = 400, height = 140;
+        const width = 900, height = 140;
         const padLeft = 56, padRight = 8, padTop = 12, padBottom = 20;
         const chartW = width - padLeft - padRight;
         const chartH = height - padTop - padBottom;

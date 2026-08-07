@@ -101,6 +101,17 @@
     }
 }
 
+// Overrides the fixed height above for the one full-width chart (the
+// Forecast widget, see .widget-full in buildWidget) — aspect-ratio keeps
+// the rendered box's proportions matched to buildForecastSvg's 900×140
+// viewBox exactly, so it actually stretches to fill the wider container
+// instead of the browser needing to letterbox (empty space) or the SVG
+// distorting its own text to compensate for a mismatched box.
+.widget-full .widget-chart svg {
+    height: auto;
+    aspect-ratio: 900 / 140;
+}
+
 .trend-axis-label {
     font-size: 9px;
     fill: $text-muted;
@@ -169,6 +180,18 @@
     stroke: rgba($red, 0.6);
     stroke-width: 1;
     stroke-dasharray: 2 2;
+}
+
+// Marks "today" on a forecast chart, where the solid past segment meets
+// the dashed projected one — used by the bigger register-page forecast
+// (public/js/register.js's buildRegisterForecastSvg) where that junction
+// isn't otherwise obvious at a glance the way it is on the compact
+// dashboard widget. Muted rather than the accent hue — it's an anchor
+// point, not data.
+.forecast-today-line {
+    stroke: $text-muted;
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
 }
 
 // Native <details>/<summary> accordion for the Customize modal's three

@@ -757,6 +757,134 @@
         }
     });
 
+    // ── Forecast chart (collapsible, at the top of the register) ────────
+    // Reuses the same projection the Dashboard's Account Balance forecast
+    // widget is built from (services/reports/forecast.js via GET
+    // /api/reports/forecast) — just rendered bigger/full-width here, with
+    // an explicit "today" marker, and its past/future window sourced from
+    // the register's OWN registerHistory/upcomingSchedules preferences
+    // (Table settings) rather than a separate widget config, so it always
+    // matches whatever window the register itself is showing.
+    let forecastExpanded = true;
+
+    // Same "nice" (1/2/5 × 10^n) rounding as the Dashboard's forecast
+    // widget (public/js/dashboard.js's niceStepCents) — each page keeps
+    // its own small copy rather than sharing a module, matching this app's
+    // existing convention.
+    function niceStepCents(rangeCents, targetLines) {
+        const roughDollars = Math.max(1, (rangeCents / 100) / targetLines);
+        const magnitude = Math.pow(10, Math.floor(Math.log10(roughDollars)));
+        const residual = roughDollars / magnitude;
+        let niceResidual;
+        if (residual < 1.5) niceResidual = 1;
+        else if (residual < 3.5) niceResidual = 2;
+        else if (residual < 7.5) niceResidual = 5;
+        else niceResidual = 10;
+        return niceResidual * magnitude * 100;
+    }
+
+    function forecastAxisLabelIndexes(count) {
+        if (count <= 2) return [0, count - 1];
+        return [0, Math.floor((count - 1) / 2), count - 1];
+    }
+
+    // Same shape/mark classes as dashboard.js's buildForecastSvg, just a
+    // much wider virtual canvas (full register width instead of one grid
+    // cell) and an explicit "today" line — at this size the solid/dashed
+    // line-style change alone is easy to miss as the past/projected
+    // boundary. thresholdCents is fixed at $0 (no per-register setting) —
+    // this is flagging "would this go negative", not a customizable
+    // danger line.
+    function buildRegisterForecastSvg(rows) {
+        if (rows.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
+        const width = 1400, height = 280;
+        const padLeft = 72, padRight = 12, padTop = 16, padBottom = 28;
+        const chartW = width - padLeft - padRight;
+        const chartH = height - padTop - padBottom;
+        const thresholdCents = 0;
+        const values = rows.map(r => r.balanceCents);
+        const min = Math.min(0, thresholdCents, ...values);
+        const max = Math.max(0, thresholdCents, ...values);
+        const range = Math.max(1, max - min);
+        const stepX = chartW / (rows.length - 1);
+        const xAt = (i) => padLeft + i * stepX;
+        const yAt = (v) => padTop + chartH - ((v - min) / range) * chartH;
+
+        const firstProjected = rows.findIndex(r => r.projected);
+        const pastEnd = firstProjected === -1 ? rows.length - 1 : firstProjected;
+        const pastCoords = rows.slice(0, pastEnd + 1).map((r, i) => `${xAt(i)},${yAt(r.balanceCents)}`);
+        const futureCoords = rows.slice(pastEnd).map((r, i) => `${xAt(pastEnd + i)},${yAt(r.balanceCents)}`);
+
+        const thresholdY = yAt(thresholdCents);
+        const dangerBottom = padTop + chartH;
+        const dangerHeight = dangerBottom - thresholdY;
+
+        const gridStep = niceStepCents(range, 5);
+        const gridLines = [];
+        for (let v = Math.ceil(min / gridStep) * gridStep; v <= max; v += gridStep) {
+            const y = yAt(v);
+            gridLines.push(`
+                <line class="forecast-grid-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}"></line>
+                <text class="trend-axis-label" x="${padLeft - 8}" y="${y + 4}" text-anchor="end">${window.BWMoney.formatCents(v)}</text>
+            `);
+        }
+
+        // "Today" sits at the same junction where the solid past line
+        // meets the dashed projected one.
+        const todayX = xAt(pastEnd);
+
+        const xLabels = forecastAxisLabelIndexes(rows.length).map(i => `
+            <text class="trend-axis-label" x="${xAt(i)}" y="${height - 8}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
+        `).join('');
+
+        return `
+            <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
+                ${gridLines.join('')}
+                ${dangerHeight > 0 ? `<rect class="forecast-danger-zone" x="${padLeft}" y="${thresholdY}" width="${chartW}" height="${dangerHeight}"></rect>` : ''}
+                ${dangerHeight > 0 ? `<line class="forecast-threshold-line" x1="${padLeft}" y1="${thresholdY}" x2="${width - padRight}" y2="${thresholdY}"></line>` : ''}
+                <line class="forecast-today-line" x1="${todayX}" y1="${padTop}" x2="${todayX}" y2="${dangerBottom}"></line>
+                <text class="trend-axis-label" x="${todayX}" y="${padTop - 4}" text-anchor="middle">Today</text>
+                <polyline class="forecast-line" points="${pastCoords.join(' ')}"></polyline>
+                <polyline class="forecast-line forecast-line-projected" points="${futureCoords.join(' ')}"></polyline>
+                ${xLabels}
+            </svg>
+        `;
+    }
+
+    // Past/future window comes from the register's own Table settings
+    // (registerHistory/upcomingSchedules) rather than a separate config, so
+    // the chart always matches whatever window the register itself is
+    // showing — using the stored amount/unit regardless of that setting's
+    // own enabled/disabled toggle (which only controls whether upcoming-
+    // schedule rows show in the transaction list, not whether the number
+    // is a meaningful forecast horizon).
+    async function loadForecastChart() {
+        if (!forecastExpanded) return;
+        const chartEl = document.getElementById('register-forecast-chart');
+        try {
+            const hist = preferences.registerHistory || {};
+            const upcoming = preferences.upcomingSchedules || {};
+            const params = new URLSearchParams({
+                account: accountId,
+                pastAmount: hist.amount || 3,
+                pastUnit: hist.unit || 'months',
+                futureAmount: upcoming.amount || 14,
+                futureUnit: upcoming.unit || 'days'
+            });
+            const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
+            chartEl.innerHTML = buildRegisterForecastSvg(rows);
+        } catch (err) {
+            chartEl.innerHTML = '<div class="empty-state">Could not load the forecast.</div>';
+        }
+    }
+
+    document.getElementById('toggle-forecast-btn').addEventListener('click', () => {
+        forecastExpanded = !forecastExpanded;
+        document.getElementById('register-forecast-chart').hidden = !forecastExpanded;
+        document.getElementById('toggle-forecast-btn').textContent = forecastExpanded ? 'Hide' : 'Show';
+        if (forecastExpanded) loadForecastChart();
+    });
+
     // null means "no limit" — the default, so existing registers keep
     // showing full history until a user opts into a rolling window.
     function historyFromDate() {
@@ -894,6 +1022,7 @@
             const balanceOrder = sort === 'manual' ? transactions : [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
             currentBalanceById = computeRunningBalances(balanceOrder);
             renderRegisterRows();
+            await loadForecastChart();
         } catch (err) {
             showError(err);
         }

@@ -51,6 +51,8 @@ const userSchema = new mongoose.Schema({
     // for LDAP accounts).
     ldapUsername: {
         type: String,
+        lowercase: true,
+        trim: true,
         default: null
     },
     passwordHash: {

@@ -108,7 +108,15 @@ async function loginLdap(req, res) {
         return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    let user = await usersDb.findByLdapUsername(username);
+    // Directory attributes like uid/sAMAccountName use caseIgnoreMatch (RFC
+    // 4517) — that's why authenticateLdap above already resolved "Ryan" and
+    // "ryan" to the same entry. Our own bookkeeping (lookup/storage/fallback
+    // email) needs to normalize case the same way, or the two spellings
+    // split into separate accounts here even though the directory treats
+    // them as one.
+    const ldapUsername = username.toLowerCase();
+
+    let user = await usersDb.findByLdapUsername(ldapUsername);
     if (!user) {
         // No guaranteed `mail` attribute in every directory — fall back to a
         // clearly-non-routable placeholder; the user sets a real notifyEmail
@@ -117,7 +125,7 @@ async function loginLdap(req, res) {
         // OpenLDAP's mail/cn aren't SINGLE-VALUE) as an array even with just
         // one value, so `.toLowerCase()` on a raw entry.mail would throw for
         // those directories — firstValue unwraps that before use.
-        const email = (firstValue(entry.mail) || `${username}@ldap.local`).toLowerCase();
+        const email = (firstValue(entry.mail) || `${ldapUsername}@ldap.local`).toLowerCase();
         const displayName = firstValue(entry.displayName) || firstValue(entry.cn) || username;
 
         const emailConflict = await usersDb.findByEmail(email);
@@ -129,9 +137,9 @@ async function loginLdap(req, res) {
         const userCount = await usersDb.count();
         const isAdmin = userCount === 0 || email === adminEmail;
         user = await usersDb.create({
-            email, displayName, isAdmin, authSource: 'ldap', ldapUsername: username, lastLoginAt: new Date()
+            email, displayName, isAdmin, authSource: 'ldap', ldapUsername, lastLoginAt: new Date()
         });
-        logger.info(`New LDAP-provisioned account: ${username}${isAdmin ? ' (admin)' : ''}`);
+        logger.info(`New LDAP-provisioned account: ${ldapUsername}${isAdmin ? ' (admin)' : ''}`);
     } else {
         // Self-heal: LDAP is the source of truth for these two fields. A
         // directory entry missing `mail` at signup time falls back to a

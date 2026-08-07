@@ -19,7 +19,7 @@ COPY . .
 RUN npx sass public/scss/main.scss public/css/main.css --style=compressed --no-source-map
 
 RUN groupadd -r app && useradd -r -g app app \
-    && mkdir -p logs public/uploads \
+    && mkdir -p logs public/uploads backups \
     && chown -R app:app /app
 
 RUN chmod +x docker-entrypoint.sh

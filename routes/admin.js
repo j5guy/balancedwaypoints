@@ -14,4 +14,8 @@ router.get('/ldap', requireAdmin, (req, res) => {
     res.render('admin/ldap', { title: 'LDAP' });
 });
 
+router.get('/backups', requireAdmin, (req, res) => {
+    res.render('admin/backups', { title: 'Backups' });
+});
+
 module.exports = router;

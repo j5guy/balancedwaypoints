@@ -19,12 +19,18 @@ const sessionConfig = require('./middleware/session');
 const buildInfo = require('./utils/buildInfo');
 const themeColorFields = require('./utils/themeColorFields');
 const startScheduler = require('./services/schedules/scheduler');
+const backupScheduler = require('./services/backup/backupScheduler');
 
 // Database
 mongooseConnect();
 
 // Background jobs (schedule auto-entry — see services/schedules/scheduler.js)
 startScheduler();
+
+// Scheduled backups (Admin > Backups, and every user's own My Account >
+// Backups) — reloaded again whenever settings are saved, see
+// controllers/adminController.js/accountController.js.
+backupScheduler.reloadAll().catch((err) => logger.error('Initial backup scheduler load failed: ' + err.message));
 
 // View engine
 app.set('view engine', 'ejs');

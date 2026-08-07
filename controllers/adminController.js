@@ -1,5 +1,10 @@
+const path = require('path');
+const fs = require('fs');
 const usersDb = require('../services/database/users');
 const settingsDb = require('../services/database/settings');
+const backupRunsDb = require('../services/database/backupRuns');
+const backupService = require('../services/backup/backupService');
+const backupScheduler = require('../services/backup/backupScheduler');
 const { resolveLdapConfig, testBind } = require('../config/ldapAuth');
 
 function serializeUser(user) {
@@ -55,6 +60,9 @@ async function removeUser(req, res) {
     }
     const user = await usersDb.remove(req.params.id);
     if (!user) return res.status(404).json({ error: 'Not found' });
+    // Their personal backup files on disk are left alone — deleting the
+    // account shouldn't silently destroy data an admin might still want.
+    backupScheduler.stopUser(req.params.id);
     res.status(204).end();
 }
 
@@ -146,7 +154,100 @@ async function testLdapSettings(req, res) {
     res.json(result);
 }
 
+// ── Backups (Admin > Backups, site-wide) — see services/backup/backupService.js ──
+// My Account > Backups is the personal-scope equivalent of everything below
+// — see controllers/accountController.js, which mirrors this against
+// ctx: { scope: 'user', userId: req.session.userId } instead.
+const SITE_CTX = { scope: 'site' };
+
+async function getBackupSettings(req, res) {
+    const settings = await settingsDb.getBackupSettings();
+    res.json({ ...settings, defaultDestination: backupService.DEFAULT_DIR });
+}
+
+async function updateBackupSettings(req, res) {
+    const parsed = backupService.parseBackupSettingsInput(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+    const settings = await settingsDb.setBackupSettings(parsed, req.session.userId);
+    await backupScheduler.reloadSite();
+    res.json({ ...settings, defaultDestination: backupService.DEFAULT_DIR });
+}
+
+// Tests either the not-yet-saved destination in the request body, or (if
+// omitted) whichever destination is currently configured — same
+// test-before-save pattern as testLdapSettings above.
+async function checkBackupDestination(req, res) {
+    const explicit = req.body && typeof req.body.destination === 'string' ? req.body.destination.trim() : '';
+    const destination = explicit || await backupService.resolveDestination(SITE_CTX);
+    const result = await backupService.checkDestination(destination);
+    res.json({ destination, ...result });
+}
+
+async function runBackupNow(req, res) {
+    const result = await backupService.runBackup(SITE_CTX, { trigger: 'manual', triggeredBy: req.session.userId });
+    if (result.status === 'error') return res.status(422).json({ error: result.error });
+    res.json(result);
+}
+
+async function listBackupRuns(req, res) {
+    const runs = await backupRunsDb.listSite();
+    res.json({ runs });
+}
+
+async function listBackupFiles(req, res) {
+    const result = await backupService.listBackupFiles(SITE_CTX);
+    res.json(result);
+}
+
+async function downloadBackupFile(req, res) {
+    const { name } = req.params;
+    if (!backupService.patternForScope(SITE_CTX).test(name)) return res.status(400).json({ error: 'Invalid backup filename' });
+
+    const destination = await backupService.resolveDestination(SITE_CTX);
+    const filePath = path.join(destination, name);
+    fs.access(filePath, fs.constants.R_OK, (err) => {
+        if (err) return res.status(404).json({ error: 'Backup file not found' });
+        res.download(filePath, name);
+    });
+}
+
+async function deleteBackupFile(req, res) {
+    const { name } = req.params;
+    try {
+        await backupService.deleteBackupFile(SITE_CTX, name);
+        res.status(204).end();
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+}
+
+// Restoring is destructive (wipes and replaces every backed-up collection —
+// see backupService.restoreDump) — the confirmation lives client-side
+// (public/js/backupPanel.js), same convention as every other dangerous
+// action in this app (e.g. deleting a user).
+async function restoreFromUpload(req, res) {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const result = await backupService.restoreFromBuffer(SITE_CTX, req.file.buffer, { trigger: 'manual', triggeredBy: req.session.userId });
+    if (result.status === 'error') return res.status(422).json({ error: result.error });
+    res.json(result);
+}
+
+async function restoreFromFile(req, res) {
+    const { name } = req.params;
+    try {
+        const result = await backupService.restoreFromFile(SITE_CTX, name, { trigger: 'manual', triggeredBy: req.session.userId });
+        if (result.status === 'error') return res.status(422).json({ error: result.error });
+        res.json(result);
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+}
+
 module.exports = {
     listUsers, updateUser, setAdmin, removeUser,
-    getLdapSettings, updateLdapSettings, resetLdapSettings, testLdapSettings
+    getLdapSettings, updateLdapSettings, resetLdapSettings, testLdapSettings,
+    getBackupSettings, updateBackupSettings, checkBackupDestination,
+    runBackupNow, listBackupRuns, listBackupFiles, downloadBackupFile, deleteBackupFile,
+    restoreFromUpload, restoreFromFile
 };

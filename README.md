@@ -15,6 +15,7 @@ self-hosted, Quicken/Actual-Budget-style personal finance app.
 - **Reports** — spending by category, income vs. expense, net worth over time.
 - **LDAP login** (optional) — log in against Active Directory/OpenLDAP alongside local accounts, configurable at install time or later from Admin > LDAP.
 - **Email notifications** — each person configures their own outgoing mail server from My Account; per-schedule "email when due" alerts and an opt-in weekly summary go out through it.
+- **Backups** — manual or scheduled, with a destination location and retention you choose and a check that the location is actually reachable before it's relied on. Admins back up the whole site from Admin > Backups; anyone can also back up just their own data from My Account > Backups. Restoring is supported from either page.
 
 ## Quick install
 

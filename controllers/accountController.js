@@ -1,7 +1,12 @@
 // Self-service settings for the logged-in user's own account — distinct
 // from controllers/adminController.js, which manages *other* users. Only
 // ever touches req.session.userId's own document.
+const path = require('path');
+const fs = require('fs');
 const usersDb = require('../services/database/users');
+const backupRunsDb = require('../services/database/backupRuns');
+const backupService = require('../services/backup/backupService');
+const backupScheduler = require('../services/backup/backupScheduler');
 const { encrypt } = require('../utils/secretCrypto');
 const { generateApiKey } = require('../utils/apiKeyCrypto');
 const { resolveUserSmtp, testUserSmtp } = require('../services/mail/userMailer');
@@ -142,7 +147,111 @@ async function revokeApiKeyForAccount(req, res) {
     res.json(serializeAccount(user));
 }
 
+// ── Backups (My Account > Backups, personal data only) — mirrors
+// controllers/adminController.js's site-wide equivalent against
+// ctx: { scope: 'user', userId }. See services/backup/backupService.js for
+// what "personal data" means here (every owner-scoped collection, filtered
+// to this user's own documents).
+function userCtx(req) {
+    return { scope: 'user', userId: req.session.userId };
+}
+
+async function getBackupSettings(req, res) {
+    const user = await usersDb.findById(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    const backup = user.backup || {};
+    res.json({
+        destination: backup.destination || null,
+        frequency: backup.frequency || 'disabled',
+        time: backup.time || '03:00',
+        dayOfWeek: Number.isInteger(backup.dayOfWeek) ? backup.dayOfWeek : 0,
+        retentionCount: Number.isInteger(backup.retentionCount) ? backup.retentionCount : 7,
+        defaultDestination: backupService.DEFAULT_DIR
+    });
+}
+
+async function updateBackupSettings(req, res) {
+    const parsed = backupService.parseBackupSettingsInput(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+    const user = await usersDb.findById(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    user.backup = parsed;
+    user.markModified('backup');
+    await user.save();
+
+    await backupScheduler.reloadUser(req.session.userId);
+    res.json({ ...parsed, defaultDestination: backupService.DEFAULT_DIR });
+}
+
+async function checkBackupDestination(req, res) {
+    const explicit = req.body && typeof req.body.destination === 'string' ? req.body.destination.trim() : '';
+    const destination = explicit || await backupService.resolveDestination(userCtx(req));
+    const result = await backupService.checkDestination(destination);
+    res.json({ destination, ...result });
+}
+
+async function runBackupNow(req, res) {
+    const result = await backupService.runBackup(userCtx(req), { trigger: 'manual', triggeredBy: req.session.userId });
+    if (result.status === 'error') return res.status(422).json({ error: result.error });
+    res.json(result);
+}
+
+async function listBackupRuns(req, res) {
+    const runs = await backupRunsDb.listForUser(req.session.userId);
+    res.json({ runs });
+}
+
+async function listBackupFiles(req, res) {
+    const result = await backupService.listBackupFiles(userCtx(req));
+    res.json(result);
+}
+
+async function downloadBackupFile(req, res) {
+    const { name } = req.params;
+    const ctx = userCtx(req);
+    if (!backupService.patternForScope(ctx).test(name)) return res.status(400).json({ error: 'Invalid backup filename' });
+
+    const destination = await backupService.resolveDestination(ctx);
+    const filePath = path.join(destination, name);
+    fs.access(filePath, fs.constants.R_OK, (err) => {
+        if (err) return res.status(404).json({ error: 'Backup file not found' });
+        res.download(filePath, name);
+    });
+}
+
+async function deleteBackupFile(req, res) {
+    const { name } = req.params;
+    try {
+        await backupService.deleteBackupFile(userCtx(req), name);
+        res.status(204).end();
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+}
+
+async function restoreFromUpload(req, res) {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const result = await backupService.restoreFromBuffer(userCtx(req), req.file.buffer, { trigger: 'manual', triggeredBy: req.session.userId });
+    if (result.status === 'error') return res.status(422).json({ error: result.error });
+    res.json(result);
+}
+
+async function restoreFromFile(req, res) {
+    const { name } = req.params;
+    try {
+        const result = await backupService.restoreFromFile(userCtx(req), name, { trigger: 'manual', triggeredBy: req.session.userId });
+        if (result.status === 'error') return res.status(422).json({ error: result.error });
+        res.json(result);
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+}
+
 module.exports = {
     getAccount, updateSmtp, clearSmtp, testSmtp,
-    generateApiKeyForAccount, revokeApiKeyForAccount
+    generateApiKeyForAccount, revokeApiKeyForAccount,
+    getBackupSettings, updateBackupSettings, checkBackupDestination,
+    runBackupNow, listBackupRuns, listBackupFiles, downloadBackupFile, deleteBackupFile,
+    restoreFromUpload, restoreFromFile
 };

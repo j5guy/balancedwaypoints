@@ -87,6 +87,17 @@ const userSchema = new mongoose.Schema({
         passIv: { type: String, default: null },
         passCiphertext: { type: String, default: null }
     },
+    // This user's own backup of just their own data (accounts, transactions,
+    // budgets, etc. — everything with an `owner` field pointing at them) —
+    // separate from the household-wide backup an admin runs from Admin >
+    // Backups (models/settings.js's `backup`). See services/backup/backupService.js.
+    backup: {
+        destination: { type: String, trim: true, default: null },
+        frequency: { type: String, enum: ['disabled', 'daily', 'weekly'], default: 'disabled' },
+        time: { type: String, trim: true, default: '03:00' },
+        dayOfWeek: { type: Number, min: 0, max: 6, default: 0 },
+        retentionCount: { type: Number, min: 1, default: 7 }
+    },
     // Per-theme overrides for every CSS custom property the app defines
     // (see public/scss/layout/_base.scss's :root/[data-theme] blocks —
     // these field names match those variables 1:1, camelCased). null/unset

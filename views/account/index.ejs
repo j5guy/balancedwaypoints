@@ -126,5 +126,96 @@
             <button type="button" class="btn btn-primary" id="save-appearance-btn">Save appearance</button>
         </div>
     </div>
+
+    <div class="card">
+        <h3>Backups</h3>
+        <p class="muted">
+            Just your own data (accounts, transactions, budgets, rules, schedules, payees, tags) — not
+            anyone else's. An admin can also back up the whole site from Admin &gt; Backups.
+        </p>
+
+        <h4>Destination</h4>
+        <p class="muted">
+            A path inside the app container. Leave blank to use the bundled default
+            (<code id="backup-default-destination"></code>). To back up to a NAS or other network
+            location, it has to be mounted into the container first — ask an admin.
+        </p>
+        <div class="form-group">
+            <label for="backup-destination">Destination path</label>
+            <input type="text" id="backup-destination" placeholder="/app/backups">
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-secondary" id="check-destination-btn">Check location</button>
+        </div>
+        <p class="muted" id="destination-check-status" style="margin-top:12px;"></p>
+
+        <h4 style="margin-top:20px;">Schedule</h4>
+        <div class="form-group">
+            <label for="backup-frequency">Frequency</label>
+            <select id="backup-frequency">
+                <option value="disabled">Off — manual only</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="backup-time">Time of day</label>
+                <input type="time" id="backup-time">
+            </div>
+            <div class="form-group" id="backup-day-of-week-group">
+                <label for="backup-day-of-week">Day of week</label>
+                <select id="backup-day-of-week">
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="backup-retention">Keep this many backups</label>
+            <input type="number" id="backup-retention" min="1" step="1" style="max-width:120px;">
+            <p class="form-hint">Older backups at the destination are deleted automatically once this limit is passed.</p>
+        </div>
+        <p class="muted">On failure, you'll be emailed (via your own configured mail server above) with the error.</p>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-backup-settings-btn">Save</button>
+            <button type="button" class="btn btn-secondary" id="run-backup-btn">Run backup now</button>
+        </div>
+
+        <h4 style="margin-top:20px;">Backup files</h4>
+        <p class="muted">At <code id="files-destination"></code>.</p>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr><th>File</th><th>Size</th><th>Created</th><th></th></tr>
+                </thead>
+                <tbody id="files-tbody"></tbody>
+            </table>
+        </div>
+
+        <h4 style="margin-top:20px;">Restore from an uploaded file</h4>
+        <p class="muted">This replaces your data with the contents of the backup — it can't be undone.</p>
+        <div class="form-group">
+            <input type="file" id="restore-upload-input" accept=".gz">
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-danger" id="restore-upload-btn">Restore from upload</button>
+        </div>
+
+        <h4 style="margin-top:20px;">Recent runs</h4>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr><th>When</th><th>Action</th><th>Trigger</th><th>Status</th><th>Detail</th></tr>
+                </thead>
+                <tbody id="runs-tbody"></tbody>
+            </table>
+        </div>
+    </div>
 </main>
-<%- include('../components/footer', { pageScripts: ['/js/account.js'] }) %>
+<%- include('../components/footer', { pageScripts: ['/js/account.js', '/js/backupPanel.js', '/js/accountBackups.js'] }) %>

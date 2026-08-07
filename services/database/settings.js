@@ -44,4 +44,36 @@ async function clearLdapSettings() {
     await Settings.findByIdAndUpdate(SINGLETON_ID, { $set: { ldap: {} } }, { upsert: true }).exec();
 }
 
-module.exports = { getLdapSettings, setLdapSettings, clearLdapSettings };
+// Nothing here is a secret, so unlike LDAP this is always fully populated —
+// schema defaults (frequency: 'disabled', etc.) apply even before an admin
+// has ever saved anything.
+async function getBackupSettings() {
+    const doc = await Settings.findById(SINGLETON_ID).lean();
+    const backup = (doc && doc.backup) || {};
+    return {
+        destination: backup.destination || null,
+        frequency: backup.frequency || 'disabled',
+        time: backup.time || '03:00',
+        dayOfWeek: Number.isInteger(backup.dayOfWeek) ? backup.dayOfWeek : 0,
+        retentionCount: Number.isInteger(backup.retentionCount) ? backup.retentionCount : 7
+    };
+}
+
+async function setBackupSettings({ destination, frequency, time, dayOfWeek, retentionCount }, actorId) {
+    await Settings.findByIdAndUpdate(SINGLETON_ID, {
+        $set: {
+            'backup.destination': destination || null,
+            'backup.frequency': frequency,
+            'backup.time': time,
+            'backup.dayOfWeek': dayOfWeek,
+            'backup.retentionCount': retentionCount,
+            backupUpdatedBy: actorId || null
+        }
+    }, { upsert: true, runValidators: true }).exec();
+    return getBackupSettings();
+}
+
+module.exports = {
+    getLdapSettings, setLdapSettings, clearLdapSettings,
+    getBackupSettings, setBackupSettings
+};

@@ -146,14 +146,24 @@
         } else {
             categoriesInGroup.forEach((c) => {
                 const activityCents = categoryActivityById ? (categoryActivityById.get(c.id) || 0) : null;
+                // Reuses .budget-row's own grid (Category/Assigned/Activity/
+                // Available, see _budget.scss) so the amount lines up under
+                // the Activity column of the regular groups above — same
+                // class as categoryRow's own markup, not just the same
+                // column widths, so the text comes out the same size too.
+                // Assigned/Available are left blank; neither concept applies
+                // to income (see envelope.js's summary()).
                 const amountHtml = activityCents === null ? '' :
-                    `<span class="money ${activityCents < 0 ? 'money-negative' : 'money-positive'}" style="margin-left:auto;margin-right:12px;">${window.BWMoney.formatCents(activityCents)}</span>`;
+                    `<span class="money ${activityCents < 0 ? 'money-negative' : 'money-positive'}">${window.BWMoney.formatCents(activityCents)}</span>`;
                 const row = document.createElement('div');
-                row.style.cssText = 'padding:8px 14px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;';
+                row.className = 'budget-row';
                 row.innerHTML = `
-                    <span>${c.name}</span>
-                    ${amountHtml}
-                    <button type="button" class="icon-btn" data-delete-category title="Delete category" style="border:none;background:none;cursor:pointer;">🗑</button>
+                    <span>${c.name}
+                        <button type="button" class="icon-btn" data-delete-category title="Delete category" style="border:none;background:none;cursor:pointer;">🗑</button>
+                    </span>
+                    <span></span>
+                    ${amountHtml || '<span></span>'}
+                    <span></span>
                 `;
                 row.querySelector('[data-delete-category]').addEventListener('click', () => openDeleteCategoryModal(c));
                 list.appendChild(row);

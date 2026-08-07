@@ -1,0 +1,100 @@
+@use '../abstracts/variables' as *;
+
+// Shared hover crosshair + tooltip (public/js/chartHover.js) for every
+// time-series chart — Dashboard's Net Worth/Cash Flow/Forecast widgets,
+// the register's own Forecast chart, and the Reports page's Income vs
+// Expense chart. One definition reused everywhere rather than per-page
+// copies, since this is real interactive behavior (not a 3-line date-math
+// helper) — same reasoning dragReorder.js is already a shared module.
+.chart-crosshair {
+    stroke: $border;
+    stroke-width: 1;
+    pointer-events: none;
+}
+
+// Reuses each chart's own line/bar color classes as fill — the exact same
+// class names buildXSvg's <polyline>/<rect> marks already carry, applied
+// here to a <circle> so the hover dot always matches its series without a
+// second color mapping to keep in sync.
+.chart-hover-dot {
+    stroke: $bg-card;
+    stroke-width: 2;
+    pointer-events: none;
+
+    &.networth-line { fill: $accent; }
+    &.cashflow-income-line { fill: $money-positive; }
+    &.cashflow-expense-line { fill: $money-negative; }
+    &.forecast-line { fill: $accent; }
+    &.ie-net-line { fill: $accent; }
+    &.ie-bar-income { fill: $money-positive; }
+    &.ie-bar-expense { fill: $money-negative; }
+}
+
+.chart-hit-layer {
+    fill: transparent;
+    cursor: crosshair;
+}
+
+.chart-tooltip {
+    position: absolute;
+    top: 8px;
+    z-index: 5;
+    background: $bg-card;
+    border: 1px solid $border;
+    border-radius: $radius-md;
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    white-space: nowrap;
+}
+
+.chart-tooltip-header {
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 4px;
+}
+
+.chart-tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    & + & {
+        margin-top: 2px;
+    }
+}
+
+// A short stroke of the series color keys each row, not a filled box —
+// dataviz: "line keys, not boxes... a filled box is data-weight ink doing
+// a label's job" at tooltip density.
+.chart-tooltip-key {
+    display: inline-block;
+    width: 10px;
+    height: 2px;
+    border-radius: 1px;
+    flex-shrink: 0;
+
+    &.networth-line { background: $accent; }
+    &.cashflow-income-line { background: $money-positive; }
+    &.cashflow-expense-line { background: $money-negative; }
+    &.forecast-line { background: $accent; }
+    &.ie-net-line { background: $accent; }
+    &.ie-bar-income { background: $money-positive; }
+    &.ie-bar-expense { background: $money-negative; }
+}
+
+.chart-tooltip-name {
+    color: $text-muted;
+    flex: 1;
+}
+
+// Values lead, labels follow — the value is the tooltip row's strong,
+// high-contrast element (the legend's own hierarchy inverted, since here
+// the reader already has the series and wants the number).
+.chart-tooltip-value {
+    font-weight: 600;
+    color: $text-primary;
+    font-family: $font-mono;
+    margin-left: 8px;
+}

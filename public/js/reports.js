@@ -154,6 +154,11 @@
     // split point shows the balance between the two. Net is overlaid as its
     // own line/dots in the accent color, same "single measure, one hue"
     // convention the net-worth trend uses elsewhere on this page.
+    // Returns { html, columns, bounds } — columns/bounds feed the shared
+    // hover crosshair (public/js/chartHover.js), which supersedes the
+    // per-mark <title> tooltips this used to carry (the hit layer it adds
+    // sits on top and intercepts pointer events, so those would otherwise
+    // just be unreachable dead markup).
     function buildIncomeExpenseSvg(rows) {
         const maxCents = Math.max(1, ...rows.map(r => Math.max(r.incomeCents, Math.abs(r.expenseCents))));
         const width = Math.max(rows.length * 64, 320);
@@ -178,26 +183,34 @@
             const expenseH = Math.abs(r.expenseCents) * scale;
             const cx = padSide + i * bandWidth + bandWidth / 2;
             return `
-                <rect class="ie-bar-income" x="${x}" y="${zeroY - incomeH}" width="${barWidth}" height="${incomeH}">
-                    <title>${r.month} income: ${window.BWMoney.formatCents(r.incomeCents)}</title>
-                </rect>
-                <rect class="ie-bar-expense" x="${x}" y="${zeroY}" width="${barWidth}" height="${expenseH}">
-                    <title>${r.month} expense: ${window.BWMoney.formatCents(r.expenseCents)}</title>
-                </rect>
-                <circle class="ie-net-dot" cx="${cx}" cy="${zeroY - netCents * scale}" r="3">
-                    <title>${r.month} net: ${window.BWMoney.formatCents(netCents)}</title>
-                </circle>
+                <rect class="ie-bar-income" x="${x}" y="${zeroY - incomeH}" width="${barWidth}" height="${incomeH}"></rect>
+                <rect class="ie-bar-expense" x="${x}" y="${zeroY}" width="${barWidth}" height="${expenseH}"></rect>
+                <circle class="ie-net-dot" cx="${cx}" cy="${zeroY - netCents * scale}" r="3"></circle>
                 <text class="ie-month-label" x="${cx}" y="${height - 6}" text-anchor="middle">${monthShortLabel(r.month)}</text>
             `;
         }).join('');
 
-        return `
+        const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Monthly income, expense, and net">
                 <line class="ie-zero-line" x1="${padSide}" y1="${zeroY}" x2="${width - padSide}" y2="${zeroY}"></line>
                 ${bars}
                 <polyline class="ie-net-line" points="${points.join(' ')}"></polyline>
             </svg>
         `;
+        const columns = rows.map((r, i) => {
+            const netCents = r.incomeCents + r.expenseCents;
+            const cx = padSide + i * bandWidth + bandWidth / 2;
+            return {
+                x: cx,
+                label: monthShortLabel(r.month),
+                series: [
+                    { name: 'Income', value: r.incomeCents, y: zeroY - r.incomeCents * scale, colorClass: 'ie-bar-income', formattedValue: window.BWMoney.formatCents(r.incomeCents) },
+                    { name: 'Expense', value: r.expenseCents, y: zeroY + Math.abs(r.expenseCents) * scale, colorClass: 'ie-bar-expense', formattedValue: window.BWMoney.formatCents(r.expenseCents) },
+                    { name: 'Net', value: netCents, y: zeroY - netCents * scale, colorClass: 'ie-net-line', formattedValue: window.BWMoney.formatCents(netCents) }
+                ]
+            };
+        });
+        return { html, columns, bounds: { xLeft: padSide, xRight: width - padSide, yTop: padTop, yBottom: padTop + chartHeight } };
     }
 
     function renderIncomeExpense(rows) {
@@ -212,7 +225,9 @@
         // reversing a time series would be disorienting), but the table
         // below it lists newest-first, matching the rest of the app's list
         // conventions (register, etc.).
-        chart.innerHTML = buildIncomeExpenseSvg(rows);
+        const { html, columns, bounds } = buildIncomeExpenseSvg(rows);
+        chart.innerHTML = html;
+        if (columns.length) window.BWChartHover.attach(chart.querySelector('svg'), chart, columns, bounds);
         tbody.innerHTML = [...rows].reverse().map((r) => {
             const netCents = r.incomeCents + r.expenseCents;
             return `

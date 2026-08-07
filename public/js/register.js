@@ -570,7 +570,8 @@
         try {
             const { amount, unit } = preferences.upcomingSchedules;
             const cutoff = new Date();
-            if (unit === 'months') cutoff.setMonth(cutoff.getMonth() + amount);
+            if (unit === 'years') cutoff.setFullYear(cutoff.getFullYear() + amount);
+            else if (unit === 'months') cutoff.setMonth(cutoff.getMonth() + amount);
             else cutoff.setDate(cutoff.getDate() + amount);
 
             // Projection now lives server-side (services/schedules/occurrenceProjection.js)
@@ -796,7 +797,7 @@
     // this is flagging "would this go negative", not a customizable
     // danger line.
     function buildRegisterForecastSvg(rows) {
-        if (rows.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
+        if (rows.length < 2) return { html: '<div class="empty-state">Not enough data yet.</div>', columns: [] };
         const width = 1400, height = 280;
         const padLeft = 72, padRight = 12, padTop = 16, padBottom = 28;
         const chartW = width - padLeft - padRight;
@@ -844,7 +845,7 @@
         const marker = hitIndex === -1 ? '' : `<circle class="forecast-threshold-marker" cx="${xAt(hitIndex)}" cy="${yAt(rows[hitIndex].balanceCents)}" r="5"></circle>`;
         const callout = hitIndex === -1 ? '' : `<div class="forecast-warning">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(rows[hitIndex].date)} — projected balance ${window.BWMoney.formatCents(rows[hitIndex].balanceCents)}</div>`;
 
-        return `
+        const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
                 ${gridLines.join('')}
                 ${dangerHeight > 0 ? `<rect class="forecast-danger-zone" x="${padLeft}" y="${thresholdY}" width="${chartW}" height="${dangerHeight}"></rect>` : ''}
@@ -858,6 +859,12 @@
             </svg>
             ${callout}
         `;
+        const columns = rows.map((r, i) => ({
+            x: xAt(i),
+            label: window.BWDate.formatDate(r.date) + (r.projected ? ' (projected)' : ''),
+            series: [{ name: 'Balance', value: r.balanceCents, y: yAt(r.balanceCents), colorClass: 'forecast-line', formattedValue: window.BWMoney.formatCents(r.balanceCents) }]
+        }));
+        return { html, columns, bounds: { xLeft: padLeft, xRight: width - padRight, yTop: padTop, yBottom: padTop + chartH } };
     }
 
     // Past/future window comes from the register's own Table settings
@@ -881,7 +888,12 @@
                 futureUnit: upcoming.unit || 'days'
             });
             const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
-            chartEl.innerHTML = buildRegisterForecastSvg(rows);
+            const { html, columns, bounds } = buildRegisterForecastSvg(rows);
+            chartEl.innerHTML = html;
+            // #register-forecast-chart is a static element from the EJS
+            // (always in the DOM), unlike the Dashboard's widgets — no need
+            // to defer this past an append step.
+            if (columns.length) window.BWChartHover.attach(chartEl.querySelector('svg'), chartEl, columns, bounds);
         } catch (err) {
             chartEl.innerHTML = '<div class="empty-state">Could not load the forecast.</div>';
         }
@@ -900,7 +912,8 @@
         const { enabled, amount, unit } = preferences.registerHistory;
         if (!enabled) return null;
         const from = new Date();
-        if (unit === 'months') from.setMonth(from.getMonth() - amount);
+        if (unit === 'years') from.setFullYear(from.getFullYear() - amount);
+        else if (unit === 'months') from.setMonth(from.getMonth() - amount);
         else from.setDate(from.getDate() - amount);
         return from;
     }

@@ -228,8 +228,13 @@
     // for the Reports page's own charts. Both carry explicit y-axis value
     // labels (min/max) and x-axis month labels — a bare line with no scale
     // reads as decoration, not data.
+    // Returns { html, columns, bounds } rather than a plain string — the
+    // caller (buildWidget) inserts `html` first, then calls
+    // window.BWChartHover.attach() with `columns`/`bounds` once the <svg>
+    // is actually in the DOM (hover needs real layout to size against).
+    // `columns` is [] for the empty-state case; attach() no-ops on that.
     function buildSparklineSvg(points) {
-        if (points.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
+        if (points.length < 2) return { html: '<div class="empty-state">Not enough data yet.</div>', columns: [] };
         const width = 400, height = 140;
         const padLeft = 56, padRight = 8, padTop = 12, padBottom = 20;
         const chartW = width - padLeft - padRight;
@@ -247,7 +252,7 @@
         `).join('');
         const zeroY = min < 0 && max > 0 ? yAt(0) : null;
 
-        return `
+        const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Net worth trend">
                 <text class="trend-axis-label" x="${padLeft - 6}" y="${padTop + 4}" text-anchor="end">${window.BWMoney.formatCents(max)}</text>
                 <text class="trend-axis-label" x="${padLeft - 6}" y="${padTop + chartH + 4}" text-anchor="end">${window.BWMoney.formatCents(min)}</text>
@@ -256,12 +261,18 @@
                 ${xLabels}
             </svg>
         `;
+        const columns = points.map((p, i) => ({
+            x: xAt(i),
+            label: monthShortLabel(p.label),
+            series: [{ name: 'Net worth', value: p.value, y: yAt(p.value), colorClass: 'networth-line', formattedValue: window.BWMoney.formatCents(p.value) }]
+        }));
+        return { html, columns, bounds: { xLeft: padLeft, xRight: width - padRight, yTop: padTop, yBottom: padTop + chartH } };
     }
 
     // Both lines on one chart so where income and expense visually cross is
     // plainly visible, without needing a dedicated "crossover" calculation.
     function buildCashFlowSvg(rows) {
-        if (rows.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
+        if (rows.length < 2) return { html: '<div class="empty-state">Not enough data yet.</div>', columns: [] };
         const width = 400, height = 140;
         const padLeft = 56, padRight = 8, padTop = 12, padBottom = 20;
         const chartW = width - padLeft - padRight;
@@ -278,7 +289,7 @@
             <text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="middle">${monthShortLabel(rows[i].month)}</text>
         `).join('');
 
-        return `
+        const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Cash flow trend">
                 <text class="trend-axis-label" x="${padLeft - 6}" y="${padTop + 4}" text-anchor="end">${window.BWMoney.formatCents(max)}</text>
                 <text class="trend-axis-label" x="${padLeft - 6}" y="${padTop + chartH + 4}" text-anchor="end">$0</text>
@@ -291,6 +302,15 @@
                 <span class="legend-expense"><span class="legend-swatch"></span>Expense</span>
             </div>
         `;
+        const columns = rows.map((r, i) => ({
+            x: xAt(i),
+            label: monthShortLabel(r.month),
+            series: [
+                { name: 'Income', value: r.incomeCents, y: yAt(r.incomeCents), colorClass: 'cashflow-income-line', formattedValue: window.BWMoney.formatCents(r.incomeCents) },
+                { name: 'Expense', value: r.expenseCents, y: yAt(Math.abs(r.expenseCents)), colorClass: 'cashflow-expense-line', formattedValue: window.BWMoney.formatCents(r.expenseCents) }
+            ]
+        }));
+        return { html, columns, bounds: { xLeft: padLeft, xRight: width - padRight, yTop: padTop, yBottom: padTop + chartH } };
     }
 
     // Running balance from the account's real past transactions (solid
@@ -327,7 +347,7 @@
     // box's proportions matched to this viewBox so nothing needs to letterbox
     // or distort text to fill the width.
     function buildForecastSvg(rows, thresholdCents) {
-        if (rows.length < 2) return '<div class="empty-state">Not enough data yet.</div>';
+        if (rows.length < 2) return { html: '<div class="empty-state">Not enough data yet.</div>', columns: [] };
         const width = 900, height = 140;
         const padLeft = 56, padRight = 8, padTop = 12, padBottom = 20;
         const chartW = width - padLeft - padRight;
@@ -382,7 +402,7 @@
         const marker = hitIndex === -1 ? '' : `<circle class="forecast-threshold-marker" cx="${xAt(hitIndex)}" cy="${yAt(rows[hitIndex].balanceCents)}" r="4"></circle>`;
         const callout = hitIndex === -1 ? '' : `<div class="forecast-warning">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(rows[hitIndex].date)} — projected balance ${window.BWMoney.formatCents(rows[hitIndex].balanceCents)}</div>`;
 
-        return `
+        const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
                 ${gridLines.join('')}
                 ${dangerHeight > 0 ? `<rect class="forecast-danger-zone" x="${padLeft}" y="${thresholdY}" width="${chartW}" height="${dangerHeight}"></rect>` : ''}
@@ -394,6 +414,12 @@
             </svg>
             ${callout}
         `;
+        const columns = rows.map((r, i) => ({
+            x: xAt(i),
+            label: window.BWDate.formatDate(r.date) + (r.projected ? ' (projected)' : ''),
+            series: [{ name: 'Balance', value: r.balanceCents, y: yAt(r.balanceCents), colorClass: 'forecast-line', formattedValue: window.BWMoney.formatCents(r.balanceCents) }]
+        }));
+        return { html, columns, bounds: { xLeft: padLeft, xRight: width - padRight, yTop: padTop, yBottom: padTop + chartH } };
     }
 
     // Donut chart of spending by category — capped at the top 5 categories
@@ -510,7 +536,13 @@
             div.classList.add('widget-wide');
             const { rows } = await window.BWApi.apiFetch(`/api/reports/net-worth?months=${trendMonths(dateRangePreset)}`);
             div.innerHTML = `<div class="stat-label">${handle}Net Worth</div><div class="widget-chart"></div>`;
-            div.querySelector('.widget-chart').innerHTML = buildSparklineSvg(rows.map(r => ({ label: r.month, value: r.netWorthCents })));
+            const chartEl = div.querySelector('.widget-chart');
+            const { html, columns, bounds } = buildSparklineSvg(rows.map(r => ({ label: r.month, value: r.netWorthCents })));
+            chartEl.innerHTML = html;
+            // Deferred — the hover layer needs real layout (getBoundingClientRect),
+            // so this can't run until AFTER renderWidgets() appends the div to
+            // the live DOM (buildWidget() itself only builds detached nodes).
+            if (columns.length) div.attachHover = () => window.BWChartHover.attach(chartEl.querySelector('svg'), chartEl, columns, bounds);
             return div;
         }
 
@@ -518,7 +550,10 @@
             div.classList.add('widget-wide');
             const { rows } = await window.BWApi.apiFetch(`/api/reports/income-vs-expense?${rangeQuery(trailingRange(trendMonths(dateRangePreset)))}`);
             div.innerHTML = `<div class="stat-label">${handle}Cash Flow</div><div class="widget-chart"></div>`;
-            div.querySelector('.widget-chart').innerHTML = buildCashFlowSvg(rows);
+            const chartEl = div.querySelector('.widget-chart');
+            const { html, columns, bounds } = buildCashFlowSvg(rows);
+            chartEl.innerHTML = html;
+            if (columns.length) div.attachHover = () => window.BWChartHover.attach(chartEl.querySelector('svg'), chartEl, columns, bounds);
             return div;
         }
 
@@ -533,7 +568,10 @@
             });
             const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
             div.innerHTML = `<div class="stat-label">${handle}Forecast — ${accountLabel(accountId)}</div><div class="widget-chart"></div>`;
-            div.querySelector('.widget-chart').innerHTML = buildForecastSvg(rows, widget.thresholdCents);
+            const chartEl = div.querySelector('.widget-chart');
+            const { html, columns, bounds } = buildForecastSvg(rows, widget.thresholdCents);
+            chartEl.innerHTML = html;
+            if (columns.length) div.attachHover = () => window.BWChartHover.attach(chartEl.querySelector('svg'), chartEl, columns, bounds);
             return div;
         }
 
@@ -577,6 +615,10 @@
         const elements = await Promise.all(currentWidgets.map(buildWidget));
         widgetsContainer.innerHTML = '';
         elements.forEach(el => { if (el) widgetsContainer.appendChild(el); });
+        // Chart widgets stash a pending hover-attach callback on their own
+        // div (see buildWidget's netWorth/cashFlow/forecast cases) — run
+        // those now that every element actually has real layout.
+        elements.forEach(el => { if (el && el.attachHover) el.attachHover(); });
     }
 
     // Attached once (not from inside renderWidgets, which reruns on every

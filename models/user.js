@@ -167,7 +167,7 @@ const userSchema = new mongoose.Schema({
         upcomingSchedules: {
             enabled: { type: Boolean, default: false },
             amount: { type: Number, default: 14 },
-            unit: { type: String, enum: ['days', 'months'], default: 'days' }
+            unit: { type: String, enum: ['days', 'months', 'years'], default: 'days' }
         },
         // How far back the register loads real transactions from — mirrors
         // upcomingSchedules' shape but looking the other direction in time.
@@ -176,7 +176,7 @@ const userSchema = new mongoose.Schema({
         registerHistory: {
             enabled: { type: Boolean, default: false },
             amount: { type: Number, default: 3 },
-            unit: { type: String, enum: ['days', 'months'], default: 'months' }
+            unit: { type: String, enum: ['days', 'months', 'years'], default: 'months' }
         },
         // Sent by services/jobs/weeklyReportEmailJob.js through this user's
         // own configured SMTP (smtp above) — requires that to be set up, same

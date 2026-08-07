@@ -93,6 +93,9 @@
 
 .widget-chart {
     margin-top: 8px;
+    // Anchors the hover tooltip (public/js/chartHover.js's `wrap`), which
+    // is a plain absolutely-positioned HTML div, not SVG.
+    position: relative;
 
     svg {
         width: 100%;

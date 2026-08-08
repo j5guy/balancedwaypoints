@@ -462,9 +462,10 @@
     //   segments; past that, adjacent slices blur and it stops being
     //   legible as anything more precise than "roughly even" or "roughly
     //   nothing").
-    // - Selection configured: only those categories get their own slice,
-    //   in the order they were selected, regardless of rank — everything
-    //   else (unselected categories + uncategorized) folds into "Other".
+    // - Selection configured: only those categories get their own slice —
+    //   everything else (unselected categories + uncategorized) folds into
+    //   "Other". Both modes order slices largest-to-smallest by spend, with
+    //   "Other" always last regardless of its size.
     // Legend is mandatory here (≥2 series), and doubles as exact figures —
     // the donut itself is deliberately just the at-a-glance shape, with a
     // per-slice <title> for hover detail.
@@ -482,11 +483,9 @@
         if (selectedCategoryIds && selectedCategoryIds.length) {
             const selectedSet = new Set(selectedCategoryIds.map(String));
             const byKey = new Map(spendingRows.map(r => [r.key, r]));
-            // Selection order, not spend rank — a chosen category keeps its
-            // spot even if it has $0 this period (still shown at 0%) so the
-            // legend doesn't reshuffle from period to period.
             const selected = selectedCategoryIds.map(String).filter((id, i, arr) => arr.indexOf(id) === i)
-                .map(id => byKey.get(id) || { key: id, label: '(deleted category)', value: 0 });
+                .map(id => byKey.get(id) || { key: id, label: '(deleted category)', value: 0 })
+                .sort((a, b) => b.value - a.value);
             const otherValue = spendingRows.filter(r => !selectedSet.has(r.key)).reduce((sum, r) => sum + r.value, 0);
             slices = otherValue > 0 ? [...selected, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : selected;
         } else {
@@ -701,6 +700,8 @@
     const singletonChecklist = document.getElementById('singleton-widget-checklist');
     const spendingPieCategoriesPanel = document.getElementById('spendingpie-categories-panel');
     const spendingPieCategoriesList = document.getElementById('spendingpie-categories-list');
+    const spendingPieSelectAllBtn = document.getElementById('spendingpie-select-all-btn');
+    const spendingPieDeselectAllBtn = document.getElementById('spendingpie-deselect-all-btn');
     const totalsListEl = document.getElementById('totals-widget-list');
     const addWidgetType = document.getElementById('add-widget-type');
     const addWidgetAccount = document.getElementById('add-widget-account');
@@ -771,6 +772,15 @@
             });
         });
     }
+
+    spendingPieSelectAllBtn.addEventListener('click', () => {
+        spendingPieCategoryIds = categories.filter(c => !c.archived).map(c => c.id);
+        buildSpendingPieCategoriesList();
+    });
+    spendingPieDeselectAllBtn.addEventListener('click', () => {
+        spendingPieCategoryIds = [];
+        buildSpendingPieCategoriesList();
+    });
 
     function buildTotalsList() {
         const instances = draftWidgets.filter(w => TOTALS_WIDGETS.some(t => t.type === w.type));

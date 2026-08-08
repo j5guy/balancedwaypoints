@@ -879,6 +879,18 @@
         // attributes (not the shared .forecast-danger-zone/-threshold-line
         // CSS classes) since color is per-account/per-tier now — the
         // dashboard widget's identically-named classes stay untouched.
+        // On the dark theme, alpha-blending a color over a near-black
+        // background crushes it toward black regardless of hue — two
+        // genuinely different colors (e.g. brick red and amber) both
+        // collapse to the same barely-distinguishable dark reddish-brown.
+        // `screen` blending brightens instead of darkens, so distinct hues
+        // actually stay visually distinct on a dark background; on the
+        // light theme normal alpha blending over a light background
+        // already reads fine (that's the pre-existing single-red-zone
+        // look), so screen blending only kicks in for dark.
+        const isDarkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
+        const blendStyle = isDarkTheme ? 'mix-blend-mode:screen;' : '';
+
         let prevY = dangerBottom;
         const zones = [];
         const thresholdLines = [];
@@ -886,15 +898,8 @@
             const y = yAt(t.cents);
             const bandHeight = prevY - y;
             if (bandHeight > 0) {
-                // Much higher than the dashboard widget's fixed 0.12 — on the
-                // dark theme especially, low-alpha fills over a near-black
-                // background crush toward the same dark, nearly-hueless
-                // color regardless of what color they actually are, so
-                // adjacent user-chosen tiers become indistinguishable from
-                // each other at low opacity. A muted brand color still
-                // reads as a soft wash even at 0.35.
-                zones.push(`<rect class="forecast-danger-zone" x="${padLeft}" y="${y}" width="${chartW}" height="${bandHeight}" style="fill:${t.color};fill-opacity:0.35;"></rect>`);
-                thresholdLines.push(`<line class="forecast-threshold-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" style="stroke:${t.color};stroke-opacity:0.9;"></line>`);
+                zones.push(`<rect class="forecast-danger-zone" x="${padLeft}" y="${y}" width="${chartW}" height="${bandHeight}" style="fill:${t.color};fill-opacity:0.35;${blendStyle}"></rect>`);
+                thresholdLines.push(`<line class="forecast-threshold-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" style="stroke:${t.color};stroke-opacity:0.9;${blendStyle}"></line>`);
             }
             prevY = y;
         });

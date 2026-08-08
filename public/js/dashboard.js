@@ -672,6 +672,8 @@
     const totalsListEl = document.getElementById('totals-widget-list');
     const addWidgetType = document.getElementById('add-widget-type');
     const addWidgetAccount = document.getElementById('add-widget-account');
+    const addWidgetBtn = document.getElementById('add-widget-btn');
+    const cancelWidgetEditBtn = document.getElementById('cancel-widget-edit-btn');
     const forecastListEl = document.getElementById('forecast-widget-list');
     const addForecastAccount = document.getElementById('add-forecast-account');
     const addForecastPastAmount = document.getElementById('add-forecast-past-amount');
@@ -679,10 +681,21 @@
     const addForecastFutureAmount = document.getElementById('add-forecast-future-amount');
     const addForecastFutureUnit = document.getElementById('add-forecast-future-unit');
     const addForecastThreshold = document.getElementById('add-forecast-threshold');
+    const addForecastBtn = document.getElementById('add-forecast-btn');
+    const cancelForecastEditBtn = document.getElementById('cancel-forecast-edit-btn');
     const balanceListEl = document.getElementById('balance-widget-list');
     const addBalanceAccount = document.getElementById('add-balance-account');
+    const addBalanceBtn = document.getElementById('add-balance-btn');
+    const cancelBalanceEditBtn = document.getElementById('cancel-balance-edit-btn');
     const alignSelect = document.getElementById('widget-align');
     let draftWidgets = [];
+    // Tracks the widget instance id being edited in each of the three
+    // "add" forms below (null = plain add mode) — set by the row's ✎
+    // button, cleared by Cancel, a successful Update, or removing the row
+    // being edited out from under it.
+    let editingTotalsId = null;
+    let editingForecastId = null;
+    let editingBalanceId = null;
 
     function buildSingletonChecklist() {
         singletonChecklist.innerHTML = SINGLETON_WIDGETS.map(w => `
@@ -702,15 +715,38 @@
         totalsListEl.innerHTML = instances.map(w => `
             <div class="widget-instance-row">
                 <span>${WIDGET_LABELS[w.type]} — ${accountLabel(w.accountId)}</span>
-                <button type="button" class="icon-btn" data-remove-instance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                <span class="row-actions">
+                    <button type="button" class="icon-btn" data-edit-instance="${w.id}" title="Edit" style="border:none;background:none;cursor:pointer;">✎</button>
+                    <button type="button" class="icon-btn money-negative" data-remove-instance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                </span>
             </div>
         `).join('');
+        totalsListEl.querySelectorAll('[data-edit-instance]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const w = draftWidgets.find(w => w.id === btn.dataset.editInstance);
+                if (!w) return;
+                editingTotalsId = w.id;
+                addWidgetType.value = w.type;
+                addWidgetAccount.value = w.accountId || '';
+                addWidgetBtn.textContent = 'Update';
+                cancelWidgetEditBtn.hidden = false;
+            });
+        });
         totalsListEl.querySelectorAll('[data-remove-instance]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeInstance);
+                if (editingTotalsId === btn.dataset.removeInstance) resetTotalsEdit();
                 buildTotalsList();
             });
         });
+    }
+
+    function resetTotalsEdit() {
+        editingTotalsId = null;
+        addWidgetType.value = 'summary';
+        addWidgetAccount.value = '';
+        addWidgetBtn.textContent = '+ Add';
+        cancelWidgetEditBtn.hidden = true;
     }
 
     function populateAccountSelect() {
@@ -737,15 +773,45 @@
         forecastListEl.innerHTML = instances.map(w => `
             <div class="widget-instance-row">
                 <span>${accountLabel(w.accountId)} <span class="muted" style="font-size:0.8rem;">— ${forecastSummary(w)}</span></span>
-                <button type="button" class="icon-btn" data-remove-forecast="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                <span class="row-actions">
+                    <button type="button" class="icon-btn" data-edit-forecast="${w.id}" title="Edit" style="border:none;background:none;cursor:pointer;">✎</button>
+                    <button type="button" class="icon-btn money-negative" data-remove-forecast="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                </span>
             </div>
         `).join('');
+        forecastListEl.querySelectorAll('[data-edit-forecast]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const w = draftWidgets.find(w => w.id === btn.dataset.editForecast);
+                if (!w) return;
+                editingForecastId = w.id;
+                addForecastAccount.value = w.accountId;
+                addForecastPastAmount.value = w.pastAmount;
+                addForecastPastUnit.value = w.pastUnit;
+                addForecastFutureAmount.value = w.futureAmount;
+                addForecastFutureUnit.value = w.futureUnit;
+                addForecastThreshold.value = (w.thresholdCents / 100).toFixed(2);
+                addForecastBtn.textContent = 'Update';
+                cancelForecastEditBtn.hidden = false;
+            });
+        });
         forecastListEl.querySelectorAll('[data-remove-forecast]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeForecast);
+                if (editingForecastId === btn.dataset.removeForecast) resetForecastEdit();
                 buildForecastList();
             });
         });
+    }
+
+    function resetForecastEdit() {
+        editingForecastId = null;
+        addForecastPastAmount.value = '10';
+        addForecastPastUnit.value = 'days';
+        addForecastFutureAmount.value = '6';
+        addForecastFutureUnit.value = 'months';
+        addForecastThreshold.value = '1000.00';
+        addForecastBtn.textContent = '+ Add';
+        cancelForecastEditBtn.hidden = true;
     }
 
     // No "All accounts" option here either — same reasoning as
@@ -763,19 +829,42 @@
         balanceListEl.innerHTML = instances.map(w => `
             <div class="widget-instance-row">
                 <span>${accountLabel(w.accountId)}</span>
-                <button type="button" class="icon-btn" data-remove-balance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                <span class="row-actions">
+                    <button type="button" class="icon-btn" data-edit-balance="${w.id}" title="Edit" style="border:none;background:none;cursor:pointer;">✎</button>
+                    <button type="button" class="icon-btn money-negative" data-remove-balance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                </span>
             </div>
         `).join('');
+        balanceListEl.querySelectorAll('[data-edit-balance]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const w = draftWidgets.find(w => w.id === btn.dataset.editBalance);
+                if (!w) return;
+                editingBalanceId = w.id;
+                addBalanceAccount.value = w.accountId;
+                addBalanceBtn.textContent = 'Update';
+                cancelBalanceEditBtn.hidden = false;
+            });
+        });
         balanceListEl.querySelectorAll('[data-remove-balance]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeBalance);
+                if (editingBalanceId === btn.dataset.removeBalance) resetBalanceEdit();
                 buildBalanceList();
             });
         });
     }
 
+    function resetBalanceEdit() {
+        editingBalanceId = null;
+        addBalanceBtn.textContent = '+ Add';
+        cancelBalanceEditBtn.hidden = true;
+    }
+
     document.getElementById('customize-dashboard-btn').addEventListener('click', () => {
         draftWidgets = currentWidgets.map(w => ({ ...w }));
+        resetTotalsEdit();
+        resetForecastEdit();
+        resetBalanceEdit();
         buildSingletonChecklist();
         populateAccountSelect();
         populateForecastAccountSelect();
@@ -786,36 +875,56 @@
         alignSelect.value = align;
         customizeOverlay.hidden = false;
     });
+    document.getElementById('cancel-widget-edit-btn').addEventListener('click', resetTotalsEdit);
+    document.getElementById('cancel-forecast-edit-btn').addEventListener('click', resetForecastEdit);
+    document.getElementById('cancel-balance-edit-btn').addEventListener('click', resetBalanceEdit);
     document.getElementById('cancel-widgets-btn').addEventListener('click', () => { customizeOverlay.hidden = true; });
     customizeOverlay.addEventListener('click', (e) => { if (e.target === customizeOverlay) customizeOverlay.hidden = true; });
 
-    document.getElementById('add-widget-btn').addEventListener('click', () => {
+    addWidgetBtn.addEventListener('click', () => {
         const type = addWidgetType.value;
         const accountId = addWidgetAccount.value || null;
-        draftWidgets.push({ id: makeWidgetId(type), type, accountId });
+        if (editingTotalsId) {
+            const w = draftWidgets.find(w => w.id === editingTotalsId);
+            if (w) { w.type = type; w.accountId = accountId; }
+        } else {
+            draftWidgets.push({ id: makeWidgetId(type), type, accountId });
+        }
+        resetTotalsEdit();
         buildTotalsList();
     });
 
-    document.getElementById('add-forecast-btn').addEventListener('click', () => {
+    addForecastBtn.addEventListener('click', () => {
         const accountId = addForecastAccount.value;
         if (!accountId) return;
-        draftWidgets.push({
-            id: makeWidgetId('forecast'),
-            type: 'forecast',
+        const values = {
             accountId,
             pastAmount: Number(addForecastPastAmount.value) || 10,
             pastUnit: addForecastPastUnit.value,
             futureAmount: Number(addForecastFutureAmount.value) || 6,
             futureUnit: addForecastFutureUnit.value,
             thresholdCents: window.BWMoney.toCents(addForecastThreshold.value || 0)
-        });
+        };
+        if (editingForecastId) {
+            const w = draftWidgets.find(w => w.id === editingForecastId);
+            if (w) Object.assign(w, values);
+        } else {
+            draftWidgets.push({ id: makeWidgetId('forecast'), type: 'forecast', ...values });
+        }
+        resetForecastEdit();
         buildForecastList();
     });
 
-    document.getElementById('add-balance-btn').addEventListener('click', () => {
+    addBalanceBtn.addEventListener('click', () => {
         const accountId = addBalanceAccount.value;
         if (!accountId) return;
-        draftWidgets.push({ id: makeWidgetId('accountBalance'), type: 'accountBalance', accountId });
+        if (editingBalanceId) {
+            const w = draftWidgets.find(w => w.id === editingBalanceId);
+            if (w) w.accountId = accountId;
+        } else {
+            draftWidgets.push({ id: makeWidgetId('accountBalance'), type: 'accountBalance', accountId });
+        }
+        resetBalanceEdit();
         buildBalanceList();
     });
 

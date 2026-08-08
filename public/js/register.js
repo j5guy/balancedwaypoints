@@ -38,15 +38,9 @@
     // Set from the account itself (see loadReferenceData) rather than a
     // register/user preference — same idea as the Dashboard's per-widget
     // forecast threshold, just one persistent value per account (see
-    // models/account.js) instead of one per widget instance. Mid/upper are
-    // optional additional tiers (null = that band is off) — see
-    // buildRegisterForecastSvg for how the three combine into bands.
+    // models/account.js) instead of one per widget instance.
     let forecastThresholdCents = 0;
     let forecastThresholdColor = '#B5433A';
-    let forecastThresholdMidCents = null;
-    let forecastThresholdMidColor = '#E3A93A';
-    let forecastThresholdUpperCents = null;
-    let forecastThresholdUpperColor = '#2E8B57';
 
     const COLUMN_LABELS = {
         date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
@@ -99,10 +93,6 @@
         accountRole = account.role;
         forecastThresholdCents = account.forecastThresholdCents || 0;
         forecastThresholdColor = account.forecastThresholdColor || '#B5433A';
-        forecastThresholdMidCents = account.forecastThresholdMidCents != null ? account.forecastThresholdMidCents : null;
-        forecastThresholdMidColor = account.forecastThresholdMidColor || '#E3A93A';
-        forecastThresholdUpperCents = account.forecastThresholdUpperCents != null ? account.forecastThresholdUpperCents : null;
-        forecastThresholdUpperColor = account.forecastThresholdUpperColor || '#2E8B57';
         accounts = accountsRes.accounts;
         categories = categoriesRes.categories;
         categoryGroups = categoryGroupsRes.categoryGroups;
@@ -833,32 +823,19 @@
     // much wider virtual canvas (full register width instead of one grid
     // cell) and an explicit "today" line — at this size the solid/dashed
     // line-style change alone is easy to miss as the past/projected
-    // boundary. `thresholds` comes from the account itself
-    // (models/account.js's forecastThreshold* fields, see loadReferenceData)
-    // rather than a per-widget-instance setting — persistent per account
-    // rather than per widget. `thresholds.low` is always present (defaults
-    // to $0, flagging an overdraft); mid/upper are optional extra tiers
-    // (null when not configured) that layer additional colored bands above
-    // the low zone — see the banding loop below.
-    function buildRegisterForecastSvg(rows, thresholds) {
+    // boundary. thresholdCents/thresholdColor come from the account itself
+    // (models/account.js's forecastThresholdCents/Color, see
+    // loadReferenceData) rather than a per-widget-instance setting — one
+    // persistent value per account, defaulting to $0/red until set otherwise.
+    function buildRegisterForecastSvg(rows, thresholdCents, thresholdColor) {
         if (rows.length < 2) return { html: '<div class="empty-state">Not enough data yet.</div>', columns: [] };
         const width = 1400, height = 280;
         const padLeft = 72, padRight = 12, padTop = 16, padBottom = 28;
         const chartW = width - padLeft - padRight;
         const chartH = height - padTop - padBottom;
-
-        // Ascending by cents — the banding loop below walks these bottom-up,
-        // so lower tiers must come first. `thresholds.low` is always set;
-        // mid/upper are only included when actually configured.
-        const tiers = [thresholds.low, thresholds.mid, thresholds.upper]
-            .filter(t => t != null)
-            .sort((a, b) => a.cents - b.cents);
-        const thresholdCents = thresholds.low.cents;
-
         const values = rows.map(r => r.balanceCents);
-        const tierValues = tiers.map(t => t.cents);
-        const min = Math.min(0, ...tierValues, ...values);
-        const max = Math.max(0, ...tierValues, ...values);
+        const min = Math.min(0, thresholdCents, ...values);
+        const max = Math.max(0, thresholdCents, ...values);
         const range = Math.max(1, max - min);
         const stepX = chartW / (rows.length - 1);
         const xAt = (i) => padLeft + i * stepX;
@@ -869,40 +846,9 @@
         const pastCoords = rows.slice(0, pastEnd + 1).map((r, i) => `${xAt(i)},${yAt(r.balanceCents)}`);
         const futureCoords = rows.slice(pastEnd).map((r, i) => `${xAt(pastEnd + i)},${yAt(r.balanceCents)}`);
 
+        const thresholdY = yAt(thresholdCents);
         const dangerBottom = padTop + chartH;
-
-        // Each tier colors the band between it and the next tier up (or the
-        // chart bottom, for the lowest tier) — the "banded" look: below low
-        // = low's color, low→mid = mid's color, mid→upper = upper's color,
-        // above the highest configured tier = no fill. Collapses to today's
-        // single red zone when mid/upper are unset. SVG presentation
-        // attributes (not the shared .forecast-danger-zone/-threshold-line
-        // CSS classes) since color is per-account/per-tier now — the
-        // dashboard widget's identically-named classes stay untouched.
-        // On the dark theme, alpha-blending a color over a near-black
-        // background crushes it toward black regardless of hue — two
-        // genuinely different colors (e.g. brick red and amber) both
-        // collapse to the same barely-distinguishable dark reddish-brown.
-        // `screen` blending brightens instead of darkens, so distinct hues
-        // actually stay visually distinct on a dark background; on the
-        // light theme normal alpha blending over a light background
-        // already reads fine (that's the pre-existing single-red-zone
-        // look), so screen blending only kicks in for dark.
-        const isDarkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
-        const blendStyle = isDarkTheme ? 'mix-blend-mode:screen;' : '';
-
-        let prevY = dangerBottom;
-        const zones = [];
-        const thresholdLines = [];
-        tiers.forEach((t) => {
-            const y = yAt(t.cents);
-            const bandHeight = prevY - y;
-            if (bandHeight > 0) {
-                zones.push(`<rect class="forecast-danger-zone" x="${padLeft}" y="${y}" width="${chartW}" height="${bandHeight}" style="fill:${t.color};fill-opacity:0.35;${blendStyle}"></rect>`);
-                thresholdLines.push(`<line class="forecast-threshold-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" style="stroke:${t.color};stroke-opacity:0.9;${blendStyle}"></line>`);
-            }
-            prevY = y;
-        });
+        const dangerHeight = dangerBottom - thresholdY;
 
         const gridStep = niceStepCents(range, 5);
         const gridLines = [];
@@ -922,19 +868,18 @@
             <text class="trend-axis-label" x="${xAt(i)}" y="${height - 8}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
         `).join('');
 
-        // Marks + calls out every FUTURE dip below the LOW threshold only
-        // (see findThresholdCrossings) — not a dot on every day a dip stays
-        // under, just the moment it starts. Mid/upper are visual bands +
-        // reference lines only, not additional crossing alerts.
+        // Marks + calls out every FUTURE dip below the threshold (see
+        // findThresholdCrossings) — not a dot on every day a dip stays
+        // under, just the moment it starts.
         const crossings = findThresholdCrossings(rows, thresholdCents);
-        const markers = crossings.map(c => `<circle class="forecast-threshold-marker" cx="${xAt(c.index)}" cy="${yAt(c.balanceCents)}" r="5" style="fill:${thresholds.low.color};"></circle>`).join('');
-        const callouts = crossings.map(c => `<div class="forecast-warning" style="color:${thresholds.low.color};">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(c.date)} — projected balance ${window.BWMoney.formatCents(c.balanceCents)}</div>`).join('');
+        const markers = crossings.map(c => `<circle class="forecast-threshold-marker" cx="${xAt(c.index)}" cy="${yAt(c.balanceCents)}" r="5" style="fill:${thresholdColor};"></circle>`).join('');
+        const callouts = crossings.map(c => `<div class="forecast-warning" style="color:${thresholdColor};">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(c.date)} — projected balance ${window.BWMoney.formatCents(c.balanceCents)}</div>`).join('');
 
         const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">
                 ${gridLines.join('')}
-                ${zones.join('')}
-                ${thresholdLines.join('')}
+                ${dangerHeight > 0 ? `<rect class="forecast-danger-zone" x="${padLeft}" y="${thresholdY}" width="${chartW}" height="${dangerHeight}" style="fill:${thresholdColor};fill-opacity:0.2;"></rect>` : ''}
+                ${dangerHeight > 0 ? `<line class="forecast-threshold-line" x1="${padLeft}" y1="${thresholdY}" x2="${width - padRight}" y2="${thresholdY}" style="stroke:${thresholdColor};stroke-opacity:0.7;"></line>` : ''}
                 <line class="forecast-today-line" x1="${todayX}" y1="${padTop}" x2="${todayX}" y2="${dangerBottom}"></line>
                 <text class="trend-axis-label" x="${todayX}" y="${padTop - 4}" text-anchor="middle">Today</text>
                 <polyline class="forecast-line" points="${pastCoords.join(' ')}"></polyline>
@@ -973,12 +918,7 @@
                 futureUnit: upcoming.unit || 'days'
             });
             const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
-            const thresholds = {
-                low: { cents: forecastThresholdCents, color: forecastThresholdColor },
-                mid: forecastThresholdMidCents != null ? { cents: forecastThresholdMidCents, color: forecastThresholdMidColor } : null,
-                upper: forecastThresholdUpperCents != null ? { cents: forecastThresholdUpperCents, color: forecastThresholdUpperColor } : null
-            };
-            const { html, columns, bounds } = buildRegisterForecastSvg(rows, thresholds);
+            const { html, columns, bounds } = buildRegisterForecastSvg(rows, forecastThresholdCents, forecastThresholdColor);
             chartEl.innerHTML = html;
             // #register-forecast-chart is a static element from the EJS
             // (always in the DOM), unlike the Dashboard's widgets — no need

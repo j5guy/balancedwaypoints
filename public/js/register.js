@@ -886,12 +886,15 @@
             const y = yAt(t.cents);
             const bandHeight = prevY - y;
             if (bandHeight > 0) {
-                // 0.20 rather than the dashboard widget's fixed 0.12 — a
-                // single hardcoded red zone reads fine faint, but multiple
-                // adjacent user-chosen colors need more contrast to stay
-                // visually distinct from each other at a glance.
-                zones.push(`<rect class="forecast-danger-zone" x="${padLeft}" y="${y}" width="${chartW}" height="${bandHeight}" style="fill:${t.color};fill-opacity:0.20;"></rect>`);
-                thresholdLines.push(`<line class="forecast-threshold-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" style="stroke:${t.color};stroke-opacity:0.8;"></line>`);
+                // Much higher than the dashboard widget's fixed 0.12 — on the
+                // dark theme especially, low-alpha fills over a near-black
+                // background crush toward the same dark, nearly-hueless
+                // color regardless of what color they actually are, so
+                // adjacent user-chosen tiers become indistinguishable from
+                // each other at low opacity. A muted brand color still
+                // reads as a soft wash even at 0.35.
+                zones.push(`<rect class="forecast-danger-zone" x="${padLeft}" y="${y}" width="${chartW}" height="${bandHeight}" style="fill:${t.color};fill-opacity:0.35;"></rect>`);
+                thresholdLines.push(`<line class="forecast-threshold-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" style="stroke:${t.color};stroke-opacity:0.9;"></line>`);
             }
             prevY = y;
         });

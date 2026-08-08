@@ -11,6 +11,11 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         onBudget: account.onBudget,
         startingBalanceCents: account.startingBalanceCents,
         forecastThresholdCents: account.forecastThresholdCents || 0,
+        forecastThresholdColor: account.forecastThresholdColor || '#B5433A',
+        forecastThresholdMidCents: account.forecastThresholdMidCents != null ? account.forecastThresholdMidCents : null,
+        forecastThresholdMidColor: account.forecastThresholdMidColor || '#E3A93A',
+        forecastThresholdUpperCents: account.forecastThresholdUpperCents != null ? account.forecastThresholdUpperCents : null,
+        forecastThresholdUpperColor: account.forecastThresholdUpperColor || '#2E8B57',
         closed: account.closed,
         notes: account.notes,
         sortOrder: account.sortOrder,
@@ -32,6 +37,19 @@ function serializeShare(share) {
         permission: share.permission,
         sharedWith: share.sharedWith ? { id: share.sharedWith._id, email: share.sharedWith.email, displayName: share.sharedWith.displayName } : null
     };
+}
+
+// Ordering the register chart's banding math (public/js/register.js's
+// buildRegisterForecastSvg) depends on: low < mid < upper, wherever mid/
+// upper are actually set (null = that tier is off). Returns an error
+// string, or null if the submitted trio is valid.
+function validateThresholdOrder({ forecastThresholdCents, forecastThresholdMidCents, forecastThresholdUpperCents }) {
+    const low = Number(forecastThresholdCents) || 0;
+    const mid = forecastThresholdMidCents != null && forecastThresholdMidCents !== '' ? Number(forecastThresholdMidCents) : null;
+    const upper = forecastThresholdUpperCents != null && forecastThresholdUpperCents !== '' ? Number(forecastThresholdUpperCents) : null;
+    if (mid != null && mid <= low) return 'Mid threshold must be greater than the low threshold';
+    if (upper != null && upper <= (mid != null ? mid : low)) return `Upper threshold must be greater than the ${mid != null ? 'mid' : 'low'} threshold`;
+    return null;
 }
 
 async function list(req, res) {
@@ -66,9 +84,17 @@ async function get(req, res) {
 }
 
 async function create(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, notes } = req.body || {};
+    const {
+        name, type, onBudget, startingBalanceCents,
+        forecastThresholdCents, forecastThresholdColor,
+        forecastThresholdMidCents, forecastThresholdMidColor,
+        forecastThresholdUpperCents, forecastThresholdUpperColor,
+        notes
+    } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
+    const thresholdError = validateThresholdOrder(req.body || {});
+    if (thresholdError) return res.status(400).json({ error: thresholdError });
 
     const account = await accounts.create({
         owner: req.session.userId,
@@ -77,6 +103,11 @@ async function create(req, res) {
         onBudget: onBudget !== false,
         startingBalanceCents: Number(startingBalanceCents) || 0,
         forecastThresholdCents: Number(forecastThresholdCents) || 0,
+        forecastThresholdColor: forecastThresholdColor || '#B5433A',
+        forecastThresholdMidCents: forecastThresholdMidCents != null && forecastThresholdMidCents !== '' ? Number(forecastThresholdMidCents) : null,
+        forecastThresholdMidColor: forecastThresholdMidColor || '#E3A93A',
+        forecastThresholdUpperCents: forecastThresholdUpperCents != null && forecastThresholdUpperCents !== '' ? Number(forecastThresholdUpperCents) : null,
+        forecastThresholdUpperColor: forecastThresholdUpperColor || '#2E8B57',
         notes: notes || ''
     });
     res.status(201).json(serialize({ account, balanceCents: account.startingBalanceCents }));
@@ -87,8 +118,22 @@ async function create(req, res) {
 // forceRemove below, deliberately keep the plain req.session.userId owner
 // check rather than resolveAccountAccess.
 async function update(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, closed, notes, sortOrder } = req.body || {};
+    const {
+        name, type, onBudget, startingBalanceCents,
+        forecastThresholdCents, forecastThresholdColor,
+        forecastThresholdMidCents, forecastThresholdMidColor,
+        forecastThresholdUpperCents, forecastThresholdUpperColor,
+        closed, notes, sortOrder
+    } = req.body || {};
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
+    // Only validate ordering when the Accounts form's threshold section was
+    // actually submitted — this stays a partial-patch endpoint (e.g. just
+    // toggling `closed`), so absent threshold keys shouldn't get compared
+    // against a phantom low of 0.
+    if (forecastThresholdCents !== undefined || forecastThresholdMidCents !== undefined || forecastThresholdUpperCents !== undefined) {
+        const thresholdError = validateThresholdOrder(req.body || {});
+        if (thresholdError) return res.status(400).json({ error: thresholdError });
+    }
 
     const data = {};
     if (name !== undefined) data.name = String(name).trim();
@@ -96,6 +141,11 @@ async function update(req, res) {
     if (onBudget !== undefined) data.onBudget = !!onBudget;
     if (startingBalanceCents !== undefined) data.startingBalanceCents = Number(startingBalanceCents) || 0;
     if (forecastThresholdCents !== undefined) data.forecastThresholdCents = Number(forecastThresholdCents) || 0;
+    if (forecastThresholdColor !== undefined) data.forecastThresholdColor = forecastThresholdColor || '#B5433A';
+    if (forecastThresholdMidCents !== undefined) data.forecastThresholdMidCents = forecastThresholdMidCents != null && forecastThresholdMidCents !== '' ? Number(forecastThresholdMidCents) : null;
+    if (forecastThresholdMidColor !== undefined) data.forecastThresholdMidColor = forecastThresholdMidColor || '#E3A93A';
+    if (forecastThresholdUpperCents !== undefined) data.forecastThresholdUpperCents = forecastThresholdUpperCents != null && forecastThresholdUpperCents !== '' ? Number(forecastThresholdUpperCents) : null;
+    if (forecastThresholdUpperColor !== undefined) data.forecastThresholdUpperColor = forecastThresholdUpperColor || '#2E8B57';
     if (closed !== undefined) data.closed = !!closed;
     if (notes !== undefined) data.notes = notes;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;

@@ -42,10 +42,38 @@
                 <input type="checkbox" id="acct-closed">
                 <label for="acct-closed">Closed</label>
             </div>
+        </div>
+        <div class="form-row">
             <div class="form-group">
-                <label for="acct-forecast-threshold">Forecast low-balance threshold</label>
+                <label for="acct-forecast-threshold">Low threshold</label>
                 <input type="number" id="acct-forecast-threshold" step="0.01" value="0">
-                <p class="form-hint">This account's Forecast chart flags the first projected day the balance would drop below this.</p>
+                <p class="form-hint">The Forecast chart flags the first projected day the balance would drop below this, and colors the area below it.</p>
+            </div>
+            <div class="form-group">
+                <label for="acct-forecast-color">Low color</label>
+                <input type="color" id="acct-forecast-color" value="#B5433A">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="acct-forecast-mid-threshold">Mid threshold (optional)</label>
+                <input type="number" id="acct-forecast-mid-threshold" step="0.01" placeholder="No mid threshold">
+                <p class="form-hint">Colors the band between the low and mid thresholds. Must be greater than the low threshold. Leave blank to disable.</p>
+            </div>
+            <div class="form-group">
+                <label for="acct-forecast-mid-color">Mid color</label>
+                <input type="color" id="acct-forecast-mid-color" value="#E3A93A">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="acct-forecast-upper-threshold">Upper threshold (optional)</label>
+                <input type="number" id="acct-forecast-upper-threshold" step="0.01" placeholder="No upper threshold">
+                <p class="form-hint">Colors the band between the mid (or low) and upper thresholds. Must be greater than the mid threshold. Leave blank to disable.</p>
+            </div>
+            <div class="form-group">
+                <label for="acct-forecast-upper-color">Upper color</label>
+                <input type="color" id="acct-forecast-upper-color" value="#2E8B57">
             </div>
         </div>
         <div class="btn-row">

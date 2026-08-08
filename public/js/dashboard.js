@@ -53,6 +53,7 @@
     let align = 'center';
     let month = window.BWDate.todayDateInputValue().slice(0, 7); // 'YYYY-MM', only used for the 'month' preset
     let accounts = []; // loaded once in init() — {id, name, closed, ...}
+    let categories = []; // loaded once in init() — {id, name, group, sortOrder, archived}, for the spendingPie widget's category picker
 
     function makeWidgetId(type) {
         return `${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -179,6 +180,15 @@
             accounts = [...owned, ...shared];
         } catch (err) {
             accounts = [];
+        }
+    }
+
+    async function loadCategories() {
+        try {
+            const { categories: res } = await window.BWApi.apiFetch('/api/categories');
+            categories = res || [];
+        } catch (err) {
+            categories = [];
         }
     }
 
@@ -445,29 +455,57 @@
         return { html, columns, bounds: { xLeft: padLeft, xRight: width - padRight, yTop: padTop, yBottom: padTop + chartH } };
     }
 
-    // Donut chart of spending by category — capped at the top 5 categories
-    // plus an "Other" bucket for the rest (dataviz guidance: pie/donut only
-    // reads at a glance up to ~6 segments; past that, adjacent slices blur
-    // and it stops being legible as anything more precise than "roughly
-    // even" or "roughly nothing"). Legend is mandatory here (≥2 series),
-    // and doubles as exact figures — the donut itself is deliberately just
-    // the at-a-glance shape, with a per-slice <title> for hover detail.
-    function buildCategoryPieSvg(rows) {
+    // Donut chart of spending by category. Two modes:
+    // - No selection configured (selectedCategoryIds empty/absent): capped
+    //   at the top N (5 or 10, per-widget `topN`) categories plus an
+    //   "Other" bucket for the rest (dataviz guidance: pie/donut only reads
+    //   at a glance up to ~6-10 segments; past that, adjacent slices blur
+    //   and it stops being legible as anything more precise than "roughly
+    //   even" or "roughly nothing" — 10 is already pushing it, hence
+    //   capping the option there rather than offering more).
+    // - Selection configured: only those categories get their own slice —
+    //   everything else (unselected categories + uncategorized) folds into
+    //   "Other". A selected category no longer in the returned rows (e.g.
+    //   since deleted) is silently dropped rather than shown as a
+    //   placeholder slice.
+    // Both modes order slices largest-to-smallest by spend, with "Other"
+    // always last regardless of its size, and drop any slice that rounds
+    // to 0% of the total — a sliver with no visible arc and "$0.00 (0%)"
+    // in the legend isn't informative, just clutter.
+    // Legend is mandatory here (≥2 series), and doubles as exact figures —
+    // the donut itself is deliberately just the at-a-glance shape, with a
+    // per-slice <title> for hover detail.
+    function buildCategoryPieSvg(rows, selectedCategoryIds, topN) {
         const spendingRows = rows
             .filter(r => r.totalCents < 0)
             .map(r => ({
                 key: r.category ? String(r.category.id) : 'uncategorized',
                 label: r.category ? r.category.name : 'Uncategorized',
                 value: Math.abs(r.totalCents)
-            }))
-            .sort((a, b) => b.value - a.value);
+            }));
         if (spendingRows.length === 0) return '<div class="empty-state">No spending in this range.</div>';
 
-        const MAX_SLICES = 5;
-        const top = spendingRows.slice(0, MAX_SLICES);
-        const otherValue = spendingRows.slice(MAX_SLICES).reduce((sum, r) => sum + r.value, 0);
-        const slices = otherValue > 0 ? [...top, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : top;
-        const total = slices.reduce((sum, s) => sum + s.value, 0);
+        let slices;
+        if (selectedCategoryIds && selectedCategoryIds.length) {
+            const selectedSet = new Set(selectedCategoryIds.map(String));
+            const byKey = new Map(spendingRows.map(r => [r.key, r]));
+            const selected = selectedCategoryIds.map(String).filter((id, i, arr) => arr.indexOf(id) === i)
+                .map(id => byKey.get(id))
+                .filter(Boolean)
+                .sort((a, b) => b.value - a.value);
+            const otherValue = spendingRows.filter(r => !selectedSet.has(r.key)).reduce((sum, r) => sum + r.value, 0);
+            slices = otherValue > 0 ? [...selected, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : selected;
+        } else {
+            spendingRows.sort((a, b) => b.value - a.value);
+            const maxSlices = topN === 10 ? 10 : 5;
+            const top = spendingRows.slice(0, maxSlices);
+            const otherValue = spendingRows.slice(maxSlices).reduce((sum, r) => sum + r.value, 0);
+            slices = otherValue > 0 ? [...top, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : top;
+        }
+        let total = slices.reduce((sum, s) => sum + s.value, 0);
+        if (total === 0) return '<div class="empty-state">No spending in the selected categories for this range.</div>';
+        slices = slices.filter(s => Math.round((s.value / total) * 100) > 0);
+        total = slices.reduce((sum, s) => sum + s.value, 0);
 
         const size = 160, cx = size / 2, cy = size / 2, r = 70, innerR = 42;
         let angle = -Math.PI / 2; // start at 12 o'clock
@@ -627,7 +665,7 @@
             div.classList.add('widget-wide');
             const { rows } = await window.BWApi.apiFetch(`/api/reports/spending-by-category?${rangeQuery(periodRange(dateRangePreset))}`);
             div.innerHTML = `<div class="stat-label">${handle}Spending by Category</div><div class="widget-chart"></div>`;
-            div.querySelector('.widget-chart').innerHTML = buildCategoryPieSvg(rows);
+            div.querySelector('.widget-chart').innerHTML = buildCategoryPieSvg(rows, widget.selectedCategoryIds, widget.pieTopN);
             return div;
         }
 
@@ -669,9 +707,16 @@
     // mutated currentWidgets before Save is ever clicked.
     const customizeOverlay = document.getElementById('customize-dashboard-overlay');
     const singletonChecklist = document.getElementById('singleton-widget-checklist');
+    const spendingPieCategoriesPanel = document.getElementById('spendingpie-categories-panel');
+    const spendingPieCategoriesList = document.getElementById('spendingpie-categories-list');
+    const spendingPieSelectAllBtn = document.getElementById('spendingpie-select-all-btn');
+    const spendingPieDeselectAllBtn = document.getElementById('spendingpie-deselect-all-btn');
+    const spendingPieTopNSelect = document.getElementById('spendingpie-topn-select');
     const totalsListEl = document.getElementById('totals-widget-list');
     const addWidgetType = document.getElementById('add-widget-type');
     const addWidgetAccount = document.getElementById('add-widget-account');
+    const addWidgetBtn = document.getElementById('add-widget-btn');
+    const cancelWidgetEditBtn = document.getElementById('cancel-widget-edit-btn');
     const forecastListEl = document.getElementById('forecast-widget-list');
     const addForecastAccount = document.getElementById('add-forecast-account');
     const addForecastPastAmount = document.getElementById('add-forecast-past-amount');
@@ -679,19 +724,73 @@
     const addForecastFutureAmount = document.getElementById('add-forecast-future-amount');
     const addForecastFutureUnit = document.getElementById('add-forecast-future-unit');
     const addForecastThreshold = document.getElementById('add-forecast-threshold');
+    const addForecastBtn = document.getElementById('add-forecast-btn');
+    const cancelForecastEditBtn = document.getElementById('cancel-forecast-edit-btn');
     const balanceListEl = document.getElementById('balance-widget-list');
     const addBalanceAccount = document.getElementById('add-balance-account');
+    const addBalanceBtn = document.getElementById('add-balance-btn');
+    const cancelBalanceEditBtn = document.getElementById('cancel-balance-edit-btn');
     const alignSelect = document.getElementById('widget-align');
     let draftWidgets = [];
+    // Tracks the widget instance id being edited in each of the three
+    // "add" forms below (null = plain add mode) — set by the row's ✎
+    // button, cleared by Cancel, a successful Update, or removing the row
+    // being edited out from under it.
+    let editingTotalsId = null;
+    let editingForecastId = null;
+    let editingBalanceId = null;
 
     function buildSingletonChecklist() {
         singletonChecklist.innerHTML = SINGLETON_WIDGETS.map(w => `
             <div class="checkbox-row form-group">
                 <input type="checkbox" id="widget-check-${w.type}" data-widget-type="${w.type}" ${draftWidgets.some(dw => dw.type === w.type) ? 'checked' : ''}>
                 <label for="widget-check-${w.type}">${w.label}</label>
+                ${w.type === 'spendingPie' ? '<button type="button" class="icon-btn" id="spendingpie-categories-btn" title="Choose categories" style="border:none;background:none;cursor:pointer;">⚙</button>' : ''}
             </div>
         `).join('');
+        document.getElementById('spendingpie-categories-btn').addEventListener('click', () => {
+            spendingPieCategoriesPanel.hidden = !spendingPieCategoriesPanel.hidden;
+            if (!spendingPieCategoriesPanel.hidden) buildSpendingPieCategoriesList();
+        });
     }
+
+    // Selection for the spendingPie widget's category picker — kept
+    // separate from draftWidgets while the modal is open (rather than
+    // mutating a widget entry directly) since the widget might not even be
+    // checked/present in draftWidgets yet while its categories are being
+    // configured; save-widgets-btn below writes this into the final entry.
+    let spendingPieCategoryIds = [];
+
+    function buildSpendingPieCategoriesList() {
+        const sorted = [...categories].filter(c => !c.archived).sort((a, b) => a.name.localeCompare(b.name));
+        if (sorted.length === 0) {
+            spendingPieCategoriesList.innerHTML = '<p class="muted" style="font-size:0.85rem;">No categories yet.</p>';
+            return;
+        }
+        spendingPieCategoriesList.innerHTML = sorted.map(c => `
+            <div class="checkbox-row form-group">
+                <input type="checkbox" id="spendingpie-cat-${c.id}" data-category-id="${c.id}" ${spendingPieCategoryIds.includes(c.id) ? 'checked' : ''}>
+                <label for="spendingpie-cat-${c.id}">${c.name}</label>
+            </div>
+        `).join('');
+        spendingPieCategoriesList.querySelectorAll('[data-category-id]').forEach((cb) => {
+            cb.addEventListener('change', () => {
+                const id = cb.dataset.categoryId;
+                spendingPieCategoryIds = cb.checked
+                    ? [...spendingPieCategoryIds, id]
+                    : spendingPieCategoryIds.filter(x => x !== id);
+            });
+        });
+    }
+
+    spendingPieSelectAllBtn.addEventListener('click', () => {
+        spendingPieCategoryIds = categories.filter(c => !c.archived).map(c => c.id);
+        buildSpendingPieCategoriesList();
+    });
+    spendingPieDeselectAllBtn.addEventListener('click', () => {
+        spendingPieCategoryIds = [];
+        buildSpendingPieCategoriesList();
+    });
 
     function buildTotalsList() {
         const instances = draftWidgets.filter(w => TOTALS_WIDGETS.some(t => t.type === w.type));
@@ -702,15 +801,38 @@
         totalsListEl.innerHTML = instances.map(w => `
             <div class="widget-instance-row">
                 <span>${WIDGET_LABELS[w.type]} — ${accountLabel(w.accountId)}</span>
-                <button type="button" class="icon-btn" data-remove-instance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                <span class="row-actions">
+                    <button type="button" class="icon-btn" data-edit-instance="${w.id}" title="Edit" style="border:none;background:none;cursor:pointer;">✎</button>
+                    <button type="button" class="icon-btn money-negative" data-remove-instance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                </span>
             </div>
         `).join('');
+        totalsListEl.querySelectorAll('[data-edit-instance]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const w = draftWidgets.find(w => w.id === btn.dataset.editInstance);
+                if (!w) return;
+                editingTotalsId = w.id;
+                addWidgetType.value = w.type;
+                addWidgetAccount.value = w.accountId || '';
+                addWidgetBtn.textContent = 'Update';
+                cancelWidgetEditBtn.hidden = false;
+            });
+        });
         totalsListEl.querySelectorAll('[data-remove-instance]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeInstance);
+                if (editingTotalsId === btn.dataset.removeInstance) resetTotalsEdit();
                 buildTotalsList();
             });
         });
+    }
+
+    function resetTotalsEdit() {
+        editingTotalsId = null;
+        addWidgetType.value = 'summary';
+        addWidgetAccount.value = '';
+        addWidgetBtn.textContent = '+ Add';
+        cancelWidgetEditBtn.hidden = true;
     }
 
     function populateAccountSelect() {
@@ -737,15 +859,45 @@
         forecastListEl.innerHTML = instances.map(w => `
             <div class="widget-instance-row">
                 <span>${accountLabel(w.accountId)} <span class="muted" style="font-size:0.8rem;">— ${forecastSummary(w)}</span></span>
-                <button type="button" class="icon-btn" data-remove-forecast="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                <span class="row-actions">
+                    <button type="button" class="icon-btn" data-edit-forecast="${w.id}" title="Edit" style="border:none;background:none;cursor:pointer;">✎</button>
+                    <button type="button" class="icon-btn money-negative" data-remove-forecast="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                </span>
             </div>
         `).join('');
+        forecastListEl.querySelectorAll('[data-edit-forecast]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const w = draftWidgets.find(w => w.id === btn.dataset.editForecast);
+                if (!w) return;
+                editingForecastId = w.id;
+                addForecastAccount.value = w.accountId;
+                addForecastPastAmount.value = w.pastAmount;
+                addForecastPastUnit.value = w.pastUnit;
+                addForecastFutureAmount.value = w.futureAmount;
+                addForecastFutureUnit.value = w.futureUnit;
+                addForecastThreshold.value = (w.thresholdCents / 100).toFixed(2);
+                addForecastBtn.textContent = 'Update';
+                cancelForecastEditBtn.hidden = false;
+            });
+        });
         forecastListEl.querySelectorAll('[data-remove-forecast]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeForecast);
+                if (editingForecastId === btn.dataset.removeForecast) resetForecastEdit();
                 buildForecastList();
             });
         });
+    }
+
+    function resetForecastEdit() {
+        editingForecastId = null;
+        addForecastPastAmount.value = '10';
+        addForecastPastUnit.value = 'days';
+        addForecastFutureAmount.value = '6';
+        addForecastFutureUnit.value = 'months';
+        addForecastThreshold.value = '1000.00';
+        addForecastBtn.textContent = '+ Add';
+        cancelForecastEditBtn.hidden = true;
     }
 
     // No "All accounts" option here either — same reasoning as
@@ -763,19 +915,46 @@
         balanceListEl.innerHTML = instances.map(w => `
             <div class="widget-instance-row">
                 <span>${accountLabel(w.accountId)}</span>
-                <button type="button" class="icon-btn" data-remove-balance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                <span class="row-actions">
+                    <button type="button" class="icon-btn" data-edit-balance="${w.id}" title="Edit" style="border:none;background:none;cursor:pointer;">✎</button>
+                    <button type="button" class="icon-btn money-negative" data-remove-balance="${w.id}" title="Remove" style="border:none;background:none;cursor:pointer;">🗑</button>
+                </span>
             </div>
         `).join('');
+        balanceListEl.querySelectorAll('[data-edit-balance]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const w = draftWidgets.find(w => w.id === btn.dataset.editBalance);
+                if (!w) return;
+                editingBalanceId = w.id;
+                addBalanceAccount.value = w.accountId;
+                addBalanceBtn.textContent = 'Update';
+                cancelBalanceEditBtn.hidden = false;
+            });
+        });
         balanceListEl.querySelectorAll('[data-remove-balance]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 draftWidgets = draftWidgets.filter(w => w.id !== btn.dataset.removeBalance);
+                if (editingBalanceId === btn.dataset.removeBalance) resetBalanceEdit();
                 buildBalanceList();
             });
         });
     }
 
+    function resetBalanceEdit() {
+        editingBalanceId = null;
+        addBalanceBtn.textContent = '+ Add';
+        cancelBalanceEditBtn.hidden = true;
+    }
+
     document.getElementById('customize-dashboard-btn').addEventListener('click', () => {
         draftWidgets = currentWidgets.map(w => ({ ...w }));
+        resetTotalsEdit();
+        resetForecastEdit();
+        resetBalanceEdit();
+        const existingPie = draftWidgets.find(w => w.type === 'spendingPie');
+        spendingPieCategoryIds = existingPie && existingPie.selectedCategoryIds ? existingPie.selectedCategoryIds.map(String) : [];
+        spendingPieTopNSelect.value = existingPie && existingPie.pieTopN === 10 ? '10' : '5';
+        spendingPieCategoriesPanel.hidden = true;
         buildSingletonChecklist();
         populateAccountSelect();
         populateForecastAccountSelect();
@@ -786,36 +965,56 @@
         alignSelect.value = align;
         customizeOverlay.hidden = false;
     });
+    document.getElementById('cancel-widget-edit-btn').addEventListener('click', resetTotalsEdit);
+    document.getElementById('cancel-forecast-edit-btn').addEventListener('click', resetForecastEdit);
+    document.getElementById('cancel-balance-edit-btn').addEventListener('click', resetBalanceEdit);
     document.getElementById('cancel-widgets-btn').addEventListener('click', () => { customizeOverlay.hidden = true; });
     customizeOverlay.addEventListener('click', (e) => { if (e.target === customizeOverlay) customizeOverlay.hidden = true; });
 
-    document.getElementById('add-widget-btn').addEventListener('click', () => {
+    addWidgetBtn.addEventListener('click', () => {
         const type = addWidgetType.value;
         const accountId = addWidgetAccount.value || null;
-        draftWidgets.push({ id: makeWidgetId(type), type, accountId });
+        if (editingTotalsId) {
+            const w = draftWidgets.find(w => w.id === editingTotalsId);
+            if (w) { w.type = type; w.accountId = accountId; }
+        } else {
+            draftWidgets.push({ id: makeWidgetId(type), type, accountId });
+        }
+        resetTotalsEdit();
         buildTotalsList();
     });
 
-    document.getElementById('add-forecast-btn').addEventListener('click', () => {
+    addForecastBtn.addEventListener('click', () => {
         const accountId = addForecastAccount.value;
         if (!accountId) return;
-        draftWidgets.push({
-            id: makeWidgetId('forecast'),
-            type: 'forecast',
+        const values = {
             accountId,
             pastAmount: Number(addForecastPastAmount.value) || 10,
             pastUnit: addForecastPastUnit.value,
             futureAmount: Number(addForecastFutureAmount.value) || 6,
             futureUnit: addForecastFutureUnit.value,
             thresholdCents: window.BWMoney.toCents(addForecastThreshold.value || 0)
-        });
+        };
+        if (editingForecastId) {
+            const w = draftWidgets.find(w => w.id === editingForecastId);
+            if (w) Object.assign(w, values);
+        } else {
+            draftWidgets.push({ id: makeWidgetId('forecast'), type: 'forecast', ...values });
+        }
+        resetForecastEdit();
         buildForecastList();
     });
 
-    document.getElementById('add-balance-btn').addEventListener('click', () => {
+    addBalanceBtn.addEventListener('click', () => {
         const accountId = addBalanceAccount.value;
         if (!accountId) return;
-        draftWidgets.push({ id: makeWidgetId('accountBalance'), type: 'accountBalance', accountId });
+        if (editingBalanceId) {
+            const w = draftWidgets.find(w => w.id === editingBalanceId);
+            if (w) w.accountId = accountId;
+        } else {
+            draftWidgets.push({ id: makeWidgetId('accountBalance'), type: 'accountBalance', accountId });
+        }
+        resetBalanceEdit();
         buildBalanceList();
     });
 
@@ -831,6 +1030,11 @@
         checkedSingletons.forEach((type) => {
             if (!widgets.some(w => w.type === type)) widgets.push({ id: type, type, accountId: null });
         });
+        const pieWidget = widgets.find(w => w.type === 'spendingPie');
+        if (pieWidget) {
+            pieWidget.selectedCategoryIds = spendingPieCategoryIds.slice();
+            pieWidget.pieTopN = spendingPieTopNSelect.value === '10' ? 10 : 5;
+        }
 
         currentWidgets = widgets;
         align = alignSelect.value;
@@ -861,6 +1065,7 @@
     async function init() {
         try {
             await loadAccounts();
+            await loadCategories();
             const prefs = await window.BWApi.apiFetch('/api/auth/preferences');
             const dash = prefs.dashboard || { widgets: DEFAULT_WIDGETS, dateRangePreset: 'month', align: 'center' };
             currentWidgets = dash.widgets && dash.widgets.length ? dash.widgets : DEFAULT_WIDGETS;

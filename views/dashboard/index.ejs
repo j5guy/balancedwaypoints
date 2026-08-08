@@ -35,6 +35,21 @@
         <details class="customize-section" open>
             <summary>Charts</summary>
             <div id="singleton-widget-checklist"></div>
+            <div id="spendingpie-categories-panel" class="card" style="margin:8px 0 0 28px;padding:10px;" hidden>
+                <div class="form-group" style="max-width:220px;">
+                    <label for="spendingpie-topn-select">When no categories are selected below, show</label>
+                    <select id="spendingpie-topn-select">
+                        <option value="5">Top 5</option>
+                        <option value="10">Top 10</option>
+                    </select>
+                </div>
+                <p class="muted" style="font-size:0.8rem;">Choose which categories get their own slice — everything else is grouped into a gray "Other" slice. Leave none selected to use the Top N setting above instead.</p>
+                <div class="btn-row" style="margin-bottom:8px;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="spendingpie-select-all-btn">Select all</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="spendingpie-deselect-all-btn">Deselect all</button>
+                </div>
+                <div id="spendingpie-categories-list"></div>
+            </div>
         </details>
 
         <details class="customize-section">
@@ -57,8 +72,9 @@
                         <option value="">All accounts</option>
                     </select>
                 </div>
-                <div class="form-group" style="align-self:flex-end;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="add-widget-btn">+ Add</button>
+                <div class="form-group" style="align-self:flex-end;display:flex;gap:6px;">
+                    <button type="button" class="btn btn-success btn-sm" id="add-widget-btn">+ Add</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="cancel-widget-edit-btn" hidden>Cancel</button>
                 </div>
             </div>
         </details>
@@ -72,8 +88,9 @@
                     <label for="add-balance-account">Account</label>
                     <select id="add-balance-account"></select>
                 </div>
-                <div class="form-group" style="align-self:flex-end;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="add-balance-btn">+ Add</button>
+                <div class="form-group" style="align-self:flex-end;display:flex;gap:6px;">
+                    <button type="button" class="btn btn-success btn-sm" id="add-balance-btn">+ Add</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="cancel-balance-edit-btn" hidden>Cancel</button>
                 </div>
             </div>
         </details>
@@ -123,8 +140,9 @@
                     <label for="add-forecast-threshold">Low-balance threshold</label>
                     <input type="number" id="add-forecast-threshold" value="1000.00" min="0" step="0.01">
                 </div>
-                <div class="form-group" style="align-self:flex-end;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="add-forecast-btn">+ Add</button>
+                <div class="form-group" style="align-self:flex-end;display:flex;gap:6px;">
+                    <button type="button" class="btn btn-success btn-sm" id="add-forecast-btn">+ Add</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="cancel-forecast-edit-btn" hidden>Cancel</button>
                 </div>
             </div>
         </details>

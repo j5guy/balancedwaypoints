@@ -282,6 +282,12 @@ function sanitizeDashboardWidgets(input) {
             entry.futureUnit = DASHBOARD_FORECAST_UNITS.includes(w.futureUnit) ? w.futureUnit : 'months';
             entry.thresholdCents = clampInt(w.thresholdCents, 100000, 0, 100000000);
         }
+        if (w.type === 'spendingPie') {
+            entry.selectedCategoryIds = Array.isArray(w.selectedCategoryIds)
+                ? [...new Set(w.selectedCategoryIds.filter(id => typeof id === 'string' && OBJECT_ID_RE.test(id)))]
+                : [];
+            entry.pieTopN = w.pieTopN === 10 ? 10 : 5;
+        }
         widgets.push(entry);
     }
     return widgets;

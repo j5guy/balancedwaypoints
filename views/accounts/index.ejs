@@ -42,10 +42,16 @@
                 <input type="checkbox" id="acct-closed">
                 <label for="acct-closed">Closed</label>
             </div>
+        </div>
+        <div class="form-row">
             <div class="form-group">
-                <label for="acct-forecast-threshold">Forecast low-balance threshold</label>
-                <input type="number" id="acct-forecast-threshold" step="0.01" value="0">
-                <p class="form-hint">This account's Forecast chart flags the first projected day the balance would drop below this.</p>
+                <label for="acct-forecast-threshold">Warning threshold (optional)</label>
+                <input type="number" id="acct-forecast-threshold" step="0.01" placeholder="No warning threshold">
+                <p class="form-hint">The Forecast chart flags the first projected day the balance would drop below this, and colors the area below it. Leave blank to disable. Not shown for credit card, loan, or other-type accounts, where a negative balance is normal.</p>
+            </div>
+            <div class="form-group">
+                <label for="acct-forecast-color">Warning color</label>
+                <input type="color" id="acct-forecast-color" value="#B5433A">
             </div>
         </div>
         <div class="btn-row">

@@ -1,4 +1,5 @@
 const categories = require('../services/database/categories');
+const categoryCleanup = require('../services/database/categoryCleanup');
 const { resolveActingOwner } = require('../services/authz/actingOwner');
 
 function serialize(category) {
@@ -90,4 +91,48 @@ async function remove(req, res) {
     res.status(204).end();
 }
 
-module.exports = { list, create, update, remove };
+// ── Cleanup tool (views/budget/categoriesCleanup.ejs) — duplicate-merge
+// and unused-delete, both scrubbing every reference outside Transactions
+// too (Payee defaults, Rule setCategory actions, dashboard widget category
+// selections), not just the ones the single-category delete/reassign flow
+// above already covers.
+async function cleanupReport(req, res) {
+    const ctx = await resolveActingOwner(req, res);
+    if (!ctx) return;
+    const [duplicateGroups, unused] = await Promise.all([
+        categoryCleanup.findDuplicates(ctx.ownerId),
+        categoryCleanup.findUnused(ctx.ownerId)
+    ]);
+    res.json({ duplicateGroups, unused });
+}
+
+async function merge(req, res) {
+    const ctx = await resolveActingOwner(req, res, { write: true });
+    if (!ctx) return;
+    const { fromIds, toId } = req.body || {};
+    if (!Array.isArray(fromIds) || fromIds.length === 0) return res.status(400).json({ error: 'fromIds is required' });
+    if (typeof toId !== 'string' || !toId) return res.status(400).json({ error: 'toId is required' });
+    if (fromIds.some(id => String(id) === String(toId))) return res.status(400).json({ error: "Can't merge a category into itself" });
+
+    const target = await categories.findById(toId, ctx.ownerId);
+    if (!target) return res.status(400).json({ error: 'Target category not found' });
+    for (const id of fromIds) {
+        const source = await categories.findById(id, ctx.ownerId);
+        if (!source) return res.status(400).json({ error: 'One of the selected categories was not found' });
+    }
+
+    await categoryCleanup.mergeCategories(fromIds, toId, ctx.ownerId);
+    res.status(204).end();
+}
+
+async function bulkDelete(req, res) {
+    const ctx = await resolveActingOwner(req, res, { write: true });
+    if (!ctx) return;
+    const { categoryIds } = req.body || {};
+    if (!Array.isArray(categoryIds) || categoryIds.length === 0) return res.status(400).json({ error: 'categoryIds is required' });
+
+    const result = await categoryCleanup.deleteUnused(categoryIds, ctx.ownerId);
+    res.json(result);
+}
+
+module.exports = { list, create, update, remove, cleanupReport, merge, bulkDelete };

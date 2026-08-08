@@ -17,6 +17,10 @@ router.get('/budget', requireAuth, (req, res) => {
     res.render('budget/index', { title: 'Budget' });
 });
 
+router.get('/budget/categories/cleanup', requireAuth, (req, res) => {
+    res.render('budget/categoriesCleanup', { title: 'Clean Up Categories' });
+});
+
 router.get('/accounts', requireAuth, (req, res) => {
     res.render('accounts/index', { title: 'Accounts' });
 });

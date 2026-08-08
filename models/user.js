@@ -17,7 +17,16 @@ const dashboardWidgetSchema = new mongoose.Schema({
     futureUnit: { type: String, enum: ['days', 'weeks', 'months', 'years'], default: 'months' },
     // $1,000.00 default low-balance threshold for the forecast widget's
     // red danger zone (public/js/dashboard.js's buildForecastSvg).
-    thresholdCents: { type: Number, default: 100000 }
+    thresholdCents: { type: Number, default: 100000 },
+    // Only meaningful for type:'spendingPie' — which categories get their
+    // own slice vs. being folded into the gray "Other" bucket (see
+    // buildCategoryPieSvg). Empty/absent means no filter is configured:
+    // falls back to the automatic top-N-by-spend behavior below.
+    selectedCategoryIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }],
+    // Only meaningful for type:'spendingPie' when selectedCategoryIds is
+    // empty — how many top-spend categories get their own slice before the
+    // rest fold into "Other".
+    pieTopN: { type: Number, enum: [5, 10], default: 5 }
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({

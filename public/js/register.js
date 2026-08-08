@@ -886,8 +886,12 @@
             const y = yAt(t.cents);
             const bandHeight = prevY - y;
             if (bandHeight > 0) {
-                zones.push(`<rect class="forecast-danger-zone" x="${padLeft}" y="${y}" width="${chartW}" height="${bandHeight}" style="fill:${t.color};fill-opacity:0.12;"></rect>`);
-                thresholdLines.push(`<line class="forecast-threshold-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" style="stroke:${t.color};stroke-opacity:0.6;"></line>`);
+                // 0.20 rather than the dashboard widget's fixed 0.12 — a
+                // single hardcoded red zone reads fine faint, but multiple
+                // adjacent user-chosen colors need more contrast to stay
+                // visually distinct from each other at a glance.
+                zones.push(`<rect class="forecast-danger-zone" x="${padLeft}" y="${y}" width="${chartW}" height="${bandHeight}" style="fill:${t.color};fill-opacity:0.20;"></rect>`);
+                thresholdLines.push(`<line class="forecast-threshold-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" style="stroke:${t.color};stroke-opacity:0.8;"></line>`);
             }
             prevY = y;
         });

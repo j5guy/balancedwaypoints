@@ -87,7 +87,7 @@
         document.getElementById('acct-on-budget').checked = account.onBudget;
         document.getElementById('acct-closed-group').hidden = false;
         document.getElementById('acct-closed').checked = account.closed;
-        document.getElementById('acct-forecast-threshold').value = ((account.forecastThresholdCents || 0) / 100).toFixed(2);
+        document.getElementById('acct-forecast-threshold').value = account.forecastThresholdCents != null ? (account.forecastThresholdCents / 100).toFixed(2) : '';
         document.getElementById('acct-forecast-color').value = account.forecastThresholdColor || '#B5433A';
         form.hidden = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -103,7 +103,7 @@
         document.getElementById('acct-on-budget').checked = true;
         document.getElementById('acct-closed-group').hidden = true;
         document.getElementById('acct-closed').checked = false;
-        document.getElementById('acct-forecast-threshold').value = '0';
+        document.getElementById('acct-forecast-threshold').value = '';
         document.getElementById('acct-forecast-color').value = '#B5433A';
         form.hidden = true;
     }
@@ -115,6 +115,13 @@
     });
     document.getElementById('cancel-account-btn').addEventListener('click', resetForm);
 
+    // A blank warning threshold means the register's Forecast chart won't
+    // show one at all, distinct from an explicit $0.
+    function optionalCents(inputId) {
+        const raw = document.getElementById(inputId).value.trim();
+        return raw === '' ? null : window.BWMoney.toCents(raw);
+    }
+
     document.getElementById('save-account-btn').addEventListener('click', async () => {
         const name = document.getElementById('acct-name').value.trim();
         if (!name) return;
@@ -122,7 +129,7 @@
             name,
             type: document.getElementById('acct-type').value,
             startingBalanceCents: window.BWMoney.toCents(document.getElementById('acct-balance').value || 0),
-            forecastThresholdCents: window.BWMoney.toCents(document.getElementById('acct-forecast-threshold').value || 0),
+            forecastThresholdCents: optionalCents('acct-forecast-threshold'),
             forecastThresholdColor: document.getElementById('acct-forecast-color').value,
             onBudget: document.getElementById('acct-on-budget').checked
         };

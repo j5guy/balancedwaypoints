@@ -35,12 +35,20 @@
     // ?account=<accountId> too, which is a harmless no-op when it resolves
     // to yourself (see services/authz/actingOwner.js's resolveActingOwner).
     let accountRole = 'owner';
+    let accountType = 'checking';
     // Set from the account itself (see loadReferenceData) rather than a
     // register/user preference — same idea as the Dashboard's per-widget
     // forecast threshold, just one persistent value per account (see
-    // models/account.js) instead of one per widget instance.
-    let forecastThresholdCents = 0;
+    // models/account.js) instead of one per widget instance. null = no
+    // warning threshold configured — the chart just shows the balance
+    // line, no danger zone/crossing warnings.
+    let forecastThresholdCents = null;
     let forecastThresholdColor = '#B5433A';
+    // Credit/loan/other accounts routinely sit negative (that's debt, not
+    // trouble) — a low-balance warning doesn't mean anything there, so it's
+    // suppressed regardless of whether a threshold is configured, same as
+    // if none were set at all.
+    const SUPPRESS_WARNING_TYPES = ['credit', 'loan', 'other'];
 
     const COLUMN_LABELS = {
         date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
@@ -91,7 +99,8 @@
             window.BWApi.apiFetch(`/api/payees?account=${accountId}`)
         ]);
         accountRole = account.role;
-        forecastThresholdCents = account.forecastThresholdCents || 0;
+        accountType = account.type;
+        forecastThresholdCents = account.forecastThresholdCents != null ? account.forecastThresholdCents : null;
         forecastThresholdColor = account.forecastThresholdColor || '#B5433A';
         accounts = accountsRes.accounts;
         categories = categoriesRes.categories;
@@ -826,7 +835,11 @@
     // boundary. thresholdCents/thresholdColor come from the account itself
     // (models/account.js's forecastThresholdCents/Color, see
     // loadReferenceData) rather than a per-widget-instance setting — one
-    // persistent value per account, defaulting to $0/red until set otherwise.
+    // persistent value per account. thresholdCents is null when no warning
+    // threshold is configured, OR when the account is a type where a
+    // negative balance is normal (see loadForecastChart's
+    // SUPPRESS_WARNING_TYPES check) — either way, the chart just shows the
+    // balance line with no danger zone/line/crossing warnings.
     function buildRegisterForecastSvg(rows, thresholdCents, thresholdColor) {
         if (rows.length < 2) return { html: '<div class="empty-state">Not enough data yet.</div>', columns: [] };
         const width = 1400, height = 280;
@@ -834,8 +847,8 @@
         const chartW = width - padLeft - padRight;
         const chartH = height - padTop - padBottom;
         const values = rows.map(r => r.balanceCents);
-        const min = Math.min(0, thresholdCents, ...values);
-        const max = Math.max(0, thresholdCents, ...values);
+        const min = thresholdCents != null ? Math.min(0, thresholdCents, ...values) : Math.min(0, ...values);
+        const max = thresholdCents != null ? Math.max(0, thresholdCents, ...values) : Math.max(0, ...values);
         const range = Math.max(1, max - min);
         const stepX = chartW / (rows.length - 1);
         const xAt = (i) => padLeft + i * stepX;
@@ -846,9 +859,9 @@
         const pastCoords = rows.slice(0, pastEnd + 1).map((r, i) => `${xAt(i)},${yAt(r.balanceCents)}`);
         const futureCoords = rows.slice(pastEnd).map((r, i) => `${xAt(pastEnd + i)},${yAt(r.balanceCents)}`);
 
-        const thresholdY = yAt(thresholdCents);
         const dangerBottom = padTop + chartH;
-        const dangerHeight = dangerBottom - thresholdY;
+        const thresholdY = thresholdCents != null ? yAt(thresholdCents) : null;
+        const dangerHeight = thresholdCents != null ? dangerBottom - thresholdY : 0;
 
         const gridStep = niceStepCents(range, 5);
         const gridLines = [];
@@ -870,8 +883,9 @@
 
         // Marks + calls out every FUTURE dip below the threshold (see
         // findThresholdCrossings) — not a dot on every day a dip stays
-        // under, just the moment it starts.
-        const crossings = findThresholdCrossings(rows, thresholdCents);
+        // under, just the moment it starts. Skipped entirely when there's
+        // no active threshold.
+        const crossings = thresholdCents != null ? findThresholdCrossings(rows, thresholdCents) : [];
         const markers = crossings.map(c => `<circle class="forecast-threshold-marker" cx="${xAt(c.index)}" cy="${yAt(c.balanceCents)}" r="5" style="fill:${thresholdColor};"></circle>`).join('');
         const callouts = crossings.map(c => `<div class="forecast-warning" style="color:${thresholdColor};">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(c.date)} — projected balance ${window.BWMoney.formatCents(c.balanceCents)}</div>`).join('');
 
@@ -918,7 +932,8 @@
                 futureUnit: upcoming.unit || 'days'
             });
             const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
-            const { html, columns, bounds } = buildRegisterForecastSvg(rows, forecastThresholdCents, forecastThresholdColor);
+            const effectiveThresholdCents = SUPPRESS_WARNING_TYPES.includes(accountType) ? null : forecastThresholdCents;
+            const { html, columns, bounds } = buildRegisterForecastSvg(rows, effectiveThresholdCents, forecastThresholdColor);
             chartEl.innerHTML = html;
             // #register-forecast-chart is a static element from the EJS
             // (always in the DOM), unlike the Dashboard's widgets — no need

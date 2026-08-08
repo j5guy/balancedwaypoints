@@ -10,7 +10,7 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         type: account.type,
         onBudget: account.onBudget,
         startingBalanceCents: account.startingBalanceCents,
-        forecastThresholdCents: account.forecastThresholdCents || 0,
+        forecastThresholdCents: account.forecastThresholdCents != null ? account.forecastThresholdCents : null,
         forecastThresholdColor: account.forecastThresholdColor || '#B5433A',
         closed: account.closed,
         notes: account.notes,
@@ -77,7 +77,7 @@ async function create(req, res) {
         type: type || 'checking',
         onBudget: onBudget !== false,
         startingBalanceCents: Number(startingBalanceCents) || 0,
-        forecastThresholdCents: Number(forecastThresholdCents) || 0,
+        forecastThresholdCents: forecastThresholdCents != null && forecastThresholdCents !== '' ? Number(forecastThresholdCents) : null,
         forecastThresholdColor: forecastThresholdColor || '#B5433A',
         notes: notes || ''
     });
@@ -97,7 +97,7 @@ async function update(req, res) {
     if (type !== undefined) data.type = type;
     if (onBudget !== undefined) data.onBudget = !!onBudget;
     if (startingBalanceCents !== undefined) data.startingBalanceCents = Number(startingBalanceCents) || 0;
-    if (forecastThresholdCents !== undefined) data.forecastThresholdCents = Number(forecastThresholdCents) || 0;
+    if (forecastThresholdCents !== undefined) data.forecastThresholdCents = forecastThresholdCents != null && forecastThresholdCents !== '' ? Number(forecastThresholdCents) : null;
     if (forecastThresholdColor !== undefined) data.forecastThresholdColor = forecastThresholdColor || '#B5433A';
     if (closed !== undefined) data.closed = !!closed;
     if (notes !== undefined) data.notes = notes;

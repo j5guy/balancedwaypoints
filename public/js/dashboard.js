@@ -53,6 +53,7 @@
     let align = 'center';
     let month = window.BWDate.todayDateInputValue().slice(0, 7); // 'YYYY-MM', only used for the 'month' preset
     let accounts = []; // loaded once in init() — {id, name, closed, ...}
+    let categories = []; // loaded once in init() — {id, name, group, sortOrder, archived}, for the spendingPie widget's category picker
 
     function makeWidgetId(type) {
         return `${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -179,6 +180,15 @@
             accounts = [...owned, ...shared];
         } catch (err) {
             accounts = [];
+        }
+    }
+
+    async function loadCategories() {
+        try {
+            const { categories: res } = await window.BWApi.apiFetch('/api/categories');
+            categories = res || [];
+        } catch (err) {
+            categories = [];
         }
     }
 
@@ -445,29 +455,49 @@
         return { html, columns, bounds: { xLeft: padLeft, xRight: width - padRight, yTop: padTop, yBottom: padTop + chartH } };
     }
 
-    // Donut chart of spending by category — capped at the top 5 categories
-    // plus an "Other" bucket for the rest (dataviz guidance: pie/donut only
-    // reads at a glance up to ~6 segments; past that, adjacent slices blur
-    // and it stops being legible as anything more precise than "roughly
-    // even" or "roughly nothing"). Legend is mandatory here (≥2 series),
-    // and doubles as exact figures — the donut itself is deliberately just
-    // the at-a-glance shape, with a per-slice <title> for hover detail.
-    function buildCategoryPieSvg(rows) {
+    // Donut chart of spending by category. Two modes:
+    // - No selection configured (selectedCategoryIds empty/absent): capped
+    //   at the top 5 categories plus an "Other" bucket for the rest
+    //   (dataviz guidance: pie/donut only reads at a glance up to ~6
+    //   segments; past that, adjacent slices blur and it stops being
+    //   legible as anything more precise than "roughly even" or "roughly
+    //   nothing").
+    // - Selection configured: only those categories get their own slice,
+    //   in the order they were selected, regardless of rank — everything
+    //   else (unselected categories + uncategorized) folds into "Other".
+    // Legend is mandatory here (≥2 series), and doubles as exact figures —
+    // the donut itself is deliberately just the at-a-glance shape, with a
+    // per-slice <title> for hover detail.
+    function buildCategoryPieSvg(rows, selectedCategoryIds) {
         const spendingRows = rows
             .filter(r => r.totalCents < 0)
             .map(r => ({
                 key: r.category ? String(r.category.id) : 'uncategorized',
                 label: r.category ? r.category.name : 'Uncategorized',
                 value: Math.abs(r.totalCents)
-            }))
-            .sort((a, b) => b.value - a.value);
+            }));
         if (spendingRows.length === 0) return '<div class="empty-state">No spending in this range.</div>';
 
-        const MAX_SLICES = 5;
-        const top = spendingRows.slice(0, MAX_SLICES);
-        const otherValue = spendingRows.slice(MAX_SLICES).reduce((sum, r) => sum + r.value, 0);
-        const slices = otherValue > 0 ? [...top, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : top;
+        let slices;
+        if (selectedCategoryIds && selectedCategoryIds.length) {
+            const selectedSet = new Set(selectedCategoryIds.map(String));
+            const byKey = new Map(spendingRows.map(r => [r.key, r]));
+            // Selection order, not spend rank — a chosen category keeps its
+            // spot even if it has $0 this period (still shown at 0%) so the
+            // legend doesn't reshuffle from period to period.
+            const selected = selectedCategoryIds.map(String).filter((id, i, arr) => arr.indexOf(id) === i)
+                .map(id => byKey.get(id) || { key: id, label: '(deleted category)', value: 0 });
+            const otherValue = spendingRows.filter(r => !selectedSet.has(r.key)).reduce((sum, r) => sum + r.value, 0);
+            slices = otherValue > 0 ? [...selected, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : selected;
+        } else {
+            spendingRows.sort((a, b) => b.value - a.value);
+            const MAX_SLICES = 5;
+            const top = spendingRows.slice(0, MAX_SLICES);
+            const otherValue = spendingRows.slice(MAX_SLICES).reduce((sum, r) => sum + r.value, 0);
+            slices = otherValue > 0 ? [...top, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : top;
+        }
         const total = slices.reduce((sum, s) => sum + s.value, 0);
+        if (total === 0) return '<div class="empty-state">No spending in the selected categories for this range.</div>';
 
         const size = 160, cx = size / 2, cy = size / 2, r = 70, innerR = 42;
         let angle = -Math.PI / 2; // start at 12 o'clock
@@ -627,7 +657,7 @@
             div.classList.add('widget-wide');
             const { rows } = await window.BWApi.apiFetch(`/api/reports/spending-by-category?${rangeQuery(periodRange(dateRangePreset))}`);
             div.innerHTML = `<div class="stat-label">${handle}Spending by Category</div><div class="widget-chart"></div>`;
-            div.querySelector('.widget-chart').innerHTML = buildCategoryPieSvg(rows);
+            div.querySelector('.widget-chart').innerHTML = buildCategoryPieSvg(rows, widget.selectedCategoryIds);
             return div;
         }
 
@@ -669,6 +699,8 @@
     // mutated currentWidgets before Save is ever clicked.
     const customizeOverlay = document.getElementById('customize-dashboard-overlay');
     const singletonChecklist = document.getElementById('singleton-widget-checklist');
+    const spendingPieCategoriesPanel = document.getElementById('spendingpie-categories-panel');
+    const spendingPieCategoriesList = document.getElementById('spendingpie-categories-list');
     const totalsListEl = document.getElementById('totals-widget-list');
     const addWidgetType = document.getElementById('add-widget-type');
     const addWidgetAccount = document.getElementById('add-widget-account');
@@ -702,8 +734,42 @@
             <div class="checkbox-row form-group">
                 <input type="checkbox" id="widget-check-${w.type}" data-widget-type="${w.type}" ${draftWidgets.some(dw => dw.type === w.type) ? 'checked' : ''}>
                 <label for="widget-check-${w.type}">${w.label}</label>
+                ${w.type === 'spendingPie' ? '<button type="button" class="icon-btn" id="spendingpie-categories-btn" title="Choose categories" style="border:none;background:none;cursor:pointer;">⚙</button>' : ''}
             </div>
         `).join('');
+        document.getElementById('spendingpie-categories-btn').addEventListener('click', () => {
+            spendingPieCategoriesPanel.hidden = !spendingPieCategoriesPanel.hidden;
+            if (!spendingPieCategoriesPanel.hidden) buildSpendingPieCategoriesList();
+        });
+    }
+
+    // Selection for the spendingPie widget's category picker — kept
+    // separate from draftWidgets while the modal is open (rather than
+    // mutating a widget entry directly) since the widget might not even be
+    // checked/present in draftWidgets yet while its categories are being
+    // configured; save-widgets-btn below writes this into the final entry.
+    let spendingPieCategoryIds = [];
+
+    function buildSpendingPieCategoriesList() {
+        const sorted = [...categories].filter(c => !c.archived).sort((a, b) => a.name.localeCompare(b.name));
+        if (sorted.length === 0) {
+            spendingPieCategoriesList.innerHTML = '<p class="muted" style="font-size:0.85rem;">No categories yet.</p>';
+            return;
+        }
+        spendingPieCategoriesList.innerHTML = sorted.map(c => `
+            <div class="checkbox-row form-group">
+                <input type="checkbox" id="spendingpie-cat-${c.id}" data-category-id="${c.id}" ${spendingPieCategoryIds.includes(c.id) ? 'checked' : ''}>
+                <label for="spendingpie-cat-${c.id}">${c.name}</label>
+            </div>
+        `).join('');
+        spendingPieCategoriesList.querySelectorAll('[data-category-id]').forEach((cb) => {
+            cb.addEventListener('change', () => {
+                const id = cb.dataset.categoryId;
+                spendingPieCategoryIds = cb.checked
+                    ? [...spendingPieCategoryIds, id]
+                    : spendingPieCategoryIds.filter(x => x !== id);
+            });
+        });
     }
 
     function buildTotalsList() {
@@ -865,6 +931,9 @@
         resetTotalsEdit();
         resetForecastEdit();
         resetBalanceEdit();
+        const existingPie = draftWidgets.find(w => w.type === 'spendingPie');
+        spendingPieCategoryIds = existingPie && existingPie.selectedCategoryIds ? existingPie.selectedCategoryIds.map(String) : [];
+        spendingPieCategoriesPanel.hidden = true;
         buildSingletonChecklist();
         populateAccountSelect();
         populateForecastAccountSelect();
@@ -940,6 +1009,8 @@
         checkedSingletons.forEach((type) => {
             if (!widgets.some(w => w.type === type)) widgets.push({ id: type, type, accountId: null });
         });
+        const pieWidget = widgets.find(w => w.type === 'spendingPie');
+        if (pieWidget) pieWidget.selectedCategoryIds = spendingPieCategoryIds.slice();
 
         currentWidgets = widgets;
         align = alignSelect.value;
@@ -970,6 +1041,7 @@
     async function init() {
         try {
             await loadAccounts();
+            await loadCategories();
             const prefs = await window.BWApi.apiFetch('/api/auth/preferences');
             const dash = prefs.dashboard || { widgets: DEFAULT_WIDGETS, dateRangePreset: 'month', align: 'center' };
             currentWidgets = dash.widgets && dash.widgets.length ? dash.widgets : DEFAULT_WIDGETS;

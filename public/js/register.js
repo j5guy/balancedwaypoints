@@ -262,7 +262,7 @@
             <td class="editable-cell" data-col="date">${window.BWDate.formatDate(t.date)}</td>
             <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
             <td class="editable-cell" data-col="category">${category}</td>
-            <td class="wrap editable-cell" data-col="notes">${t.notes || ''}</td>
+            <td class="editable-cell" data-col="notes" title="${escapeAttr(t.notes || '')}">${t.notes || ''}</td>
             <td class="editable-cell" data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
             <td class="money editable-cell ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents, maskAmount)}</td>
             <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents, maskBalance)}</td>
@@ -557,7 +557,7 @@
             <td data-col="date">${window.BWDate.formatDate(occurrence.date)}</td>
             <td data-col="payee">${payeeCell}</td>
             <td data-col="category">${category}</td>
-            <td class="wrap" data-col="notes">${s.notes || ''}</td>
+            <td data-col="notes" title="${escapeAttr(s.notes || '')}">${s.notes || ''}</td>
             <td data-col="tags"></td>
             <td class="money ${amountClass}" data-col="amount">${window.BWMoney.formatCents(s.amountCents, maskAmount)}</td>
             <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents, maskBalance)}</td>

@@ -286,6 +286,7 @@ function sanitizeDashboardWidgets(input) {
             entry.selectedCategoryIds = Array.isArray(w.selectedCategoryIds)
                 ? [...new Set(w.selectedCategoryIds.filter(id => typeof id === 'string' && OBJECT_ID_RE.test(id)))]
                 : [];
+            entry.pieTopN = w.pieTopN === 10 ? 10 : 5;
         }
         widgets.push(entry);
     }

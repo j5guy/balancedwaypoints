@@ -21,8 +21,12 @@ const dashboardWidgetSchema = new mongoose.Schema({
     // Only meaningful for type:'spendingPie' — which categories get their
     // own slice vs. being folded into the gray "Other" bucket (see
     // buildCategoryPieSvg). Empty/absent means no filter is configured:
-    // falls back to the automatic top-5-by-spend behavior.
-    selectedCategoryIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }]
+    // falls back to the automatic top-N-by-spend behavior below.
+    selectedCategoryIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }],
+    // Only meaningful for type:'spendingPie' when selectedCategoryIds is
+    // empty — how many top-spend categories get their own slice before the
+    // rest fold into "Other".
+    pieTopN: { type: Number, enum: [5, 10], default: 5 }
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({

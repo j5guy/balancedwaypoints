@@ -1,0 +1,40 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-categories-cleanup">
+    <div class="page-header">
+        <h1>Clean Up Categories</h1>
+        <a href="/budget" class="btn btn-secondary btn-sm">&larr; Back to Budget</a>
+    </div>
+    <div id="cleanup-error" class="form-error" hidden></div>
+
+    <div class="card">
+        <h3>Duplicate categories</h3>
+        <p class="muted" style="font-size:0.85rem;">Categories with the same name, even across different groups. Pick which one to keep — its transactions, budget history, payee defaults, rules, and dashboard chart selections all move over automatically before the others are deleted.</p>
+        <div id="duplicates-list"></div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+        <h3>Unused categories</h3>
+        <p class="muted" style="font-size:0.85rem;">Categories with no transactions, ever. Deleting one also clears it from any payee default, rule, or dashboard chart selection that still points at it.</p>
+        <div class="btn-row" style="margin-bottom:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="unused-select-all-btn">Select all</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="unused-deselect-all-btn">Deselect all</button>
+            <button type="button" class="btn btn-danger btn-sm" id="unused-delete-btn" disabled>Delete selected</button>
+        </div>
+        <div id="unused-list"></div>
+    </div>
+</main>
+
+<div class="modal-overlay" id="confirm-delete-overlay" hidden>
+    <div class="modal-card">
+        <h3>Delete <span id="confirm-delete-count"></span> categories</h3>
+        <p class="form-error">This <strong>cannot be undone</strong>.</p>
+        <ul id="confirm-delete-list" style="max-height:200px;overflow-y:auto;"></ul>
+        <div class="btn-row">
+            <button type="button" class="btn btn-danger" id="confirm-delete-btn">Delete</button>
+            <button type="button" class="btn btn-secondary" id="cancel-delete-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<%- include('../components/footer', { pageScripts: ['/js/categoriesCleanup.js'] }) %>

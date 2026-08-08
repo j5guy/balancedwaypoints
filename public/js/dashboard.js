@@ -457,19 +457,25 @@
 
     // Donut chart of spending by category. Two modes:
     // - No selection configured (selectedCategoryIds empty/absent): capped
-    //   at the top 5 categories plus an "Other" bucket for the rest
-    //   (dataviz guidance: pie/donut only reads at a glance up to ~6
-    //   segments; past that, adjacent slices blur and it stops being
-    //   legible as anything more precise than "roughly even" or "roughly
-    //   nothing").
+    //   at the top N (5 or 10, per-widget `topN`) categories plus an
+    //   "Other" bucket for the rest (dataviz guidance: pie/donut only reads
+    //   at a glance up to ~6-10 segments; past that, adjacent slices blur
+    //   and it stops being legible as anything more precise than "roughly
+    //   even" or "roughly nothing" — 10 is already pushing it, hence
+    //   capping the option there rather than offering more).
     // - Selection configured: only those categories get their own slice —
     //   everything else (unselected categories + uncategorized) folds into
-    //   "Other". Both modes order slices largest-to-smallest by spend, with
-    //   "Other" always last regardless of its size.
+    //   "Other". A selected category no longer in the returned rows (e.g.
+    //   since deleted) is silently dropped rather than shown as a
+    //   placeholder slice.
+    // Both modes order slices largest-to-smallest by spend, with "Other"
+    // always last regardless of its size, and drop any slice that rounds
+    // to 0% of the total — a sliver with no visible arc and "$0.00 (0%)"
+    // in the legend isn't informative, just clutter.
     // Legend is mandatory here (≥2 series), and doubles as exact figures —
     // the donut itself is deliberately just the at-a-glance shape, with a
     // per-slice <title> for hover detail.
-    function buildCategoryPieSvg(rows, selectedCategoryIds) {
+    function buildCategoryPieSvg(rows, selectedCategoryIds, topN) {
         const spendingRows = rows
             .filter(r => r.totalCents < 0)
             .map(r => ({
@@ -484,19 +490,22 @@
             const selectedSet = new Set(selectedCategoryIds.map(String));
             const byKey = new Map(spendingRows.map(r => [r.key, r]));
             const selected = selectedCategoryIds.map(String).filter((id, i, arr) => arr.indexOf(id) === i)
-                .map(id => byKey.get(id) || { key: id, label: '(deleted category)', value: 0 })
+                .map(id => byKey.get(id))
+                .filter(Boolean)
                 .sort((a, b) => b.value - a.value);
             const otherValue = spendingRows.filter(r => !selectedSet.has(r.key)).reduce((sum, r) => sum + r.value, 0);
             slices = otherValue > 0 ? [...selected, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : selected;
         } else {
             spendingRows.sort((a, b) => b.value - a.value);
-            const MAX_SLICES = 5;
-            const top = spendingRows.slice(0, MAX_SLICES);
-            const otherValue = spendingRows.slice(MAX_SLICES).reduce((sum, r) => sum + r.value, 0);
+            const maxSlices = topN === 10 ? 10 : 5;
+            const top = spendingRows.slice(0, maxSlices);
+            const otherValue = spendingRows.slice(maxSlices).reduce((sum, r) => sum + r.value, 0);
             slices = otherValue > 0 ? [...top, { key: 'other', label: 'Other', value: otherValue, isOther: true }] : top;
         }
-        const total = slices.reduce((sum, s) => sum + s.value, 0);
+        let total = slices.reduce((sum, s) => sum + s.value, 0);
         if (total === 0) return '<div class="empty-state">No spending in the selected categories for this range.</div>';
+        slices = slices.filter(s => Math.round((s.value / total) * 100) > 0);
+        total = slices.reduce((sum, s) => sum + s.value, 0);
 
         const size = 160, cx = size / 2, cy = size / 2, r = 70, innerR = 42;
         let angle = -Math.PI / 2; // start at 12 o'clock
@@ -656,7 +665,7 @@
             div.classList.add('widget-wide');
             const { rows } = await window.BWApi.apiFetch(`/api/reports/spending-by-category?${rangeQuery(periodRange(dateRangePreset))}`);
             div.innerHTML = `<div class="stat-label">${handle}Spending by Category</div><div class="widget-chart"></div>`;
-            div.querySelector('.widget-chart').innerHTML = buildCategoryPieSvg(rows, widget.selectedCategoryIds);
+            div.querySelector('.widget-chart').innerHTML = buildCategoryPieSvg(rows, widget.selectedCategoryIds, widget.pieTopN);
             return div;
         }
 
@@ -702,6 +711,7 @@
     const spendingPieCategoriesList = document.getElementById('spendingpie-categories-list');
     const spendingPieSelectAllBtn = document.getElementById('spendingpie-select-all-btn');
     const spendingPieDeselectAllBtn = document.getElementById('spendingpie-deselect-all-btn');
+    const spendingPieTopNSelect = document.getElementById('spendingpie-topn-select');
     const totalsListEl = document.getElementById('totals-widget-list');
     const addWidgetType = document.getElementById('add-widget-type');
     const addWidgetAccount = document.getElementById('add-widget-account');
@@ -943,6 +953,7 @@
         resetBalanceEdit();
         const existingPie = draftWidgets.find(w => w.type === 'spendingPie');
         spendingPieCategoryIds = existingPie && existingPie.selectedCategoryIds ? existingPie.selectedCategoryIds.map(String) : [];
+        spendingPieTopNSelect.value = existingPie && existingPie.pieTopN === 10 ? '10' : '5';
         spendingPieCategoriesPanel.hidden = true;
         buildSingletonChecklist();
         populateAccountSelect();
@@ -1020,7 +1031,10 @@
             if (!widgets.some(w => w.type === type)) widgets.push({ id: type, type, accountId: null });
         });
         const pieWidget = widgets.find(w => w.type === 'spendingPie');
-        if (pieWidget) pieWidget.selectedCategoryIds = spendingPieCategoryIds.slice();
+        if (pieWidget) {
+            pieWidget.selectedCategoryIds = spendingPieCategoryIds.slice();
+            pieWidget.pieTopN = spendingPieTopNSelect.value === '10' ? 10 : 5;
+        }
 
         currentWidgets = widgets;
         align = alignSelect.value;

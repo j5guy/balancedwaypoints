@@ -36,7 +36,14 @@
             <summary>Charts</summary>
             <div id="singleton-widget-checklist"></div>
             <div id="spendingpie-categories-panel" class="card" style="margin:8px 0 0 28px;padding:10px;" hidden>
-                <p class="muted" style="font-size:0.8rem;">Choose which categories get their own slice — everything else is grouped into a gray "Other" slice. Leave none selected to show the top 5 automatically.</p>
+                <div class="form-group" style="max-width:220px;">
+                    <label for="spendingpie-topn-select">When no categories are selected below, show</label>
+                    <select id="spendingpie-topn-select">
+                        <option value="5">Top 5</option>
+                        <option value="10">Top 10</option>
+                    </select>
+                </div>
+                <p class="muted" style="font-size:0.8rem;">Choose which categories get their own slice — everything else is grouped into a gray "Other" slice. Leave none selected to use the Top N setting above instead.</p>
                 <div class="btn-row" style="margin-bottom:8px;">
                     <button type="button" class="btn btn-secondary btn-sm" id="spendingpie-select-all-btn">Select all</button>
                     <button type="button" class="btn btn-secondary btn-sm" id="spendingpie-deselect-all-btn">Deselect all</button>

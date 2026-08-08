@@ -323,6 +323,26 @@
         }
     });
 
+    // Deep-link from the register page's "Account settings" button
+    // (views/accounts/show.ejs), same ?account=-style pattern as the
+    // Import link — opens straight into edit mode for that account instead
+    // of making the user find it in the table. Fetched directly by id
+    // rather than waiting on load()'s list, and the query param is
+    // stripped afterward so a later refresh of this page doesn't re-open it.
+    async function openEditFromQueryParam() {
+        const params = new URLSearchParams(window.location.search);
+        const editId = params.get('edit');
+        if (!editId) return;
+        history.replaceState(null, '', window.location.pathname);
+        try {
+            const account = await window.BWApi.apiFetch(`/api/accounts/${editId}`);
+            startEdit(account);
+        } catch (err) {
+            showError(err);
+        }
+    }
+
     load();
     loadSharedWithMe();
+    openEditFromQueryParam();
 })();

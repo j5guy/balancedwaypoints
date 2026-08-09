@@ -883,9 +883,15 @@
         // meets the dashed projected one.
         const todayX = xAt(pastEnd);
 
-        const xLabels = forecastAxisLabelIndexes(rows.length).map(i => `
-            <text class="trend-axis-label" x="${xAt(i)}" y="${height - 8}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
-        `).join('');
+        // The first/last labels sit right at the chart's own edges — anchor
+        // them start/end (growing inward) instead of middle (growing both
+        // ways), or the last one in particular overflows past the right
+        // edge of the viewBox and gets clipped.
+        const labelIndexes = forecastAxisLabelIndexes(rows.length);
+        const xLabels = labelIndexes.map((i, pos) => {
+            const anchor = pos === 0 ? 'start' : pos === labelIndexes.length - 1 ? 'end' : 'middle';
+            return `<text class="trend-axis-label" x="${xAt(i)}" y="${height - 8}" text-anchor="${anchor}">${window.BWDate.formatDate(rows[i].date)}</text>`;
+        }).join('');
 
         // Marks + calls out every FUTURE dip below the threshold (see
         // findThresholdCrossings) — not a dot on every day a dip stays

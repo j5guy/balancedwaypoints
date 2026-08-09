@@ -257,9 +257,14 @@
         const yAt = (v) => padTop + chartH - ((v - min) / range) * chartH;
         const coords = points.map((p, i) => `${xAt(i)},${yAt(p.value)}`);
 
-        const xLabels = axisLabelIndexes(points.length).map(i => `
-            <text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="middle">${monthShortLabel(points[i].label)}</text>
-        `).join('');
+        // Anchor the first/last labels start/end (growing inward) instead
+        // of middle (growing both ways) — they sit right at the chart's
+        // edges, and middle-anchoring the last one overflows the viewBox.
+        const monthLabelIndexes = axisLabelIndexes(points.length);
+        const xLabels = monthLabelIndexes.map((i, pos) => {
+            const anchor = pos === 0 ? 'start' : pos === monthLabelIndexes.length - 1 ? 'end' : 'middle';
+            return `<text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="${anchor}">${monthShortLabel(points[i].label)}</text>`;
+        }).join('');
         const zeroY = min < 0 && max > 0 ? yAt(0) : null;
 
         const html = `
@@ -295,9 +300,14 @@
         const incomePoints = rows.map((r, i) => `${xAt(i)},${yAt(r.incomeCents)}`);
         const expensePoints = rows.map((r, i) => `${xAt(i)},${yAt(Math.abs(r.expenseCents))}`);
 
-        const xLabels = axisLabelIndexes(rows.length).map(i => `
-            <text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="middle">${monthShortLabel(rows[i].month)}</text>
-        `).join('');
+        // See the net-worth chart's identical comment above — start/end
+        // anchoring for the edge labels keeps the last one from overflowing
+        // the viewBox.
+        const cashFlowLabelIndexes = axisLabelIndexes(rows.length);
+        const xLabels = cashFlowLabelIndexes.map((i, pos) => {
+            const anchor = pos === 0 ? 'start' : pos === cashFlowLabelIndexes.length - 1 ? 'end' : 'middle';
+            return `<text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="${anchor}">${monthShortLabel(rows[i].month)}</text>`;
+        }).join('');
 
         const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Cash flow trend">
@@ -420,9 +430,14 @@
             `);
         }
 
-        const xLabels = axisLabelIndexes(rows.length).map(i => `
-            <text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="middle">${window.BWDate.formatDate(rows[i].date)}</text>
-        `).join('');
+        // See the net-worth chart's identical comment above — start/end
+        // anchoring for the edge labels keeps the last one from overflowing
+        // the viewBox.
+        const forecastLabelIndexes = axisLabelIndexes(rows.length);
+        const xLabels = forecastLabelIndexes.map((i, pos) => {
+            const anchor = pos === 0 ? 'start' : pos === forecastLabelIndexes.length - 1 ? 'end' : 'middle';
+            return `<text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="${anchor}">${window.BWDate.formatDate(rows[i].date)}</text>`;
+        }).join('');
 
         // Marks + calls out every FUTURE dip below the threshold (see
         // findThresholdCrossings) — not a dot on every day a dip stays

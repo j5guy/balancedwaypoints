@@ -235,6 +235,21 @@
                     <th></th>
                 </tr>
             </thead>
+            <tbody id="filter-tbody">
+                <tr class="filter-row">
+                    <td></td>
+                    <td class="muted" style="text-align:center;" title="Live filter — matching rows narrow as you type">⌕</td>
+                    <td data-col="date"><input type="text" id="filter-date" placeholder="Filter…"></td>
+                    <td data-col="payee"><input type="text" id="filter-payee" placeholder="Filter…"></td>
+                    <td data-col="category"><input type="text" id="filter-category" placeholder="Filter…"></td>
+                    <td class="wrap" data-col="notes"><input type="text" id="filter-notes" placeholder="Filter…"></td>
+                    <td data-col="tags"><input type="text" id="filter-tags" placeholder="Filter…"></td>
+                    <td data-col="amount"><input type="text" id="filter-amount" placeholder="Filter…"></td>
+                    <td class="muted" data-col="balance">—</td>
+                    <td data-col="cleared"></td>
+                    <td><button type="button" class="btn btn-secondary btn-sm icon-btn" id="filter-clear-btn" title="Clear filters">✕</button></td>
+                </tr>
+            </tbody>
             <tbody id="quick-add-tbody">
                 <tr class="quick-add-row">
                     <td></td>
@@ -258,21 +273,6 @@
                         <button type="button" class="btn btn-secondary btn-sm icon-btn" id="qa-full-form-btn" title="Open the full form (transfers, splits)">⛶</button>
                         <button type="button" class="btn btn-primary btn-sm" id="qa-add-btn">Add</button>
                     </td>
-                </tr>
-            </tbody>
-            <tbody id="filter-tbody">
-                <tr class="filter-row">
-                    <td></td>
-                    <td class="muted" style="text-align:center;" title="Live filter — matching rows narrow as you type">⌕</td>
-                    <td data-col="date"><input type="text" id="filter-date" placeholder="Filter…"></td>
-                    <td data-col="payee"><input type="text" id="filter-payee" placeholder="Filter…"></td>
-                    <td data-col="category"><input type="text" id="filter-category" placeholder="Filter…"></td>
-                    <td class="wrap" data-col="notes"><input type="text" id="filter-notes" placeholder="Filter…"></td>
-                    <td data-col="tags"><input type="text" id="filter-tags" placeholder="Filter…"></td>
-                    <td data-col="amount"><input type="text" id="filter-amount" placeholder="Filter…"></td>
-                    <td class="muted" data-col="balance">—</td>
-                    <td data-col="cleared"></td>
-                    <td><button type="button" class="btn btn-secondary btn-sm icon-btn" id="filter-clear-btn" title="Clear filters">✕</button></td>
                 </tr>
             </tbody>
             <tbody id="register-tbody"></tbody>

@@ -5,11 +5,13 @@
 // stack and exits.
 //
 // Deliberately simpler than a from-scratch enterprise installer: Docker-only
-// (no local systemd service path, no existing-host-nginx auto-wiring, no
-// minimal-footprint relocation) — see the balancedwaypoints project plan for
-// why. Everything here can be done by hand instead by editing .env directly
-// and running `docker compose -f docker-compose.yml -f docker-compose.nginx.yml
-// -f docker-compose.mongo.yml up -d --build`.
+// (no local systemd service path, no minimal-footprint relocation) — see the
+// balancedwaypoints project plan for why. It does optionally wire up an
+// existing host nginx (see detectHostNginx/installHostNginxSite in
+// ./lib/bringUp) when one's detected running and no site for this app
+// exists yet. Everything here can be done by hand instead by editing .env
+// directly and running `docker compose -f docker-compose.yml -f
+// docker-compose.nginx.yml -f docker-compose.mongo.yml up -d --build`.
 const fs = require('fs');
 const net = require('net');
 const dns = require('dns');
@@ -18,7 +20,10 @@ const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
 const { lanAddresses, printAccessUrls, highlight } = require('./lib/network');
-const { mongoNeedsLegacyArmImage, LEGACY_ARM_MONGO_IMAGE, generateCert, bringUpDocker, detectHostNginx, APP_PORT } = require('./lib/bringUp');
+const {
+    mongoNeedsLegacyArmImage, LEGACY_ARM_MONGO_IMAGE, generateCert, bringUpDocker,
+    detectHostNginx, installHostNginxSite, findOpenPort, isPortFree, APP_PORT
+} = require('./lib/bringUp');
 
 const ROOT = path.join(__dirname, '..');
 const ENV_PATH = path.join(ROOT, '.env');
@@ -77,12 +82,13 @@ function escapeHtml(str) {
 
 const NGINX_PORT_KEYS = new Set(['NGINX_HTTP_PORT', 'NGINX_HTTPS_PORT']);
 
-function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
-    const nginxConflictNote = nginxInfo.running
-        ? `<p class="help warn">nginx is already running on this host — if it's using this port, the bundled Docker nginx container will fail to start. Pick a different port, or stop the host nginx first.</p>`
-        : '';
-
-    const rows = fields.filter(f => !HIDDEN_KEYS.has(f.key)).map(f => {
+function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggestions) {
+    // NGINX_HTTP_PORT/NGINX_HTTPS_PORT are rendered separately below (not
+    // in this generic loop) — when a host nginx is running they're
+    // auto-picked and hidden behind an "advanced" toggle instead of shown
+    // as plain fields, which the generic per-field loop below has no
+    // concept of.
+    const rows = fields.filter(f => !HIDDEN_KEYS.has(f.key) && !NGINX_PORT_KEYS.has(f.key)).map(f => {
         const value = values[f.key] !== undefined ? values[f.key] : f.default;
         const isMongoOnly = MONGO_EXTERNAL_ONLY_KEYS.has(f.key);
         const disabled = isMongoOnly && mongoMode !== 'external';
@@ -94,7 +100,6 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
         <div class="field">
           <label for="${f.key}">${escapeHtml(FIELD_LABELS[f.key] || f.key)}</label>
           ${f.help ? `<p class="help">${escapeHtml(f.help)}</p>` : ''}
-          ${NGINX_PORT_KEYS.has(f.key) ? nginxConflictNote : ''}
           <input type="${inputType}" id="${f.key}" name="${f.key}" value="${escapeHtml(value)}" ${(disabled || certDisabled) ? 'disabled' : ''} autocomplete="off" ${isFqdn ? 'data-dns-check="1"' : ''} />
           ${isFqdn ? `<p class="help dns-status" id="dns-status-WEB_FQDN" style="display:none"></p>` : ''}
         </div>`;
@@ -103,9 +108,68 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
     const armNote = mongoNeedsLegacyArmImage()
         ? `<p class="help warn">This CPU needs an older MongoDB image (${LEGACY_ARM_MONGO_IMAGE}) — set automatically.</p>`
         : '';
-    const hostNginxNote = nginxInfo.installed
-        ? `<p class="help ${nginxInfo.running ? 'warn' : ''}">${nginxInfo.running ? 'nginx is already running' : 'nginx is installed but not currently running'} on this host. This project doesn't wire up a host nginx site automatically (unlike some sibling projects) — the bundled Docker nginx container handles TLS on its own, listening on the ports configured below. If a host nginx is also bound to those ports, the Docker stack will fail to start until that's resolved.</p>`
-        : '';
+
+    // The bundled Docker nginx's own ports — hidden behind an "advanced"
+    // toggle and auto-picked (see computePortSuggestions) whenever a host
+    // nginx is running, since that's the thing actually fronting 80/443 for
+    // the domain in that case; shown normally otherwise.
+    const dockerPortsHtml = `
+    <fieldset>
+      <legend>Docker nginx ports</legend>
+      ${nginxInfo.running ? `
+      <p class="help">Picked automatically (free ports on this host) since the existing nginx above will front
+      this app on the standard 80/443 instead. Only change these if you know what you're doing — they still
+      need to not collide with the host nginx's own ports or anything else already listening here.</p>
+      <label class="checkbox-label"><input type="checkbox" id="advanced-ports-toggle" /> Advanced: customize these ports myself</label>
+      ` : ''}
+      <div id="docker-ports-fields" style="${nginxInfo.running ? 'display:none' : ''}">
+        <div class="field">
+          <label for="NGINX_HTTP_PORT">HTTP port (redirects to HTTPS)</label>
+          <input type="text" id="NGINX_HTTP_PORT" name="NGINX_HTTP_PORT" value="${escapeHtml(portSuggestions.http)}" autocomplete="off" data-port-check="1" />
+          <p class="help port-status" id="port-status-NGINX_HTTP_PORT" style="display:none"></p>
+        </div>
+        <div class="field">
+          <label for="NGINX_HTTPS_PORT">HTTPS port</label>
+          <input type="text" id="NGINX_HTTPS_PORT" name="NGINX_HTTPS_PORT" value="${escapeHtml(portSuggestions.https)}" autocomplete="off" data-port-check="1" />
+          <p class="help port-status" id="port-status-NGINX_HTTPS_PORT" style="display:none"></p>
+        </div>
+      </div>
+    </fieldset>`;
+
+    // Only offered when there's actually something to offer: nginx running,
+    // its config layout recognized, and no balancedwaypoints.conf already
+    // there (an existing one is left alone rather than silently overwritten
+    // — see detectHostNginx). Every other case gets an informational note
+    // instead, no checkbox.
+    const canOfferSite = nginxInfo.running && nginxInfo.canWriteSite && !nginxInfo.siteExists;
+    let hostNginxHtml;
+    if (canOfferSite) {
+        hostNginxHtml = `
+    <fieldset>
+      <legend>Existing nginx</legend>
+      <p class="help">nginx is already running on this host. A site can be added for it automatically — it
+      becomes the public TLS terminator on the standard 80/443 for your domain (plus direct LAN-IP access on
+      its own port below), reverse-proxying to the bundled Docker nginx container, which keeps terminating
+      TLS internally too.</p>
+      <label class="checkbox-label"><input type="checkbox" id="add-nginx-site-toggle" name="addNginxSite" value="1" /> Add an nginx site for this host's existing nginx</label>
+      <div class="field" id="host-nginx-ip-port-field" style="display:none">
+        <label for="HOST_NGINX_IP_PORT">Port for direct LAN-IP HTTPS access</label>
+        <p class="help">nginx will also listen here so this app is reachable at
+        <code>https://&lt;lan-ip&gt;:&lt;this port&gt;/</code> directly, without the domain — separate from
+        the Docker nginx ports below.</p>
+        <input type="text" id="HOST_NGINX_IP_PORT" name="HOST_NGINX_IP_PORT" value="${escapeHtml(portSuggestions.ip)}" autocomplete="off" data-port-check="1" />
+        <p class="help port-status" id="port-status-HOST_NGINX_IP_PORT" style="display:none"></p>
+      </div>
+    </fieldset>`;
+    } else if (nginxInfo.running && nginxInfo.siteExists) {
+        hostNginxHtml = `<p class="help">A host nginx site for this app already exists — not modifying it. Edit it directly if it needs to change.</p>`;
+    } else if (nginxInfo.running) {
+        hostNginxHtml = `<p class="help warn">nginx is running on this host, but its config layout (expected sites-available/sites-enabled or conf.d under /etc/nginx) wasn't recognized — skipping the offer to add a site automatically. Add one by hand if needed, and make sure it isn't already bound to the Docker nginx ports below.</p>`;
+    } else if (nginxInfo.installed) {
+        hostNginxHtml = `<p class="help">nginx is installed but not currently running on this host — nothing to wire up.</p>`;
+    } else {
+        hostNginxHtml = '';
+    }
 
     return `<!doctype html>
 <html><head><meta charset="utf-8" /><title>Balanced Waypoints Setup</title>
@@ -119,16 +183,16 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
   .help { margin: 0 0 0.35rem; font-size: 0.8rem; color: #777; }
   .help.warn { color: #b3261e; font-weight: 600; }
   .help.pass { color: #2d6a4f; font-weight: 600; }
-  input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; box-sizing: border-box; }
-  input:disabled { opacity: 0.5; background: #eee; }
+  input[type=text], input[type=password] { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; box-sizing: border-box; }
+  input[type=text]:disabled, input[type=password]:disabled { opacity: 0.5; background: #eee; }
   .radio-row { display: flex; flex-direction: column; gap: 0.35rem; }
-  .radio-row label { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; }
+  .radio-row label, .checkbox-label { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; }
   button { padding: 0.6rem 1.4rem; font-size: 1rem; border: none; border-radius: 8px; background: #1B6E6E; color: white; cursor: pointer; }
   @media (prefers-color-scheme: dark) {
     fieldset { border-color: #444; }
     .help { color: #999; }
-    input { background: #2a2a2a; color: #eee; border-color: #555; }
-    input:disabled { background: #222; }
+    input[type=text], input[type=password] { background: #2a2a2a; color: #eee; border-color: #555; }
+    input[type=text]:disabled, input[type=password]:disabled { background: #222; }
     .help.warn { color: #ff8a80; }
     .help.pass { color: #6fcf97; }
   }
@@ -136,8 +200,8 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
 <body>
   <h1>Balanced Waypoints — Setup</h1>
   <p>Fill in the fields below, then submit. This writes <code>.env</code> and brings up the Docker stack.</p>
-  ${hostNginxNote}
   <form method="POST" action="/save">
+    ${hostNginxHtml}
     <fieldset>
       <legend>MongoDB</legend>
       <div class="radio-row">
@@ -153,6 +217,7 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
         <label><input type="radio" name="certMode" value="own" ${certMode === 'own' ? 'checked' : ''} /> I'll provide my own certificate files</label>
       </div>
     </fieldset>
+    ${dockerPortsHtml}
     <fieldset><legend>Configuration</legend>${rows}</fieldset>
     <button type="submit">Save &amp; start</button>
   </form>
@@ -190,6 +255,73 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
       });
       checkDns(input); // initial check for the prefilled value
     });
+
+    // Live availability check for any port field — attempts an actual bind
+    // on this host (server-side, via /check-port) rather than a well-known
+    // list, so it catches anything already using it, whatever that is.
+    // Suggests the next free port when taken.
+    const portCheckTimers = {};
+    const portCheckSeq = {};
+    function checkPort(input) {
+      const status = document.getElementById('port-status-' + input.id);
+      if (!status) return;
+      const value = input.value.trim();
+      if (!value) { status.style.display = 'none'; return; }
+      const requestId = (portCheckSeq[input.id] = (portCheckSeq[input.id] || 0) + 1);
+      fetch('/check-port?port=' + encodeURIComponent(value))
+        .then((r) => r.json())
+        .then((data) => {
+          if (portCheckSeq[input.id] !== requestId) return; // a newer check superseded this one
+          if (!data.valid) {
+            status.textContent = 'Enter a port number between 1 and 65535.';
+            status.className = 'help port-status warn';
+          } else if (data.free) {
+            status.textContent = 'PASS: port ' + value + ' is free.';
+            status.className = 'help port-status pass';
+          } else {
+            status.innerHTML = 'Port ' + value + ' is already in use — try <a href="#" data-use-port="' +
+              data.suggestion + '">' + data.suggestion + '</a> instead.';
+            status.className = 'help port-status warn';
+            const link = status.querySelector('[data-use-port]');
+            if (link) {
+              link.addEventListener('click', (e) => {
+                e.preventDefault();
+                input.value = link.dataset.usePort;
+                checkPort(input);
+              });
+            }
+          }
+          status.style.display = '';
+        })
+        .catch(() => { status.style.display = 'none'; });
+    }
+    document.querySelectorAll('input[data-port-check]').forEach((input) => {
+      input.addEventListener('input', () => {
+        clearTimeout(portCheckTimers[input.id]);
+        portCheckTimers[input.id] = setTimeout(() => checkPort(input), 400);
+      });
+      checkPort(input); // initial check for the prefilled/suggested value
+    });
+
+    // "Add an nginx site" reveals the LAN-IP-access port field it needs —
+    // hidden until then since it's meaningless otherwise.
+    const addNginxSiteToggle = document.getElementById('add-nginx-site-toggle');
+    if (addNginxSiteToggle) {
+      addNginxSiteToggle.addEventListener('change', () => {
+        const field = document.getElementById('host-nginx-ip-port-field');
+        if (field) field.style.display = addNginxSiteToggle.checked ? '' : 'none';
+      });
+    }
+
+    // "Advanced: customize these ports myself" reveals the otherwise-hidden,
+    // auto-picked Docker nginx port fields for manual editing.
+    const advancedPortsToggle = document.getElementById('advanced-ports-toggle');
+    if (advancedPortsToggle) {
+      advancedPortsToggle.addEventListener('change', () => {
+        const fields = document.getElementById('docker-ports-fields');
+        if (fields) fields.style.display = advancedPortsToggle.checked ? '' : 'none';
+      });
+    }
   </script>
 </body></html>`;
 }
@@ -202,6 +334,34 @@ trust store on any device that needs to reach this site without a warning.</p>
 <p><a download="balancedwaypoints-ca.pem" href="data:application/x-pem-file;base64,${Buffer.from(caCertPem, 'utf8').toString('base64')}">Download CA certificate</a></p>` : '';
     return `<!doctype html><html><head><meta charset="utf-8" /><title>Setup complete</title></head>
 <body><h1>.env written</h1>${caSection}<p>Close this tab — the terminal will continue automatically.</p></body></html>`;
+}
+
+// Suggests starting values for the Docker nginx's own ports and the host
+// nginx's LAN-IP-access port. Only actually probes for a free port when the
+// relevant field hasn't already been customized away from its .env.example
+// default (or, for the IP port, was never set before) — a re-run of the
+// wizard against an existing .env respects whatever was already chosen
+// rather than picking something new out from under it.
+async function computePortSuggestions(fields, existing, nginxInfo) {
+    const httpDefault = (fields.find(f => f.key === 'NGINX_HTTP_PORT') || {}).default || '80';
+    const httpsDefault = (fields.find(f => f.key === 'NGINX_HTTPS_PORT') || {}).default || String(APP_PORT);
+    const result = {
+        http: existing.NGINX_HTTP_PORT || httpDefault,
+        https: existing.NGINX_HTTPS_PORT || httpsDefault,
+        ip: existing.HOST_NGINX_IP_PORT || '8443'
+    };
+    if (nginxInfo.running) {
+        if (!existing.NGINX_HTTP_PORT || existing.NGINX_HTTP_PORT === httpDefault) {
+            result.http = String(await findOpenPort(8080));
+        }
+        if (!existing.NGINX_HTTPS_PORT || existing.NGINX_HTTPS_PORT === httpsDefault) {
+            result.https = String(await findOpenPort(Number(httpsDefault) || APP_PORT));
+        }
+    }
+    if (!existing.HOST_NGINX_IP_PORT) {
+        result.ip = String(await findOpenPort(8443));
+    }
+    return result;
 }
 
 async function main() {
@@ -217,8 +377,15 @@ async function main() {
     let resolveDone;
     const done = new Promise(resolve => { resolveDone = resolve; });
 
-    app.get('/', (req, res) => {
-        res.send(renderForm(fields, existing, existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal', existing.SSL_CERT_FILE ? 'own' : 'generate', detectHostNginx()));
+    app.get('/', async (req, res) => {
+        const nginxInfo = detectHostNginx();
+        const portSuggestions = await computePortSuggestions(fields, existing, nginxInfo);
+        res.send(renderForm(
+            fields, existing,
+            existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal',
+            existing.SSL_CERT_FILE ? 'own' : 'generate',
+            nginxInfo, portSuggestions
+        ));
     });
 
     // Live DNS resolution check for WEB_FQDN — informational only, doesn't
@@ -235,6 +402,16 @@ async function main() {
         }
     });
 
+    // Live availability check for any port field — see the client-side
+    // checkPort() above.
+    app.get('/check-port', async (req, res) => {
+        const port = parseInt(req.query.port, 10);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) return res.json({ valid: false });
+        const free = await isPortFree(port);
+        if (free) return res.json({ valid: true, free: true });
+        res.json({ valid: true, free: false, suggestion: await findOpenPort(port + 1) });
+    });
+
     app.post('/save', (req, res) => {
         const body = req.body;
         const mongoMode = body.mongoMode === 'external' ? 'external' : 'internal';
@@ -245,6 +422,11 @@ async function main() {
         if (mongoMode === 'internal') values.mongoHost = 'mongo';
         values.sessionSecret = existing.sessionSecret || crypto.randomBytes(64).toString('hex');
         if (mongoNeedsLegacyArmImage()) values.MONGO_IMAGE = LEGACY_ARM_MONGO_IMAGE;
+        // Not part of .env.example/`fields` (only this wizard and a host
+        // nginx site read it, never the app itself) — persisted anyway so a
+        // later re-run of the wizard remembers what was already picked,
+        // same as every other field above.
+        if (body.HOST_NGINX_IP_PORT !== undefined) values.HOST_NGINX_IP_PORT = body.HOST_NGINX_IP_PORT;
 
         let caCertPem = null;
         if (certMode === 'generate') {
@@ -259,7 +441,7 @@ async function main() {
         fs.writeFileSync(ENV_PATH, envText);
 
         res.send(renderDone(caCertPem));
-        resolveDone({ mongoMode, values });
+        resolveDone({ mongoMode, values, addNginxSite: body.addNginxSite === '1' });
     });
 
     const server = app.listen(0, () => {
@@ -273,11 +455,15 @@ async function main() {
         for (const url of urls) console.log(`  ${highlight(url)}`);
     });
 
-    const { mongoMode, values } = await done;
+    const { mongoMode, values, addNginxSite } = await done;
     server.close();
 
     bringUpDocker(ROOT, mongoMode);
     printAccessUrls(values.WEB_FQDN || 'localhost', values.NGINX_HTTPS_PORT || APP_PORT);
+
+    if (addNginxSite) {
+        installHostNginxSite(values.WEB_FQDN, values.HOST_NGINX_IP_PORT || '8443', values.NGINX_HTTPS_PORT || APP_PORT, values.SSL_CERT_FILE, values.SSL_KEY_FILE);
+    }
 }
 
 main().catch(err => {

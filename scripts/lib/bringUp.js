@@ -1,8 +1,14 @@
 // Shared "actually bring the app up" logic — Docker compose invocation and
 // TLS cert generation. Docker-only by design (see the plan note in
-// setup-wizard.js) — no local-systemd-service path, no existing-host-nginx
-// auto-wiring, no minimal-footprint relocation. Extracted out of
-// setup-wizard.js so update.js can reuse the same bringUpDocker.
+// setup-wizard.js) — no local-systemd-service path, no minimal-footprint
+// relocation. It DOES optionally wire up an existing host nginx (see
+// detectHostNginx/installHostNginxSite below) — unlike fondwaypoints, this
+// doesn't replace the bundled Docker nginx sidecar (that one's ports aren't
+// user-configurable per-request the way fondwaypoints' local-mode app port
+// is); instead the host nginx becomes the public-facing TLS terminator and
+// reverse-proxies to the bundled nginx sidecar over loopback HTTPS, which
+// keeps terminating TLS internally too. Extracted out of setup-wizard.js so
+// update.js can reuse the same bringUpDocker.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -25,12 +31,52 @@ function commandExists(cmd) {
     return !result.error;
 }
 
-// Informational only — unlike fondwaypoints, this project doesn't auto-wire
-// a host nginx site (see the plan note at the top of this file), so there's
-// nothing to configure here. This just warns the setup form when a host
-// nginx is already running, since the bundled Docker nginx container will
-// try to bind NGINX_HTTP_PORT/NGINX_HTTPS_PORT (80/443 by default) on the
-// same host and will fail to start if something else already holds them.
+// Probes by actually attempting to bind the port (catches anything already
+// using it, whatever it is — not just a well-known list), trying the next
+// one up on failure. Used both to suggest a starting default and to back
+// the setup form's live /check-port endpoint.
+function findOpenPort(start) {
+    return new Promise((resolve) => {
+        const probe = net.createServer();
+        probe.once('error', () => {
+            resolve(findOpenPort(start + 1));
+        });
+        probe.listen(start, '0.0.0.0', () => {
+            probe.close(() => resolve(start));
+        });
+    });
+}
+
+// Same probe, without the "keep trying the next port" fallback — just
+// reports whether this exact port is free right now, for the live per-field
+// check.
+function isPortFree(port) {
+    return new Promise((resolve) => {
+        const probe = net.createServer();
+        probe.once('error', () => resolve(false));
+        probe.listen(port, '0.0.0.0', () => probe.close(() => resolve(true)));
+    });
+}
+
+const SITE_FILE_NAME = 'balancedwaypoints.conf';
+
+// Detects the sites-available/sites-enabled (Debian/Ubuntu) vs conf.d (RHEL/
+// Rocky) layout, so installHostNginxSite writes the generated site config
+// wherever this host's nginx actually reads config from.
+function nginxSiteDir() {
+    if (fs.existsSync('/etc/nginx/sites-available') && fs.existsSync('/etc/nginx/sites-enabled')) {
+        return { style: 'debian', available: '/etc/nginx/sites-available', enabled: '/etc/nginx/sites-enabled' };
+    }
+    if (fs.existsSync('/etc/nginx/conf.d')) {
+        return { style: 'rhel', available: '/etc/nginx/conf.d', enabled: null };
+    }
+    return null;
+}
+
+// installed/running gate whether the setup form even offers to write a host
+// nginx site; siteExists (only meaningful when a layout was detected) gates
+// whether it's OFFERED at all — an existing balancedwaypoints.conf is left
+// alone rather than silently overwritten, since it may have been hand-edited.
 function detectHostNginx() {
     const installed = commandExists('nginx');
     let running = false;
@@ -38,7 +84,111 @@ function detectHostNginx() {
         const status = spawnSync('systemctl', ['is-active', 'nginx'], { encoding: 'utf8' });
         running = status.status === 0 && status.stdout.trim() === 'active';
     }
-    return { installed, running };
+    const siteDir = installed ? nginxSiteDir() : null;
+    const siteExists = !!siteDir && fs.existsSync(path.join(siteDir.available, SITE_FILE_NAME));
+    return { installed, running, canWriteSite: !!siteDir, siteExists };
+}
+
+// Writes (and enables) a host nginx site for webFqdn — this becomes the
+// public-facing TLS terminator (using the same cert/key balancedwaypoints
+// itself is already configured with), reverse-proxying over loopback HTTPS
+// to the bundled Docker nginx sidecar's own HTTPS listener (which keeps
+// terminating TLS internally too — see the plan note at the top of this
+// file for why this double-hop is the simplest option here). Requires sudo
+// to write under /etc/nginx and reload the service.
+//
+// Reachable two ways, same as fondwaypoints' own host-nginx site: by domain
+// (webFqdn, on the standard 80/443 — 80 redirects to 443) and directly by
+// this host's LAN IP address(es) on ipPort, for whenever DNS for webFqdn
+// isn't set up yet or reaching it by IP is just more convenient.
+function installHostNginxSite(webFqdn, ipPort, dockerHttpsPort, certPath, keyPath) {
+    console.log('\n== Adding a host nginx site ==');
+    const siteDir = nginxSiteDir();
+    if (!siteDir) {
+        console.error('Could not detect an nginx sites-available/sites-enabled or conf.d layout under /etc/nginx — skipping the host nginx site. Add one by hand if needed.');
+        return false;
+    }
+
+    const proxyBlock = `  location / {
+    proxy_pass https://127.0.0.1:${dockerHttpsPort};
+    proxy_ssl_verify off;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Port $server_port;
+
+    proxy_read_timeout 90s;
+    proxy_connect_timeout 90s;
+    proxy_send_timeout 90s;
+  }`;
+
+    const lanAddrs = lanAddresses();
+    const confContent = `server {
+  listen 80;
+  server_name ${webFqdn};
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl;
+  server_name ${webFqdn};
+
+  ssl_certificate ${certPath};
+  ssl_certificate_key ${keyPath};
+  ssl_protocols TLSv1.2 TLSv1.3;
+
+  access_log /var/log/nginx/balancedwaypoints-access.log;
+  error_log /var/log/nginx/balancedwaypoints-error.log;
+
+${proxyBlock}
+}
+
+server {
+  listen ${ipPort} ssl;
+  server_name ${lanAddrs.length ? lanAddrs.join(' ') : '_'};
+
+  ssl_certificate ${certPath};
+  ssl_certificate_key ${keyPath};
+  ssl_protocols TLSv1.2 TLSv1.3;
+
+  access_log /var/log/nginx/balancedwaypoints-access.log;
+  error_log /var/log/nginx/balancedwaypoints-error.log;
+
+${proxyBlock}
+}
+`;
+
+    const targetPath = path.join(siteDir.available, SITE_FILE_NAME);
+    const linkPath = siteDir.style === 'debian' ? path.join(siteDir.enabled, SITE_FILE_NAME) : null;
+
+    console.log(`Writing ${targetPath} (requires sudo)...`);
+    const tee = spawnSync('sudo', ['tee', targetPath], { input: confContent, stdio: ['pipe', 'ignore', 'inherit'] });
+    if (tee.status !== 0) {
+        console.error('Failed to write the nginx site config. Do you have sudo access?');
+        return false;
+    }
+
+    if (linkPath && !run('sudo', ['ln', '-sf', targetPath, linkPath])) {
+        console.error('Failed to symlink the site into sites-enabled.');
+        return false;
+    }
+
+    if (!run('sudo', ['nginx', '-t'])) {
+        console.error(`nginx config test failed — the site was written to ${targetPath} but NOT enabled/reloaded. Fix the error above, then run: sudo nginx -t && sudo systemctl reload nginx`);
+        return false;
+    }
+    if (!run('sudo', ['systemctl', 'reload', 'nginx'])) {
+        console.error('Failed to reload nginx — the site config is in place but not yet active. Run: sudo systemctl reload nginx');
+        return false;
+    }
+    const accessUrls = [`https://${webFqdn}/`, ...lanAddrs.map(addr => `https://${addr}:${ipPort}/`)];
+    console.log(`Done — this app is now also reachable via the host's nginx at:\n${accessUrls.map(u => `  ${u}`).join('\n')}`);
+    return true;
 }
 
 function run(cmd, args, opts = {}) {
@@ -174,6 +324,10 @@ module.exports = {
     mongoNeedsLegacyArmImage,
     commandExists,
     detectHostNginx,
+    nginxSiteDir,
+    installHostNginxSite,
+    findOpenPort,
+    isPortFree,
     run,
     generateCert,
     ensureDockerInstalled,

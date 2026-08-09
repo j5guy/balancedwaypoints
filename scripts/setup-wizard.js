@@ -264,7 +264,13 @@ async function main() {
 
     const server = app.listen(0, () => {
         const { port } = server.address();
-        console.log(`\nOpen this URL in a browser to continue setup:\n  ${highlight(`http://localhost:${port}/`)}`);
+        // localhost only works if you have a browser right on this machine —
+        // offer the LAN IP(s) too, for the common case of SSH'd into a
+        // headless server and continuing setup from a browser elsewhere on
+        // the network.
+        const urls = [`http://localhost:${port}/`, ...lanAddresses().map(addr => `http://${addr}:${port}/`)];
+        console.log(`\nOpen one of these URLs in a browser to continue setup (use localhost if this is a machine with its own browser, otherwise pick the LAN address reachable from wherever you're browsing from):`);
+        for (const url of urls) console.log(`  ${highlight(url)}`);
     });
 
     const { mongoMode, values } = await done;

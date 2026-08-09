@@ -1337,6 +1337,11 @@
         const card = document.getElementById('txn-form-card');
         resetForm();
         card.hidden = false;
+        // resetForm() hides this too (it's shared with the close/reset
+        // path) — startEdit() re-shows it for the edit case, this covers
+        // the fresh-add case so there's always a way to back out of the
+        // form once it's open, not just when editing an existing row.
+        document.getElementById('cancel-txn-btn').hidden = false;
         card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     document.getElementById('toggle-advanced-form-link').addEventListener('click', (e) => {

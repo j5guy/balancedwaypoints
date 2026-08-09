@@ -78,6 +78,20 @@ table.register-table {
         font-size: 0.85rem;
         padding: 6px 8px;
     }
+
+    // Sticky so adding a transaction stays reachable no matter how far down
+    // the register you've scrolled (public/js/register.js's quick-add row
+    // is the primary entry point now that it's always in view). Background
+    // has to be set directly on each sticky td (pulled from the row via
+    // `inherit`) — a sticky cell's own background doesn't automatically
+    // follow it off the row the way a non-sticky cell's does.
+    td {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background-color: inherit;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+    }
 }
 
 .filter-row {
@@ -187,6 +201,28 @@ table.register-table {
 
     td {
         background: $bg-secondary;
+    }
+}
+
+// Collapsible divider marking the upcoming-schedule preview rows (see
+// public/js/register.js's upcomingDividerRow) — collapsed by default so the
+// register reads as just actual transactions.
+.upcoming-divider-row td {
+    background: $bg-secondary;
+    padding: 6px 14px;
+}
+
+.upcoming-toggle-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: $accent;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+        text-decoration: underline;
     }
 }
 

@@ -29,6 +29,12 @@
     let currentTransactions = [];
     let currentBalanceById = new Map();
     let currentUpcomingRows = [];
+    // Collapsed by default — the register's own row list stays focused on
+    // actual transactions, while the Forecast chart above (a separate fetch
+    // in loadForecastChart, not fed by these rows) keeps showing the
+    // projection regardless of this. Session-only, not persisted — reset to
+    // collapsed on every fresh page load.
+    let upcomingCollapsed = true;
     // 'owner' unless this register belongs to an account someone else
     // shared with us (see accountsController.js's serialize) — gates every
     // write control below. Every reference-data fetch always carries
@@ -1031,6 +1037,31 @@
         return true;
     }
 
+    // Divider row marking the start of the upcoming-schedule preview rows —
+    // collapsed by default (see upcomingCollapsed) so the register reads as
+    // just your actual transactions, with a click to expand back to the
+    // full previous behavior. Independent of the Forecast chart above
+    // (loadForecastChart's own fetch), which always shows the projection
+    // regardless of this collapsed state.
+    function upcomingDividerRow() {
+        const tr = document.createElement('tr');
+        tr.className = 'upcoming-divider-row';
+        const count = currentUpcomingRows.length;
+        const label = `${upcomingCollapsed ? '▸' : '▾'} ${count} upcoming transaction${count === 1 ? '' : 's'} — click to ${upcomingCollapsed ? 'show' : 'hide'}`;
+        tr.innerHTML = `<td colspan="11"><button type="button" class="upcoming-toggle-btn" id="toggle-upcoming-rows-btn">${label}</button></td>`;
+        tr.querySelector('#toggle-upcoming-rows-btn').addEventListener('click', () => {
+            upcomingCollapsed = !upcomingCollapsed;
+            renderRegisterRows();
+        });
+        return tr;
+    }
+
+    function appendUpcomingRows(tbody) {
+        if (currentUpcomingRows.length === 0) return;
+        tbody.appendChild(upcomingDividerRow());
+        if (!upcomingCollapsed) currentUpcomingRows.forEach(row => tbody.appendChild(row));
+    }
+
     // Re-renders #register-tbody from the cached currentTransactions /
     // currentBalanceById / currentUpcomingRows — no network call, so typing
     // in a filter box stays instant. loadTransactions() populates the cache;
@@ -1043,7 +1074,7 @@
         // instead of being pinned above them, and in soonest-first order —
         // see loadUpcomingRows' own sort, called with this same direction.
         const upcomingAtBottom = (preferences.registerSort || 'newest') === 'oldest';
-        if (!upcomingAtBottom) currentUpcomingRows.forEach(row => tbody.appendChild(row));
+        if (!upcomingAtBottom) appendUpcomingRows(tbody);
 
         if (currentTransactions.length === 0 && currentUpcomingRows.length === 0) {
             const from = historyFromDate();
@@ -1063,7 +1094,7 @@
             }
         }
 
-        if (upcomingAtBottom) currentUpcomingRows.forEach(row => tbody.appendChild(row));
+        if (upcomingAtBottom) appendUpcomingRows(tbody);
         updateBulkBar();
     }
 
@@ -1298,16 +1329,26 @@
 
     // The full form (transfers/splits/edit) is collapsed by default — the
     // quick-add row below the table handles the common case instead.
+    // Shared by the text link above the table and the quick-add row's own
+    // ⛶ button — the latter matters once the quick-add row is sticky and
+    // scrolled well past the link above, so the card itself is scrolled
+    // into view too rather than just silently un-hidden off-screen.
+    function openFullForm() {
+        const card = document.getElementById('txn-form-card');
+        resetForm();
+        card.hidden = false;
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     document.getElementById('toggle-advanced-form-link').addEventListener('click', (e) => {
         e.preventDefault();
         const card = document.getElementById('txn-form-card');
         if (card.hidden) {
-            resetForm();
-            card.hidden = false;
+            openFullForm();
         } else {
             resetForm();
         }
     });
+    document.getElementById('qa-full-form-btn').addEventListener('click', openFullForm);
 
     document.getElementById('save-txn-btn').addEventListener('click', async () => {
         clearError();

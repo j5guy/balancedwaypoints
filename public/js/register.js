@@ -1483,7 +1483,7 @@
             document.getElementById('qa-notes').value = '';
             document.getElementById('qa-tags').value = '';
             document.getElementById('qa-amount').value = '';
-            document.getElementById('qa-cleared').checked = false;
+            document.getElementById('qa-cleared').checked = true;
             document.getElementById('qa-payee').focus();
 
             await loadReferenceData();

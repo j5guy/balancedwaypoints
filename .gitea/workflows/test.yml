@@ -6,6 +6,7 @@ env:
   WEB_DIR: /var/www/html/${{ env.WEB_NAME }}
   REPO_URL: git@gitea.pinkham.lan:/web/${{ env.WEB_NAME }}.git
   DOCKER_DIR: /opt/${{ env.WEB_NAME }}
+  GITEA_HOST: gitea.pinkham.lan
   IMAGE: gitea.pinkham.lan/web/balancedwaypoints/balancedwaypoints-test
 
 on:

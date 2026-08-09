@@ -4,12 +4,18 @@
 #   curl -fsSL https://raw.githubusercontent.com/j5guy/balancedwaypoints/master/install.sh | bash
 #
 # Installs whatever this host is missing (git, curl, Node.js), clones this
-# repo into the final install directory, then hands off to the guided setup
-# wizard (scripts/setup-wizard.js), which writes .env and brings up the
-# Docker stack. Docker-only — no local systemd service mode.
+# repo into a SCRATCH directory, then hands off to the guided setup wizard
+# (scripts/setup-wizard.js --final-dir <FINAL_DIR>), which writes .env,
+# brings up the Docker stack, and either trims the scratch checkout down to
+# a minimal Docker-only footprint at FINAL_DIR (default, recommended — see
+# scripts/lib/footprint.js) or relocates the full checkout there instead,
+# per the choice made in the wizard's form. Docker-only — no local systemd
+# service mode.
 #
 # Run this from inside an existing checkout instead (./install.sh) and it
-# skips the clone step entirely, operating in place on that checkout.
+# skips the clone/scratch step entirely, operating in place on that checkout
+# — no --final-dir is passed, so the wizard has nowhere else to relocate to
+# and the footprint choice doesn't apply (see setup-wizard.js).
 set -euo pipefail
 
 REPO_URL="${BALANCEDWAYPOINTS_REPO_URL:-https://github.com/j5guy/balancedwaypoints.git}"
@@ -72,6 +78,7 @@ ensure_node() {
   fi
 }
 
+FINAL_DIR_ARGS=()
 if [ "$IN_PLACE" -eq 1 ]; then
   echo "== Balanced Waypoints install (existing checkout at $SCRIPT_DIR) =="
   WORK_DIR="$SCRIPT_DIR"
@@ -90,10 +97,11 @@ else
     sudo chown "$(id -un):$(id -gn)" "$FINAL_DIR"
   fi
 
-  echo "== Moving checkout to $FINAL_DIR =="
-  cp -a "$WORK_DIR/." "$FINAL_DIR/"
-  rm -rf "$WORK_DIR"
-  WORK_DIR="$FINAL_DIR"
+  # WORK_DIR stays the scratch clone from here — the wizard writes .env/
+  # certs straight to FINAL_DIR and, once done, either trims WORK_DIR down
+  # to a minimal footprint at FINAL_DIR or relocates it there wholesale
+  # (see scripts/lib/footprint.js), deleting the scratch clone either way.
+  FINAL_DIR_ARGS=(--final-dir "$FINAL_DIR")
 fi
 
 ensure_node
@@ -105,4 +113,4 @@ if [ ! -d node_modules ]; then
   npm install
 fi
 
-exec node scripts/setup-wizard.js
+exec node scripts/setup-wizard.js "${FINAL_DIR_ARGS[@]}"

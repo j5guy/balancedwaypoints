@@ -1,14 +1,15 @@
 // Shared "actually bring the app up" logic — Docker compose invocation and
 // TLS cert generation. Docker-only by design (see the plan note in
-// setup-wizard.js) — no local-systemd-service path, no minimal-footprint
-// relocation. It DOES optionally wire up an existing host nginx (see
-// detectHostNginx/installHostNginxSite below) — unlike fondwaypoints, this
-// doesn't replace the bundled Docker nginx sidecar (that one's ports aren't
-// user-configurable per-request the way fondwaypoints' local-mode app port
-// is); instead the host nginx becomes the public-facing TLS terminator and
-// reverse-proxies to the bundled nginx sidecar over loopback HTTPS, which
-// keeps terminating TLS internally too. Extracted out of setup-wizard.js so
-// update.js can reuse the same bringUpDocker.
+// setup-wizard.js) — no local-systemd-service path. It DOES optionally wire
+// up an existing host nginx (see detectHostNginx/installHostNginxSite
+// below) — unlike fondwaypoints, this doesn't replace the bundled Docker
+// nginx sidecar (that one's ports aren't user-configurable per-request the
+// way fondwaypoints' local-mode app port is); instead the host nginx
+// becomes the public-facing TLS terminator and reverse-proxies to the
+// bundled nginx sidecar over loopback HTTPS, which keeps terminating TLS
+// internally too. Extracted out of setup-wizard.js so scripts/update.js and
+// scripts/lib/footprint.js can reuse the same bringUpDocker/deploy-state
+// helpers.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -318,6 +319,25 @@ function bringUpDocker(rootDir, mongoMode) {
     console.log(`\nDone. Check status with: docker compose ${composeFiles.join(' ')} ps`);
 }
 
+// Records what a given install directory actually is (full checkout vs.
+// minimal footprint, which MongoDB mode, what version) — written by
+// setup-wizard.js on install and scripts/update.js on every update.
+// update.sh's own bash (not Node) reads the `footprint` field out of this
+// via a plain sed one-liner before it even knows whether Node is installed
+// on this host, so this needs to stay flat, pretty-printed JSON — never
+// nested — to keep that extraction reliable.
+function readDeployState(rootDir) {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(rootDir, '.deploy-state.json'), 'utf8'));
+    } catch {
+        return null;
+    }
+}
+
+function writeDeployState(rootDir, state) {
+    fs.writeFileSync(path.join(rootDir, '.deploy-state.json'), JSON.stringify(state, null, 2));
+}
+
 module.exports = {
     APP_PORT,
     LEGACY_ARM_MONGO_IMAGE,
@@ -331,5 +351,7 @@ module.exports = {
     run,
     generateCert,
     ensureDockerInstalled,
-    bringUpDocker
+    bringUpDocker,
+    readDeployState,
+    writeDeployState
 };

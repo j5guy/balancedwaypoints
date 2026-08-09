@@ -327,13 +327,48 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
 }
 
 function renderDone(caCertPem) {
+    // Embedded as a data: URI so the download still works even after this
+    // process exits later (once docker compose finishes).
     const caSection = caCertPem ? `
-<h2>Trust the local CA</h2>
-<p>Your browser won't trust this certificate automatically. Download and install it into your OS/browser
-trust store on any device that needs to reach this site without a warning.</p>
-<p><a download="balancedwaypoints-ca.pem" href="data:application/x-pem-file;base64,${Buffer.from(caCertPem, 'utf8').toString('base64')}">Download CA certificate</a></p>` : '';
-    return `<!doctype html><html><head><meta charset="utf-8" /><title>Setup complete</title></head>
-<body><h1>.env written</h1>${caSection}<p>Close this tab — the terminal will continue automatically.</p></body></html>`;
+      <div class="card">
+        <h2>Trust the local CA</h2>
+        <p>Your browser and OS won't trust this certificate automatically — it wasn't issued by a public CA.
+        Download and install it into your OS/browser trust store on any device that needs to reach this site
+        without a warning. This is a one-time step per device; the CA's private key never left the server.</p>
+        <p><a class="btn" download="balancedwaypoints-ca.pem"
+        href="data:application/x-pem-file;base64,${Buffer.from(caCertPem, 'utf8').toString('base64')}">Download CA certificate</a></p>
+        <p class="fallback-note">Some browsers (Brave included) block or warn on downloads like this one — if
+        that happens, the same file is sitting directly on this host's filesystem, outside Docker entirely, and
+        never goes away on its own: <code>${escapeHtml(path.join(ROOT, 'certs', 'ca.pem'))}</code>. Copy it from
+        there instead (<code>scp</code>, a shared folder, a USB drive — whatever gets it onto the other device).</p>
+      </div>` : '';
+    return `<!doctype html>
+<html><head><meta charset="utf-8" /><title>Setup complete</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; max-width: 560px; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.1rem; }
+  .status { display: flex; align-items: center; gap: 0.6rem; }
+  .status-dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: #2d6a4f; flex: none; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem 1.25rem; margin-top: 1.5rem; }
+  .btn { display: inline-block; padding: 0.6rem 1.4rem; font-size: 1rem; border: none; border-radius: 8px; background: #1B6E6E; color: white; text-decoration: none; cursor: pointer; }
+  .btn:hover { filter: brightness(0.92); }
+  .fallback-note { font-size: 0.85rem; color: #777; }
+  .continue-note { color: #777; font-size: 0.9rem; }
+  code { background: #f0f0f0; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.9em; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #eee; }
+    .card { border-color: #444; }
+    .fallback-note, .continue-note { color: #999; }
+    code { background: #2a2a2a; }
+  }
+</style></head>
+<body>
+  <p class="status"><span class="status-dot"></span><strong>.env written</strong> — bringing up the Docker stack now.</p>
+  ${caSection}
+  <p class="continue-note">You can close this tab. Continuing in the terminal...</p>
+</body></html>`;
 }
 
 // Suggests starting values for the Docker nginx's own ports and the host

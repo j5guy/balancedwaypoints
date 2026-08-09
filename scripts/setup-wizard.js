@@ -1,17 +1,28 @@
 #!/usr/bin/env node
 // Interactive .env setup wizard. Reads .env.example for the field list, help
-// text, and defaults; serves a form on localhost; writes the result to .env;
-// generates a self-signed TLS cert if needed; then brings up the Docker
-// stack and exits.
+// text, and defaults; serves a form on localhost; writes the result to
+// FINAL_DIR/.env; generates a self-signed TLS cert if needed; then either
+// trims down to a minimal Docker-only footprint or relocates the full
+// checkout to FINAL_DIR (see ./lib/footprint), bringing the Docker stack up
+// either way, and exits.
 //
 // Deliberately simpler than a from-scratch enterprise installer: Docker-only
-// (no local systemd service path, no minimal-footprint relocation) — see the
-// balancedwaypoints project plan for why. It does optionally wire up an
-// existing host nginx (see detectHostNginx/installHostNginxSite in
-// ./lib/bringUp) when one's detected running and no site for this app
-// exists yet. Everything here can be done by hand instead by editing .env
-// directly and running `docker compose -f docker-compose.yml -f
-// docker-compose.nginx.yml -f docker-compose.mongo.yml up -d --build`.
+// (no local systemd service path) — see the balancedwaypoints project plan
+// for why. It does optionally wire up an existing host nginx (see
+// detectHostNginx/installHostNginxSite in ./lib/bringUp) when one's
+// detected running and no site for this app exists yet. Everything here can
+// be done by hand instead by editing .env directly and running `docker
+// compose -f docker-compose.yml -f docker-compose.nginx.yml -f
+// docker-compose.mongo.yml up -d --build`.
+//
+// Runs against ROOT (this checkout — a scratch clone when launched via
+// install.sh with --final-dir, or an existing checkout when run in place)
+// and, once .env is written, either relocates that checkout to FINAL_DIR
+// (the "Full checkout" footprint) or trims it down to just what's needed to
+// run/update Docker and writes THAT to FINAL_DIR instead (the "Docker only,
+// minimal footprint" choice — see ./lib/footprint). FINAL_DIR defaults to
+// ROOT itself (no relocation) when run without --final-dir, which is what
+// an in-place `./install.sh`/`node scripts/setup-wizard.js` does.
 const fs = require('fs');
 const net = require('net');
 const dns = require('dns');
@@ -22,11 +33,34 @@ const express = require('express');
 const { lanAddresses, printAccessUrls, highlight } = require('./lib/network');
 const {
     mongoNeedsLegacyArmImage, LEGACY_ARM_MONGO_IMAGE, generateCert, bringUpDocker,
-    detectHostNginx, installHostNginxSite, findOpenPort, isPortFree, APP_PORT
+    detectHostNginx, installHostNginxSite, findOpenPort, isPortFree,
+    readDeployState, writeDeployState, APP_PORT
 } = require('./lib/bringUp');
+const { relocateFullCheckout, trimToMinimalFootprint } = require('./lib/footprint');
+
+function parseArgs(argv) {
+    const args = { finalDir: null };
+    for (let i = 0; i < argv.length; i++) {
+        if (argv[i] === '--final-dir' && argv[i + 1]) args.finalDir = argv[++i];
+    }
+    return args;
+}
+const cliArgs = parseArgs(process.argv.slice(2));
 
 const ROOT = path.join(__dirname, '..');
-const ENV_PATH = path.join(ROOT, '.env');
+const FINAL_DIR = cliArgs.finalDir ? path.resolve(cliArgs.finalDir) : ROOT;
+// True only when launched by install.sh against a scratch clone distinct
+// from where the app should actually end up living — the only case where
+// the "Docker only, minimal footprint" choice makes sense (see
+// renderFootprintFieldset below).
+const IS_SCRATCH = path.resolve(FINAL_DIR) !== path.resolve(ROOT);
+// .env/certs/ are written straight to FINAL_DIR from the start (not ROOT),
+// even while ROOT is still a scratch clone — that way there's no host-path
+// rewriting needed afterward for either footprint: a generated cert's
+// absolute path, or SSL_CERT_FILE/SSL_KEY_FILE written into .env, already
+// point at FINAL_DIR from the moment they're created. See
+// trimToMinimalFootprint/relocateFullCheckout in scripts/lib/footprint.js.
+const ENV_PATH = path.join(FINAL_DIR, '.env');
 const EXAMPLE_PATH = path.join(ROOT, '.env.example');
 
 const FIELD_LABELS = {
@@ -82,7 +116,32 @@ function escapeHtml(str) {
 
 const NGINX_PORT_KEYS = new Set(['NGINX_HTTP_PORT', 'NGINX_HTTPS_PORT']);
 
-function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggestions) {
+// Only offered when running against a scratch clone distinct from FINAL_DIR
+// (IS_SCRATCH) — that's the only case where "delete the source afterward"
+// makes sense; a checkout already at its final home has nowhere else to go.
+// See relocateFullCheckout/trimToMinimalFootprint in ./lib/footprint.
+function renderFootprintFieldset(footprint) {
+    if (!IS_SCRATCH) {
+        return `
+    <fieldset>
+      <legend>Installation footprint</legend>
+      <p class="help">This checkout is already the install location, so the full source stays here — a
+      "Docker only, minimal footprint" install is only offered the first time, via the curl install command
+      (see the README).</p>
+    </fieldset>`;
+    }
+    return `
+    <fieldset>
+      <legend>Installation footprint</legend>
+      <div class="radio-row">
+        <label><input type="radio" name="footprint" value="minimal" ${footprint !== 'full' ? 'checked' : ''} /> Docker only, minimal footprint (recommended) — builds the image, then deletes the source, leaving just what's needed to run and update the stack at <code>${escapeHtml(FINAL_DIR)}</code></label>
+        <label><input type="radio" name="footprint" value="full" ${footprint === 'full' ? 'checked' : ''} /> Full checkout — keeps the source at <code>${escapeHtml(FINAL_DIR)}</code></label>
+      </div>
+      <p class="help">Either way, <code>update.sh</code> in the final directory is the one command to update later.</p>
+    </fieldset>`;
+}
+
+function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggestions, footprint) {
     // NGINX_HTTP_PORT/NGINX_HTTPS_PORT are rendered separately below (not
     // in this generic loop) — when a host nginx is running they're
     // auto-picked and hidden behind an "advanced" toggle instead of shown
@@ -201,6 +260,7 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
   <h1>Balanced Waypoints — Setup</h1>
   <p>Fill in the fields below, then submit. This writes <code>.env</code> and brings up the Docker stack.</p>
   <form method="POST" action="/save">
+    ${renderFootprintFieldset(footprint)}
     ${hostNginxHtml}
     <fieldset>
       <legend>MongoDB</legend>
@@ -339,7 +399,7 @@ function renderDone(caCertPem) {
         href="data:application/x-pem-file;base64,${Buffer.from(caCertPem, 'utf8').toString('base64')}">Download CA certificate</a></p>
         <p class="fallback-note">Some browsers (Brave included) block or warn on downloads like this one — if
         that happens, the same file is sitting directly on this host's filesystem, outside Docker entirely, and
-        never goes away on its own: <code>${escapeHtml(path.join(ROOT, 'certs', 'ca.pem'))}</code>. Copy it from
+        never goes away on its own: <code>${escapeHtml(path.join(FINAL_DIR, 'certs', 'ca.pem'))}</code>. Copy it from
         there instead (<code>scp</code>, a shared folder, a USB drive — whatever gets it onto the other device).</p>
       </div>` : '';
     return `<!doctype html>
@@ -415,11 +475,13 @@ async function main() {
     app.get('/', async (req, res) => {
         const nginxInfo = detectHostNginx();
         const portSuggestions = await computePortSuggestions(fields, existing, nginxInfo);
+        const deployState = readDeployState(FINAL_DIR);
         res.send(renderForm(
             fields, existing,
             existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal',
             existing.SSL_CERT_FILE ? 'own' : 'generate',
-            nginxInfo, portSuggestions
+            nginxInfo, portSuggestions,
+            deployState ? deployState.footprint : 'minimal'
         ));
     });
 
@@ -463,9 +525,16 @@ async function main() {
         // same as every other field above.
         if (body.HOST_NGINX_IP_PORT !== undefined) values.HOST_NGINX_IP_PORT = body.HOST_NGINX_IP_PORT;
 
+        // Forced to 'full' whenever this isn't a scratch clone — there's no
+        // footprint radio rendered in that case (see renderFootprintFieldset),
+        // so any submitted value here would be meaningless.
+        const footprint = IS_SCRATCH ? (body.footprint === 'full' ? 'full' : 'minimal') : 'full';
+
+        fs.mkdirSync(FINAL_DIR, { recursive: true });
+
         let caCertPem = null;
         if (certMode === 'generate') {
-            const result = generateCert(ROOT, values.WEB_FQDN || 'localhost');
+            const result = generateCert(FINAL_DIR, values.WEB_FQDN || 'localhost');
             if (!result.ok) return res.status(500).send(`<pre>${escapeHtml(result.message)}</pre>`);
             values.SSL_CERT_FILE = result.certPath;
             values.SSL_KEY_FILE = result.keyPath;
@@ -476,7 +545,7 @@ async function main() {
         fs.writeFileSync(ENV_PATH, envText);
 
         res.send(renderDone(caCertPem));
-        resolveDone({ mongoMode, values, addNginxSite: body.addNginxSite === '1' });
+        resolveDone({ mongoMode, values, footprint, addNginxSite: body.addNginxSite === '1' });
     });
 
     const server = app.listen(0, () => {
@@ -490,11 +559,27 @@ async function main() {
         for (const url of urls) console.log(`  ${highlight(url)}`);
     });
 
-    const { mongoMode, values, addNginxSite } = await done;
+    const { mongoMode, values, footprint, addNginxSite } = await done;
     server.close();
 
-    bringUpDocker(ROOT, mongoMode);
-    printAccessUrls(values.WEB_FQDN || 'localhost', values.NGINX_HTTPS_PORT || APP_PORT);
+    let installedVersion = 'unknown';
+    try {
+        installedVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+    } catch { /* leave as 'unknown' */ }
+
+    if (footprint === 'minimal') {
+        trimToMinimalFootprint(ROOT, FINAL_DIR, {
+            mongoMode,
+            nginxHttpsPort: values.NGINX_HTTPS_PORT || APP_PORT,
+            nginxHttpPort: values.NGINX_HTTP_PORT || '80',
+            installedVersion
+        });
+    } else {
+        if (IS_SCRATCH) relocateFullCheckout(ROOT, FINAL_DIR);
+        writeDeployState(FINAL_DIR, { footprint: 'full', mongoMode, installedVersion });
+        bringUpDocker(FINAL_DIR, mongoMode);
+        printAccessUrls(values.WEB_FQDN || 'localhost', values.NGINX_HTTPS_PORT || APP_PORT);
+    }
 
     if (addNginxSite) {
         installHostNginxSite(values.WEB_FQDN, values.HOST_NGINX_IP_PORT || '8443', values.NGINX_HTTPS_PORT || APP_PORT, values.SSL_CERT_FILE, values.SSL_KEY_FILE);

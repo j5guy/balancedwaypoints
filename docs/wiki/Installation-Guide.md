@@ -41,6 +41,20 @@ installed first via `apt-get`/`dnf`/`yum` if either is missing and this isn't an
 inside the wizard (which is unconditional here, since this project is Docker-only) does the
 installer attempt it, via `get.docker.com`.
 
+### Installation footprint
+
+Only offered by the curl one-liner above (not the in-place `./install.sh` from an existing
+checkout — there's nowhere else for that checkout's source to go):
+
+- **Docker only, minimal footprint** (default, recommended) — builds the image from the scratch
+  clone, then deletes the source entirely, leaving just `docker-compose.yml`, `.env`, `certs/`,
+  `nginx/`, `.deploy-state.json`, and `update.sh` at the install directory.
+- **Full checkout** — keeps the full source at the install directory instead, same as every install
+  before this choice existed.
+
+Either way, `./update.sh` afterward is the same one command — see [Updating](Updating.md), which
+now handles both footprints.
+
 ## The setup wizard
 
 `scripts/setup-wizard.js` is a small Express server that reads `.env.example` for the field list,
@@ -127,9 +141,14 @@ code update), use `./update.sh` (see [Updating](Updating.md)) rather than reopen
    `sessionSecret` and, if applicable, the auto-detected `MONGO_IMAGE`.
 3. Installs Docker if it isn't already present (`get.docker.com`, then `sudo systemctl enable --now
    docker` and `sudo usermod -aG docker <you>` on Linux).
-4. Runs `docker compose -f docker-compose.yml -f docker-compose.nginx.yml [-f
-   docker-compose.mongo.yml] up -d --build` — always builds the image from this checkout; the
-   Mongo overlay is only included in Internal MongoDB mode.
+4. If "Docker only, minimal footprint" was picked: builds the image, writes a small
+   self-contained `docker-compose.yml` (no build context), copies `nginx/nginx.conf.template` and
+   `update.sh` into the install directory, brings the stack up from there, then deletes the scratch
+   checkout. If "Full checkout" was picked instead: moves the checkout to the install directory as-is,
+   then runs `docker compose -f docker-compose.yml -f docker-compose.nginx.yml [-f
+   docker-compose.mongo.yml] up -d --build` there (the Mongo overlay is only included in Internal
+   MongoDB mode). Either branch writes `.deploy-state.json` recording which footprint/MongoDB mode
+   was chosen, for `update.sh` to read later (see [Updating](Updating.md)).
 5. Prints the URL(s) the app is reachable at: `https://<WEB_FQDN>:<port>/` plus
    `https://<lan-ip>:<port>/` for every LAN IP address this host has.
 

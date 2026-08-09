@@ -11,12 +11,14 @@
 // and running `docker compose -f docker-compose.yml -f docker-compose.nginx.yml
 // -f docker-compose.mongo.yml up -d --build`.
 const fs = require('fs');
+const net = require('net');
+const dns = require('dns');
 const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
 const { lanAddresses, printAccessUrls, highlight } = require('./lib/network');
-const { mongoNeedsLegacyArmImage, LEGACY_ARM_MONGO_IMAGE, generateCert, bringUpDocker, APP_PORT } = require('./lib/bringUp');
+const { mongoNeedsLegacyArmImage, LEGACY_ARM_MONGO_IMAGE, generateCert, bringUpDocker, detectHostNginx, APP_PORT } = require('./lib/bringUp');
 
 const ROOT = path.join(__dirname, '..');
 const ENV_PATH = path.join(ROOT, '.env');
@@ -73,7 +75,13 @@ function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function renderForm(fields, values, mongoMode, certMode) {
+const NGINX_PORT_KEYS = new Set(['NGINX_HTTP_PORT', 'NGINX_HTTPS_PORT']);
+
+function renderForm(fields, values, mongoMode, certMode, nginxInfo) {
+    const nginxConflictNote = nginxInfo.running
+        ? `<p class="help warn">nginx is already running on this host — if it's using this port, the bundled Docker nginx container will fail to start. Pick a different port, or stop the host nginx first.</p>`
+        : '';
+
     const rows = fields.filter(f => !HIDDEN_KEYS.has(f.key)).map(f => {
         const value = values[f.key] !== undefined ? values[f.key] : f.default;
         const isMongoOnly = MONGO_EXTERNAL_ONLY_KEYS.has(f.key);
@@ -81,16 +89,22 @@ function renderForm(fields, values, mongoMode, certMode) {
         const isCertField = f.key === 'SSL_CERT_FILE' || f.key === 'SSL_KEY_FILE';
         const certDisabled = isCertField && certMode !== 'own';
         const inputType = MASKED_KEYS.has(f.key) ? 'password' : 'text';
+        const isFqdn = f.key === 'WEB_FQDN';
         return `
         <div class="field">
           <label for="${f.key}">${escapeHtml(FIELD_LABELS[f.key] || f.key)}</label>
           ${f.help ? `<p class="help">${escapeHtml(f.help)}</p>` : ''}
-          <input type="${inputType}" id="${f.key}" name="${f.key}" value="${escapeHtml(value)}" ${(disabled || certDisabled) ? 'disabled' : ''} autocomplete="off" />
+          ${NGINX_PORT_KEYS.has(f.key) ? nginxConflictNote : ''}
+          <input type="${inputType}" id="${f.key}" name="${f.key}" value="${escapeHtml(value)}" ${(disabled || certDisabled) ? 'disabled' : ''} autocomplete="off" ${isFqdn ? 'data-dns-check="1"' : ''} />
+          ${isFqdn ? `<p class="help dns-status" id="dns-status-WEB_FQDN" style="display:none"></p>` : ''}
         </div>`;
     }).join('\n');
 
     const armNote = mongoNeedsLegacyArmImage()
         ? `<p class="help warn">This CPU needs an older MongoDB image (${LEGACY_ARM_MONGO_IMAGE}) — set automatically.</p>`
+        : '';
+    const hostNginxNote = nginxInfo.installed
+        ? `<p class="help ${nginxInfo.running ? 'warn' : ''}">${nginxInfo.running ? 'nginx is already running' : 'nginx is installed but not currently running'} on this host. This project doesn't wire up a host nginx site automatically (unlike some sibling projects) — the bundled Docker nginx container handles TLS on its own, listening on the ports configured below. If a host nginx is also bound to those ports, the Docker stack will fail to start until that's resolved.</p>`
         : '';
 
     return `<!doctype html>
@@ -104,14 +118,25 @@ function renderForm(fields, values, mongoMode, certMode) {
   label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.15rem; }
   .help { margin: 0 0 0.35rem; font-size: 0.8rem; color: #777; }
   .help.warn { color: #b3261e; font-weight: 600; }
+  .help.pass { color: #2d6a4f; font-weight: 600; }
   input { width: 100%; padding: 0.4rem 0.5rem; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; box-sizing: border-box; }
   input:disabled { opacity: 0.5; background: #eee; }
   .radio-row { display: flex; flex-direction: column; gap: 0.35rem; }
+  .radio-row label { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; }
   button { padding: 0.6rem 1.4rem; font-size: 1rem; border: none; border-radius: 8px; background: #1B6E6E; color: white; cursor: pointer; }
+  @media (prefers-color-scheme: dark) {
+    fieldset { border-color: #444; }
+    .help { color: #999; }
+    input { background: #2a2a2a; color: #eee; border-color: #555; }
+    input:disabled { background: #222; }
+    .help.warn { color: #ff8a80; }
+    .help.pass { color: #6fcf97; }
+  }
 </style></head>
 <body>
   <h1>Balanced Waypoints — Setup</h1>
   <p>Fill in the fields below, then submit. This writes <code>.env</code> and brings up the Docker stack.</p>
+  ${hostNginxNote}
   <form method="POST" action="/save">
     <fieldset>
       <legend>MongoDB</legend>
@@ -131,6 +156,41 @@ function renderForm(fields, values, mongoMode, certMode) {
     <fieldset><legend>Configuration</legend>${rows}</fieldset>
     <button type="submit">Save &amp; start</button>
   </form>
+  <script>
+    // Live DNS resolution check for the domain field — informational only,
+    // doesn't block submitting the form (a name that isn't in DNS yet is a
+    // normal thing to still be setting up).
+    const dnsCheckTimers = {};
+    const dnsCheckSeq = {};
+    function checkDns(input) {
+      const status = document.getElementById('dns-status-' + input.id);
+      if (!status) return;
+      const value = input.value.trim();
+      if (!value) { status.style.display = 'none'; return; }
+      const requestId = (dnsCheckSeq[input.id] = (dnsCheckSeq[input.id] || 0) + 1);
+      fetch('/check-dns?fqdn=' + encodeURIComponent(value))
+        .then((r) => r.json())
+        .then((data) => {
+          if (dnsCheckSeq[input.id] !== requestId) return; // a newer check superseded this one
+          if (data.resolves) {
+            status.textContent = 'This name resolves in DNS.';
+            status.className = 'help dns-status pass';
+          } else {
+            status.textContent = "This name isn't resolving in DNS yet. Setup can still proceed, but it's recommended to have it in DNS (or a hosts file entry) before you rely on it.";
+            status.className = 'help dns-status warn';
+          }
+          status.style.display = '';
+        })
+        .catch(() => { status.style.display = 'none'; });
+    }
+    document.querySelectorAll('input[data-dns-check]').forEach((input) => {
+      input.addEventListener('input', () => {
+        clearTimeout(dnsCheckTimers[input.id]);
+        dnsCheckTimers[input.id] = setTimeout(() => checkDns(input), 500);
+      });
+      checkDns(input); // initial check for the prefilled value
+    });
+  </script>
 </body></html>`;
 }
 
@@ -158,7 +218,21 @@ async function main() {
     const done = new Promise(resolve => { resolveDone = resolve; });
 
     app.get('/', (req, res) => {
-        res.send(renderForm(fields, existing, existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal', existing.SSL_CERT_FILE ? 'own' : 'generate'));
+        res.send(renderForm(fields, existing, existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal', existing.SSL_CERT_FILE ? 'own' : 'generate', detectHostNginx()));
+    });
+
+    // Live DNS resolution check for WEB_FQDN — informational only, doesn't
+    // block submitting the form (see the client-side checkDns() above).
+    app.get('/check-dns', async (req, res) => {
+        const fqdn = String(req.query.fqdn || '').trim();
+        if (!fqdn) return res.json({ resolves: false });
+        if (net.isIP(fqdn)) return res.json({ resolves: true }); // an IP literal needs no DNS lookup
+        try {
+            await dns.promises.lookup(fqdn);
+            res.json({ resolves: true });
+        } catch {
+            res.json({ resolves: false });
+        }
     });
 
     app.post('/save', (req, res) => {

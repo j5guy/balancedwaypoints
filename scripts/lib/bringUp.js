@@ -25,6 +25,22 @@ function commandExists(cmd) {
     return !result.error;
 }
 
+// Informational only — unlike fondwaypoints, this project doesn't auto-wire
+// a host nginx site (see the plan note at the top of this file), so there's
+// nothing to configure here. This just warns the setup form when a host
+// nginx is already running, since the bundled Docker nginx container will
+// try to bind NGINX_HTTP_PORT/NGINX_HTTPS_PORT (80/443 by default) on the
+// same host and will fail to start if something else already holds them.
+function detectHostNginx() {
+    const installed = commandExists('nginx');
+    let running = false;
+    if (installed) {
+        const status = spawnSync('systemctl', ['is-active', 'nginx'], { encoding: 'utf8' });
+        running = status.status === 0 && status.stdout.trim() === 'active';
+    }
+    return { installed, running };
+}
+
 function run(cmd, args, opts = {}) {
     console.log(`\n$ ${cmd} ${args.join(' ')}`);
     const result = spawnSync(cmd, args, { stdio: 'inherit', ...opts });
@@ -157,6 +173,7 @@ module.exports = {
     LEGACY_ARM_MONGO_IMAGE,
     mongoNeedsLegacyArmImage,
     commandExists,
+    detectHostNginx,
     run,
     generateCert,
     ensureDockerInstalled,

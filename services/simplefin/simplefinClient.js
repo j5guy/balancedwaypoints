@@ -11,6 +11,18 @@
 //    sets an explicit Authorization header instead.
 class SimplefinError extends Error {}
 
+// Node's fetch (undici) throws a generic "fetch failed" TypeError for any
+// network-level failure (DNS, TLS, connection refused, etc.) — the actually
+// useful detail is nested in err.cause. Without unwrapping it, both the log
+// and the error shown to the user say nothing more than "fetch failed",
+// which is true of a dozen different root causes.
+function describeFetchError(err) {
+    const cause = err && err.cause;
+    if (cause && cause.code) return `${cause.code}${cause.message ? ' — ' + cause.message : ''}`;
+    if (cause && cause.message) return cause.message;
+    return (err && err.message) || 'request failed';
+}
+
 function decodeSetupToken(setupToken) {
     let claimUrl;
     try {
@@ -26,7 +38,12 @@ function decodeSetupToken(setupToken) {
 
 async function claimAccessUrl(setupToken) {
     const claimUrl = decodeSetupToken(setupToken);
-    const res = await fetch(claimUrl, { method: 'POST', headers: { 'Content-Length': '0' } });
+    let res;
+    try {
+        res = await fetch(claimUrl, { method: 'POST', headers: { 'Content-Length': '0' } });
+    } catch (err) {
+        throw new SimplefinError(`Couldn't reach the claim URL — ${describeFetchError(err)}`);
+    }
     const accessUrl = (await res.text()).trim();
     if (!res.ok || !accessUrl) {
         // A claim URL is single-use — the most common failure by far is
@@ -65,9 +82,14 @@ async function fetchAccounts(accessUrl, { startDate, accountIds } = {}) {
     if (startDate) params.set('start-date', String(Math.floor(startDate.getTime() / 1000)));
     (accountIds || []).forEach((id) => params.append('account', id));
 
-    const res = await fetch(`${baseUrl}/accounts?${params.toString()}`, {
-        headers: { Authorization: authHeader }
-    });
+    let res;
+    try {
+        res = await fetch(`${baseUrl}/accounts?${params.toString()}`, {
+            headers: { Authorization: authHeader }
+        });
+    } catch (err) {
+        throw new SimplefinError(`Couldn't reach ${new URL(baseUrl).host} — ${describeFetchError(err)}`);
+    }
     if (!res.ok) {
         throw new SimplefinError(`SimpleFIN request failed (${res.status})`);
     }

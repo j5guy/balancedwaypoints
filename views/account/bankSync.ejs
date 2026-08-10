@@ -1,0 +1,57 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-account-bank-sync">
+    <div class="page-header">
+        <h1>Bank Sync</h1>
+    </div>
+    <div id="account-error" class="form-error" hidden></div>
+    <div id="account-success" class="form-success" hidden></div>
+
+    <div class="card">
+        <p class="muted">
+            Connect a <a href="https://www.simplefin.org/" target="_blank" rel="noopener noreferrer">SimpleFIN</a>
+            bridge to automatically import new transactions every few hours instead of uploading CSV/OFX files by
+            hand. Get a setup token from your SimpleFIN Bridge account (or whichever provider issued it), paste it
+            below, then choose which of your accounts here it should sync into. Entirely optional — nothing about
+            manual entry or CSV/OFX import changes if you skip this.
+        </p>
+        <div class="form-row">
+            <div class="form-group" style="flex:2;">
+                <label for="sf-setup-token">Setup token</label>
+                <input type="text" id="sf-setup-token" autocomplete="off" placeholder="Paste the one-time token here">
+                <p class="form-hint">Single-use — once claimed here it can't be claimed again elsewhere.</p>
+            </div>
+            <div class="form-group">
+                <label for="sf-connection-label">Label (optional)</label>
+                <input type="text" id="sf-connection-label" placeholder="e.g. Chase">
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="sf-connect-btn">Connect</button>
+        </div>
+    </div>
+
+    <div class="card" id="sf-link-section" hidden>
+        <h3>Link accounts <span id="sf-link-connection-label" class="muted"></span></h3>
+        <p class="muted">For each account SimpleFIN can see, either link it to an existing account here or create a new one.</p>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Remote account</th><th>Balance</th><th>Link to</th><th></th></tr></thead>
+                <tbody id="sf-link-tbody"></tbody>
+            </table>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-secondary" id="sf-link-done-btn">Done</button>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr><th>Connection</th><th>Linked accounts</th><th>Last sync</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="sf-connections-tbody"></tbody>
+        </table>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/accountBankSync.js'] }) %>

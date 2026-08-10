@@ -23,7 +23,16 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         role: role || 'owner',
         ownerName: ownerName || undefined,
         ownerId: ownerId || undefined,
-        shareId: shareId || undefined
+        shareId: shareId || undefined,
+        // Bank sync (see services/simplefin/) — both null for a normal
+        // manually-managed account. simplefinBalanceCents is the
+        // bank-reported balance as of the last sync, purely for the
+        // register's own reconciliation display; it never affects
+        // balanceCents above, which is always computed from transactions.
+        simplefinConnection: account.simplefinConnection || undefined,
+        simplefinAccountId: account.simplefinAccountId || undefined,
+        simplefinBalanceCents: account.simplefinBalanceCents != null ? account.simplefinBalanceCents : undefined,
+        simplefinBalanceDate: account.simplefinBalanceDate || undefined
     };
 }
 
@@ -131,6 +140,22 @@ async function forceRemove(req, res) {
     }
 }
 
+// Detaches this account from whatever SimpleFIN connection it's linked to —
+// its transaction history stays put, it just stops receiving new synced
+// rows and goes back to being a plain manual account. Doesn't touch the
+// connection itself or any other account linked to it.
+async function unlinkSimplefin(req, res) {
+    const account = await accounts.update(req.params.id, {
+        simplefinConnection: null,
+        simplefinAccountId: null,
+        simplefinBalanceCents: null,
+        simplefinBalanceDate: null
+    }, req.session.userId);
+    if (!account) return res.status(404).json({ error: 'Not found' });
+    const balanceCents = await accounts.balanceForAccountDoc(account);
+    res.json(serialize({ account, balanceCents }));
+}
+
 // ── Sharing (owner-only management of who else can see/use this account) ──
 async function listShares(req, res) {
     const account = await accounts.findById(req.params.id, req.session.userId);
@@ -176,6 +201,6 @@ async function actingOwners(req, res) {
 }
 
 module.exports = {
-    list, sharedWithMe, get, create, update, remove, forceRemove,
+    list, sharedWithMe, get, create, update, remove, forceRemove, unlinkSimplefin,
     listShares, createShare, updateShare, removeShare, actingOwners
 };

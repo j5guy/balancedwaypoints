@@ -369,6 +369,32 @@
         return crossings;
     }
 
+    // Every individual FUTURE calendar day below the threshold, not just the
+    // moment each dip starts (that's findThresholdCrossings above, still used
+    // for the chart's dots since the x-axis only has one position per
+    // occurrence). Rows are sparse in the future segment (one point per
+    // schedule occurrence, balance flat in between — see forecast.js), so
+    // each below-threshold row's balance is expanded across every day up to
+    // (not including) the next row's date. The final row has no following
+    // row to bound it, so it only contributes its own day — the forecast
+    // window's true end date isn't part of `rows` to expand against.
+    function findThresholdDays(rows, thresholdCents) {
+        const days = [];
+        let inProjected = false;
+        rows.forEach((r, i) => {
+            if (r.projected && !inProjected) inProjected = true;
+            if (!inProjected) return;
+            if (r.balanceCents >= thresholdCents) return;
+            const start = new Date(`${r.date}T00:00:00Z`);
+            const next = rows[i + 1];
+            const end = next ? new Date(`${next.date}T00:00:00Z`) : new Date(start.getTime() + 86400000);
+            for (let d = new Date(start); d < end; d.setUTCDate(d.getUTCDate() + 1)) {
+                days.push({ date: d.toISOString().slice(0, 10), balanceCents: r.balanceCents });
+            }
+        });
+        return days;
+    }
+
     function niceStepCents(rangeCents, targetLines) {
         const roughDollars = Math.max(1, (rangeCents / 100) / targetLines);
         const magnitude = Math.pow(10, Math.floor(Math.log10(roughDollars)));
@@ -439,16 +465,18 @@
             return `<text class="trend-axis-label" x="${xAt(i)}" y="${height - 4}" text-anchor="${anchor}">${window.BWDate.formatDate(rows[i].date)}</text>`;
         }).join('');
 
-        // Marks + calls out every FUTURE dip below the threshold (see
-        // findThresholdCrossings) — not a dot on every day a dip stays
-        // under, just the moment it starts, since that's the one point
-        // each dip's story is actually about (dataviz's "label
-        // selectively" guidance). Text sits outside the SVG since a
-        // coordinate label risks colliding with the axis/grid labels at
-        // this widget's compact size.
+        // Chart dots mark just the moment each FUTURE dip starts (one per
+        // occurrence-spaced row, via findThresholdCrossings — a dot per day
+        // isn't meaningful when the x-axis only has one position per
+        // occurrence). The text list below is the opposite: every individual
+        // day below the threshold (findThresholdDays), so a multi-day dip
+        // reads as a full day-by-day list rather than a single "starts here"
+        // line. Text sits outside the SVG since a coordinate label risks
+        // colliding with the axis/grid labels at this widget's compact size.
         const crossings = findThresholdCrossings(rows, thresholdCents);
         const markers = crossings.map(c => `<circle class="forecast-threshold-marker" cx="${xAt(c.index)}" cy="${yAt(c.balanceCents)}" r="4"></circle>`).join('');
-        const callouts = crossings.map(c => `<div class="forecast-warning">⚠ Drops below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(c.date)} — projected balance ${window.BWMoney.formatCents(c.balanceCents)}</div>`).join('');
+        const belowDays = findThresholdDays(rows, thresholdCents);
+        const callouts = belowDays.map(d => `<div class="forecast-warning">⚠ Below ${window.BWMoney.formatCents(thresholdCents)} on ${window.BWDate.formatDate(d.date)} — projected balance ${window.BWMoney.formatCents(d.balanceCents)}</div>`).join('');
 
         const html = `
             <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Account forecast">

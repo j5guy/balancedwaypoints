@@ -13,12 +13,16 @@
     function accountRow(account) {
         const tr = document.createElement('tr');
         const balanceClass = account.balanceCents < 0 ? 'money-negative' : 'money-positive';
+        const syncBadge = account.simplefinAccountId
+            ? ' <span class="badge" title="Synced via SimpleFIN — new transactions import automatically">🔄</span>'
+            : '';
         tr.innerHTML = `
-            <td><a href="/accounts/${account.id}" class="link-plain">${account.name}${account.closed ? ' (closed)' : ''}</a></td>
+            <td><a href="/accounts/${account.id}" class="link-plain">${account.name}${account.closed ? ' (closed)' : ''}</a>${syncBadge}</td>
             <td style="text-transform:capitalize;">${account.type}</td>
             <td class="money ${balanceClass}">${window.BWMoney.formatCents(account.balanceCents)}</td>
             <td>${account.onBudget ? 'Yes' : 'No'}</td>
             <td class="row-actions">
+                ${account.simplefinAccountId ? '<button type="button" class="btn btn-secondary btn-sm icon-btn" data-unlink-sync title="Stop syncing this account">🔌</button>' : ''}
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-share title="Share">🔗</button>
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
                 <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
@@ -27,7 +31,22 @@
         tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(account));
         tr.querySelector('[data-delete]').addEventListener('click', () => openDeleteModal(account));
         tr.querySelector('[data-share]').addEventListener('click', () => openShareModal(account));
+        const unlinkBtn = tr.querySelector('[data-unlink-sync]');
+        if (unlinkBtn) unlinkBtn.addEventListener('click', () => unlinkSync(account));
         return tr;
+    }
+
+    // Manage > Bank Sync (public/js/accountBankSync.js) is where a sync
+    // connection/link first gets set up — this is just the quick "stop
+    // syncing this one account" escape hatch from the Accounts table itself.
+    async function unlinkSync(account) {
+        if (!confirm(`Stop syncing "${account.name}"? Its transaction history stays — it just goes back to manual entry.`)) return;
+        try {
+            await window.BWApi.apiFetch(`/api/accounts/${account.id}/simplefin/unlink`, { method: 'POST' });
+            load();
+        } catch (err) {
+            showError(err);
+        }
     }
 
     async function load() {

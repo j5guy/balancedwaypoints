@@ -20,6 +20,7 @@ const buildInfo = require('./utils/buildInfo');
 const themeColorFields = require('./utils/themeColorFields');
 const startScheduler = require('./services/schedules/scheduler');
 const backupScheduler = require('./services/backup/backupScheduler');
+const startSimplefinScheduler = require('./services/simplefin/simplefinScheduler');
 
 // Database
 mongooseConnect();
@@ -31,6 +32,10 @@ startScheduler();
 // Backups) — reloaded again whenever settings are saved, see
 // controllers/adminController.js/accountController.js.
 backupScheduler.reloadAll().catch((err) => logger.error('Initial backup scheduler load failed: ' + err.message));
+
+// Optional bank sync (My Account > Bank Sync) — no-op for anyone who hasn't
+// connected a SimpleFIN bridge, see services/simplefin/.
+startSimplefinScheduler();
 
 // View engine
 app.set('view engine', 'ejs');
@@ -107,6 +112,7 @@ const schedulesApiRoutes = require('./routes/api/schedules');
 const importsApiRoutes = require('./routes/api/imports');
 const reportsApiRoutes = require('./routes/api/reports');
 const adminApiRoutes = require('./routes/api/admin');
+const simplefinApiRoutes = require('./routes/api/simplefin');
 
 const apiRouter = express.Router();
 apiRouter.use(apiBaselineLimiter);
@@ -126,6 +132,7 @@ apiRouter.use('/schedules', schedulesApiRoutes);
 apiRouter.use('/imports', importsApiRoutes);
 apiRouter.use('/reports', reportsApiRoutes);
 apiRouter.use('/admin', adminApiRoutes);
+apiRouter.use('/simplefin', simplefinApiRoutes);
 
 app.use('/', pagesRoutes);
 app.use('/auth', authPagesRoutes);

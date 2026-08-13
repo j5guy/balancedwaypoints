@@ -70,6 +70,10 @@ install it. See [RELEASE_NOTES](RELEASE_NOTES) for release notes and version his
   independent of full account/budget access.
 - **Import** — CSV (tolerant bank-export column detection) and OFX/QFX, with duplicate detection
   against previously-imported rows and rule-based category/tag suggestions before you commit.
+- **Bank Sync** (optional) — link a [SimpleFIN](https://www.simplefin.org/) bridge from My Account &gt;
+  Bank Sync to auto-import new transactions every few hours (plus a manual "Sync now"), instead of
+  uploading CSV/OFX by hand. Runs through the same dedupe and rule-based categorization as manual
+  import; an account can be unlinked at any time without touching its history.
 - **Reports** — spending by category, income vs. expense, and net worth over time.
 - **Dashboard** — a customizable widget grid (drag-to-reorder, not free-resize): repeatable summary/
   income/expense/net-budget widgets that can each be scoped to a specific account or all of them,

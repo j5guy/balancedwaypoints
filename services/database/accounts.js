@@ -5,6 +5,10 @@ const Schedule = require('../../models/schedule');
 const Payee = require('../../models/payee');
 
 const list = (ownerId) => Account.find({ owner: ownerId }).sort({ name: 1 }).exec();
+// Every account linked to a given SimpleFIN connection — used by
+// services/simplefin/syncService.js to know which local accounts to pull
+// transactions into for that connection's sync run.
+const findLinkedToSimplefin = (connectionId, ownerId) => Account.find({ owner: ownerId, simplefinConnection: connectionId }).exec();
 // findOne (not findById) with owner in the filter itself — a request for
 // another user's account id resolves to nothing instead of ever loading it.
 const findById = (id, ownerId) => Account.findOne({ _id: id, owner: ownerId }).exec();
@@ -86,4 +90,4 @@ const balancesForAll = async (ownerId) => {
     }));
 };
 
-module.exports = { list, findById, create, update, remove, forceRemove, balanceFor, balanceForAccountDoc, balancesForAll, ForceDeleteError };
+module.exports = { list, findLinkedToSimplefin, findById, create, update, remove, forceRemove, balanceFor, balanceForAccountDoc, balancesForAll, ForceDeleteError };

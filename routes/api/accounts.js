@@ -15,6 +15,7 @@ router.post('/', accountsController.create);
 router.put('/:id', accountsController.update);
 router.delete('/:id', accountsController.remove);
 router.delete('/:id/force', accountsController.forceRemove);
+router.post('/:id/simplefin/unlink', accountsController.unlinkSimplefin);
 
 router.get('/:id/shares', accountsController.listShares);
 router.post('/:id/shares', accountsController.createShare);

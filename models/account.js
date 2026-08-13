@@ -24,10 +24,25 @@ const accountSchema = new mongoose.Schema({
     forecastThresholdColor: { type: String, trim: true, default: '#B5433A' },
     closed: { type: Boolean, default: false },
     notes: { type: String, trim: true, default: '' },
-    sortOrder: { type: Number, default: 0 }
+    sortOrder: { type: Number, default: 0 },
+    // Optional bank sync link (see models/simplefinConnection.js and
+    // services/simplefin/) — both null for a normal manually-managed
+    // account, the default and by far the common case. When set, the
+    // scheduled/manual sync job auto-imports new transactions from this
+    // specific remote account under that connection, the same way a CSV/OFX
+    // import would (same dedupe key convention, same rules engine).
+    simplefinConnection: { type: mongoose.Schema.Types.ObjectId, ref: 'SimplefinConnection', default: null },
+    simplefinAccountId: { type: String, default: null },
+    // The bank-reported balance/date as of the last sync — purely a
+    // reconciliation display (see accounts/show.ejs), never fed into the
+    // envelope math, which always derives balance from startingBalanceCents
+    // + transactions (services/database/accounts.js's balanceForAccountDoc).
+    simplefinBalanceCents: { type: Number, default: null },
+    simplefinBalanceDate: { type: Date, default: null }
 }, { timestamps: true });
 
 accountSchema.index({ owner: 1 });
+accountSchema.index({ simplefinConnection: 1 }, { sparse: true });
 
 module.exports = mongoose.model('Account', accountSchema);
 module.exports.ACCOUNT_TYPES = ACCOUNT_TYPES;

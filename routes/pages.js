@@ -77,4 +77,8 @@ router.get('/account/backups', requireAuth, (req, res) => {
     res.render('account/backups', { title: 'Backups' });
 });
 
+router.get('/account/bank-sync', requireAuth, (req, res) => {
+    res.render('account/bankSync', { title: 'Bank Sync' });
+});
+
 module.exports = router;

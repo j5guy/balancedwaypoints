@@ -16,6 +16,10 @@ router.put('/settings/ldap', adminController.updateLdapSettings);
 router.delete('/settings/ldap', adminController.resetLdapSettings);
 router.post('/settings/ldap/test', adminController.testLdapSettings);
 
+router.get('/settings/oidc', adminController.getOidcSettings);
+router.put('/settings/oidc', adminController.updateOidcSettings);
+router.delete('/settings/oidc', adminController.resetOidcSettings);
+
 router.get('/settings/backup', adminController.getBackupSettings);
 router.put('/settings/backup', adminController.updateBackupSettings);
 router.post('/settings/backup/check', adminController.checkBackupDestination);

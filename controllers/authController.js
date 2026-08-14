@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const usersDb = require('../services/database/users');
 const { adminEmail } = require('../config/config');
 const { resolveLdapConfig, authenticateLdap } = require('../config/ldapAuth');
+const { resolveOidcConfig, buildAuthorizationRequest, handleCallback } = require('../config/oidcAuth');
 const THEME_COLOR_FIELDS = require('../utils/themeColorFields');
 const logger = require('../utils/logger');
 
@@ -84,11 +85,15 @@ async function login(req, res) {
     });
 }
 
-// Public — the login page uses this to decide whether to show the LDAP
-// login form at all, so it isn't presented as an option when nobody's
-// configured it.
+// Public — the login page uses these to decide whether to show the LDAP/OIDC
+// login options at all, so they aren't presented when nobody's configured them.
 async function ldapStatus(req, res) {
     const config = await resolveLdapConfig().catch(() => null);
+    res.json({ enabled: !!(config && config.enabled) });
+}
+
+async function oidcStatus(req, res) {
+    const config = await resolveOidcConfig().catch(() => null);
     res.json({ enabled: !!(config && config.enabled) });
 }
 
@@ -171,6 +176,96 @@ async function loginLdap(req, res) {
     req.session.save((err) => {
         if (err) logger.error('Session save error: ' + err.message);
         res.json({ email: user.email, displayName: user.displayName, isAdmin: user.isAdmin });
+    });
+}
+
+// Starts the OIDC authorization-code + PKCE flow — see config/oidcAuth.js.
+// The verifier/state have to survive the redirect round-trip to the IdP and
+// back, so they're stashed in this (already-authenticated-cookie-bearing)
+// session rather than passed through the URL.
+async function oidcStart(req, res) {
+    try {
+        const { url, codeVerifier, state } = await buildAuthorizationRequest();
+        req.session.oidcCodeVerifier = codeVerifier;
+        req.session.oidcState = state;
+        req.session.save((err) => {
+            if (err) logger.error('Session save error: ' + err.message);
+            res.redirect(url);
+        });
+    } catch (err) {
+        logger.error('OIDC start error: ' + err.message);
+        res.redirect('/auth/login?error=' + encodeURIComponent('OIDC login is not available'));
+    }
+}
+
+async function oidcCallback(req, res) {
+    const codeVerifier = req.session.oidcCodeVerifier;
+    const state = req.session.oidcState;
+    delete req.session.oidcCodeVerifier;
+    delete req.session.oidcState;
+
+    if (!codeVerifier || !state) {
+        return res.redirect('/auth/login?error=' + encodeURIComponent('OIDC login session expired — try again'));
+    }
+
+    let claims;
+    try {
+        claims = await handleCallback(req, { codeVerifier, state });
+    } catch (err) {
+        logger.info(`OIDC callback failed: ${err.message}`);
+        return res.redirect('/auth/login?error=' + encodeURIComponent('OIDC login failed'));
+    }
+
+    const subject = claims.sub;
+    let user = await usersDb.findByOidcSubject(subject);
+    if (!user) {
+        // No guaranteed email claim from every IdP — fall back to a clearly
+        // non-routable placeholder, same reasoning as loginLdap's `email`
+        // fallback above; the user sets a real notifyEmail themselves from
+        // My Account before any email actually goes out.
+        const email = (claims.email || `${subject}@oidc.local`).toLowerCase();
+        const displayName = claims.name || claims.preferred_username || email.split('@')[0];
+
+        const emailConflict = await usersDb.findByEmail(email);
+        if (emailConflict) {
+            logger.error(`OIDC login for subject "${subject}" resolved to email "${email}", which already belongs to a different account`);
+            return res.redirect('/auth/login?error=' + encodeURIComponent('An account with this email already exists — ask an admin to resolve this'));
+        }
+
+        const userCount = await usersDb.count();
+        const isAdmin = userCount === 0 || email === adminEmail;
+        user = await usersDb.create({
+            email, displayName, isAdmin, authSource: 'oidc', oidcSubject: subject, lastLoginAt: new Date(),
+            notifyEmail: claims.email || null
+        });
+        logger.info(`New OIDC-provisioned account: ${subject}${isAdmin ? ' (admin)' : ''}`);
+    } else {
+        // Self-heal: the IdP is the source of truth for these two fields,
+        // same reasoning as loginLdap's self-heal below. Skipped if the new
+        // email would belong to a different existing account already —
+        // never silently merge two accounts into one email.
+        const freshEmail = claims.email ? claims.email.toLowerCase() : null;
+        const freshDisplayName = claims.name || claims.preferred_username || null;
+        if (freshEmail && freshEmail !== user.email) {
+            const conflict = await usersDb.findByEmail(freshEmail);
+            if (!conflict || String(conflict._id) === String(user._id)) {
+                user.email = freshEmail;
+            } else {
+                logger.error(`OIDC login for subject "${subject}": IdP email "${freshEmail}" already belongs to a different account — not updating`);
+            }
+        }
+        if (freshDisplayName && freshDisplayName !== user.displayName) {
+            user.displayName = freshDisplayName;
+        }
+        user.lastLoginAt = new Date();
+        await user.save();
+    }
+
+    establishSession(req, user);
+    logger.info(`OIDC login: ${subject}`);
+    req.session.save((err) => {
+        if (err) logger.error('Session save error: ' + err.message);
+        res.redirect('/');
     });
 }
 
@@ -356,4 +451,7 @@ async function updatePreferences(req, res) {
     });
 }
 
-module.exports = { signup, login, loginLdap, ldapStatus, logout, me, getPreferences, updatePreferences };
+module.exports = {
+    signup, login, loginLdap, ldapStatus, oidcStart, oidcCallback, oidcStatus,
+    logout, me, getPreferences, updatePreferences
+};

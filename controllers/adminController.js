@@ -6,6 +6,7 @@ const backupRunsDb = require('../services/database/backupRuns');
 const backupService = require('../services/backup/backupService');
 const backupScheduler = require('../services/backup/backupScheduler');
 const { resolveLdapConfig, testBind } = require('../config/ldapAuth');
+const { resolveOidcConfig } = require('../config/oidcAuth');
 
 function serializeUser(user) {
     return {
@@ -154,6 +155,63 @@ async function testLdapSettings(req, res) {
     res.json(result);
 }
 
+// ── OIDC settings (Admin > OIDC) — see models/settings.js/config/oidcAuth.js ──
+function parseOidcInput(body) {
+    const enabled = !!(body || {}).enabled;
+    const issuerUrl = String((body || {}).issuerUrl || '').trim();
+    const clientId = String((body || {}).clientId || '').trim();
+    const clientSecret = typeof (body || {}).clientSecret === 'string' ? (body || {}).clientSecret : '';
+    const scopes = String((body || {}).scopes || '').trim() || 'openid profile email';
+
+    if (enabled) {
+        if (!issuerUrl) return { error: 'issuerUrl is required' };
+        if (!clientId) return { error: 'clientId is required' };
+    }
+
+    return { enabled, issuerUrl, clientId, clientSecret, scopes };
+}
+
+// Never echoes the stored client secret back — only whether one exists.
+function serializeOidc(cfg) {
+    if (!cfg) return { configured: false, enabled: false, issuerUrl: null, clientId: null, scopes: 'openid profile email', hasClientSecret: false };
+    return {
+        configured: true,
+        enabled: cfg.enabled,
+        issuerUrl: cfg.issuerUrl,
+        clientId: cfg.clientId,
+        scopes: cfg.scopes,
+        hasClientSecret: !!cfg.clientSecret
+    };
+}
+
+async function getOidcSettings(req, res) {
+    const cfg = await resolveOidcConfig();
+    res.json(serializeOidc(cfg));
+}
+
+async function updateOidcSettings(req, res) {
+    const parsed = parseOidcInput(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+    // A client secret is required the first time enabling OIDC (nothing to
+    // fall back to); afterwards an admin can omit it to keep the one
+    // already stored, same as updateLdapSettings' bindPassword handling.
+    const existing = await settingsDb.getOidcSettings();
+    if (parsed.enabled && !parsed.clientSecret && !(existing && existing.clientSecret)) {
+        return res.status(400).json({ error: 'clientSecret is required' });
+    }
+
+    await settingsDb.setOidcSettings(parsed, req.session.userId);
+    const cfg = await resolveOidcConfig();
+    res.json(serializeOidc(cfg));
+}
+
+async function resetOidcSettings(req, res) {
+    await settingsDb.clearOidcSettings();
+    const cfg = await resolveOidcConfig();
+    res.json(serializeOidc(cfg));
+}
+
 // ── Backups (Admin > Backups, site-wide) — see services/backup/backupService.js ──
 // My Account > Backups is the personal-scope equivalent of everything below
 // — see controllers/accountController.js, which mirrors this against
@@ -247,6 +305,7 @@ async function restoreFromFile(req, res) {
 module.exports = {
     listUsers, updateUser, setAdmin, removeUser,
     getLdapSettings, updateLdapSettings, resetLdapSettings, testLdapSettings,
+    getOidcSettings, updateOidcSettings, resetOidcSettings,
     getBackupSettings, updateBackupSettings, checkBackupDestination,
     runBackupNow, listBackupRuns, listBackupFiles, downloadBackupFile, deleteBackupFile,
     restoreFromUpload, restoreFromFile

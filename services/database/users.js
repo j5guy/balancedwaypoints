@@ -5,6 +5,7 @@ const findByEmail = (email) => User.findOne({ email: email.toLowerCase().trim() 
 const findByEmailWithPassword = (email) => User.findOne({ email: email.toLowerCase().trim() }).select('+passwordHash').exec();
 const findById = (id) => User.findById(id).exec();
 const findByLdapUsername = (username) => User.findOne({ authSource: 'ldap', ldapUsername: username }).exec();
+const findByOidcSubject = (subject) => User.findOne({ authSource: 'oidc', oidcSubject: subject }).exec();
 const list = () => User.find().sort({ email: 1 }).exec();
 const create = (data) => User.create(data);
 const update = (id, data) => User.findByIdAndUpdate(id, data, { new: true, runValidators: true }).exec();
@@ -23,7 +24,7 @@ const clearApiKey = (id) => User.findByIdAndUpdate(id, {
 const touchApiKeyLastUsed = (id) => User.updateOne({ _id: id }, { $set: { 'apiKey.lastUsedAt': new Date() } }).exec().catch(() => {});
 
 module.exports = {
-    count, findByEmail, findByEmailWithPassword, findById, findByLdapUsername,
+    count, findByEmail, findByEmailWithPassword, findById, findByLdapUsername, findByOidcSubject,
     list, create, update, remove,
     findByApiKeyHash, setApiKey, clearApiKey, touchApiKeyLastUsed
 };

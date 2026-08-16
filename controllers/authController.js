@@ -299,6 +299,7 @@ async function getPreferences(req, res) {
         registerHistory: user.preferences.registerHistory,
         weeklyReportEmail: user.preferences.weeklyReportEmail,
         dashboard: user.preferences.dashboard,
+        badgeColors: user.preferences.badgeColors,
         notifyEmail: user.notifyEmail,
         themeColors: user.themeColors
     });
@@ -321,6 +322,22 @@ function sanitizeThemeColorGroup(input, existing) {
         else if (HEX_COLOR_RE.test(value)) result[key] = value;
         // Silently ignored if it's neither empty nor a valid hex color —
         // the color <input> in the UI can't produce anything else anyway.
+    }
+    return result;
+}
+
+// Same validation as sanitizeThemeColorGroup above, just over the flat
+// {scheduled, due, autopay} shape instead of a per-theme field list — see
+// models/user.js's preferences.badgeColors.
+const BADGE_COLOR_FIELDS = ['scheduled', 'due', 'autopay'];
+function sanitizeBadgeColors(input, existing) {
+    const result = {};
+    for (const key of BADGE_COLOR_FIELDS) {
+        result[key] = existing[key];
+        if (!(key in (input || {}))) continue;
+        const value = input[key];
+        if (!value) result[key] = null;
+        else if (HEX_COLOR_RE.test(value)) result[key] = value;
     }
     return result;
 }
@@ -403,7 +420,7 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { homeDashboard, registerSort, registerMask, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, notifyEmail, themeColors } = req.body || {};
+    const { homeDashboard, registerSort, registerMask, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, badgeColors, notifyEmail, themeColors } = req.body || {};
     if (['budget', 'accounts', 'dashboard'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
     if (['newest', 'oldest', 'manual'].includes(registerSort)) user.preferences.registerSort = registerSort;
     if (registerMask) Object.assign(user.preferences.registerMask, registerMask);
@@ -412,6 +429,7 @@ async function updatePreferences(req, res) {
     if (registerHistory) Object.assign(user.preferences.registerHistory, registerHistory);
     if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
     if (dashboard) user.preferences.dashboard = sanitizeDashboard(dashboard, user.preferences.dashboard);
+    if (badgeColors) user.preferences.badgeColors = sanitizeBadgeColors(badgeColors, user.preferences.badgeColors);
     // notifyEmail lives directly on the user doc (see models/user.js), not
     // under preferences, but is accepted here too so the My Account page's
     // notification-settings card can save it independent of the SMTP
@@ -445,6 +463,7 @@ async function updatePreferences(req, res) {
             registerHistory: user.preferences.registerHistory,
             weeklyReportEmail: user.preferences.weeklyReportEmail,
             dashboard: user.preferences.dashboard,
+            badgeColors: user.preferences.badgeColors,
             notifyEmail: user.notifyEmail,
             themeColors: user.themeColors
         });

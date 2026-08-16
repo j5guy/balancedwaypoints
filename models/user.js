@@ -192,6 +192,18 @@ const userSchema = new mongoose.Schema({
             balance: { type: Boolean, default: true },
             cleared: { type: Boolean, default: true }
         },
+        // Optional per-user override for the register's "Scheduled"/"Due"/
+        // "Autopay" badge colors (public/js/badgeColor.js turns these into
+        // an inline style; public/scss/components/_cards.scss's --badge-bg/
+        // --badge-color hooks are what they override). null means "use the
+        // app's default badge color" for that one — same null-means-default
+        // convention as themeColors below, validated the same way
+        // (controllers/authController.js's HEX_COLOR_RE).
+        badgeColors: {
+            scheduled: { type: String, default: null },
+            due: { type: String, default: null },
+            autopay: { type: String, default: null }
+        },
         upcomingSchedules: {
             enabled: { type: Boolean, default: false },
             amount: { type: Number, default: 14 },

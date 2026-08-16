@@ -7,6 +7,7 @@
     let categories = [];
     let categoryGroups = [];
     let payees = [];
+    let preferences = { badgeColors: { scheduled: null, due: null, autopay: null } };
     let editingId = null;
     let ownerSwitcher = { forOwnerId: () => null };
     // Live per-column filter (see the "Filter…" row in views/schedules/index.ejs,
@@ -90,8 +91,11 @@
         const payeeCell = schedule.transferAccount ? `→ ${schedule.transferAccount.name}` : (schedule.payee ? schedule.payee.name : '');
         const categoryCell = schedule.transferAccount ? 'Transfer' : (schedule.category ? schedule.category.name : '');
         const autopayTitle = schedule.autopayFromAccount ? `Autopay — drafted from ${schedule.autopayFromAccount.name}` : 'Autopay';
+        const badgeColors = preferences.badgeColors || {};
+        const dueSoonStyle = window.BWBadgeColor.badgeStyle(badgeColors.due);
+        const autopayStyle = window.BWBadgeColor.badgeStyle(badgeColors.autopay);
         tr.innerHTML = `
-            <td>${schedule.name}${schedule.dueSoon ? ' <span class="badge badge-warn">Due soon</span>' : ''}${schedule.notifyByEmail ? ' <span class="badge" title="Emails everyone with a mail server configured when due">✉</span>' : ''}${schedule.autopay ? ` <span class="badge" title="${autopayTitle}">⟳ Autopay</span>` : ''}</td>
+            <td>${schedule.name}${schedule.dueSoon ? ` <span class="badge badge-warn" style="${dueSoonStyle}">Due soon</span>` : ''}${schedule.notifyByEmail ? ' <span class="badge" title="Emails everyone with a mail server configured when due">✉</span>' : ''}${schedule.autopay ? ` <span class="badge" style="${autopayStyle}" title="${autopayTitle}">⟳ Autopay</span>` : ''}</td>
             <td>${account ? account.name : ''}</td>
             <td>${payeeCell}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(schedule.amountCents)}</td>
@@ -159,14 +163,16 @@
 
     async function load() {
         try {
-            const [schedulesRes, accountOptions, categoriesRes, categoryGroupsRes, payeesRes] = await Promise.all([
+            const [schedulesRes, accountOptions, categoriesRes, categoryGroupsRes, payeesRes, prefsRes] = await Promise.all([
                 window.BWApi.apiFetch(`/api/schedules${forQuery()}`),
                 loadAccountOptions(),
                 window.BWApi.apiFetch(`/api/categories${forQuery()}`),
                 window.BWApi.apiFetch(`/api/category-groups${forQuery()}`),
-                window.BWApi.apiFetch(`/api/payees${forQuery()}`)
+                window.BWApi.apiFetch(`/api/payees${forQuery()}`),
+                window.BWApi.apiFetch('/api/auth/preferences')
             ]);
             accounts = accountOptions;
+            preferences.badgeColors = prefsRes.badgeColors || preferences.badgeColors;
             categories = categoriesRes.categories;
             categoryGroups = categoryGroupsRes.categoryGroups;
             payees = payeesRes.payees;

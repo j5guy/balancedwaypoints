@@ -65,7 +65,8 @@
         registerMask: { amount: false, balance: false },
         registerColumns: { date: true, payee: true, category: true, notes: true, tags: true, amount: true, balance: true, cleared: true },
         upcomingSchedules: { enabled: false, amount: 14, unit: 'days' },
-        registerHistory: { enabled: false, amount: 3, unit: 'months' }
+        registerHistory: { enabled: false, amount: 3, unit: 'months' },
+        badgeColors: { scheduled: null, due: null, autopay: null }
     };
 
     function showError(err) {
@@ -254,8 +255,9 @@
         // account for the tooltip; on the source account's OWN register the
         // draft leg shows this same badge next to its "Transfer" category text.
         const autopayFromName = t.transferAccount ? (accounts.find(a => a.id === t.transferAccount)?.name || null) : null;
+        const autopayColor = window.BWBadgeColor.badgeStyle(preferences.badgeColors && preferences.badgeColors.autopay);
         const autopayBadge = t.autopay
-            ? ` <span class="badge" title="Autopay${autopayFromName ? ' — drafted from ' + autopayFromName : ''}">⟳ Autopay</span>`
+            ? ` <span class="badge" style="${autopayColor}" title="Autopay${autopayFromName ? ' — drafted from ' + autopayFromName : ''}">⟳ Autopay</span>`
             : '';
         const maskAmount = preferences.registerMask && preferences.registerMask.amount;
         const maskBalance = preferences.registerMask && preferences.registerMask.balance;
@@ -567,6 +569,9 @@
         const maskBalance = preferences.registerMask && preferences.registerMask.balance;
         const amountClass = maskAmount ? 'money-masked' : (s.amountCents < 0 ? 'money-negative' : 'money-positive');
         const balanceClass = maskBalance ? 'money-masked' : (occurrence.projectedBalanceCents < 0 ? 'money-negative' : 'money-positive');
+        const badgeColors = preferences.badgeColors || {};
+        const dueBadgeColor = window.BWBadgeColor.badgeStyle(occurrence.isDue ? badgeColors.due : badgeColors.scheduled);
+        const autopayBadgeColor = window.BWBadgeColor.badgeStyle(badgeColors.autopay);
         tr.innerHTML = `
             <td></td>
             <td></td>
@@ -579,8 +584,8 @@
             <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents, maskBalance)}</td>
             <td data-col="cleared"></td>
             <td class="row-actions">
-                <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>
-                ${s.autopay ? `<span class="badge" title="Autopay${s.autopayFromAccount ? ' — drafted from ' + s.autopayFromAccount.name : ''}">⟳</span>` : ''}
+                <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" style="${dueBadgeColor}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>
+                ${s.autopay ? `<span class="badge" style="${autopayBadgeColor}" title="Autopay${s.autopayFromAccount ? ' — drafted from ' + s.autopayFromAccount.name : ''}">⟳</span>` : ''}
                 ${accountRole === 'readonly' ? '' : '<button type="button" class="btn btn-secondary btn-sm icon-btn" data-occ-actions title="Edit or post this occurrence">⋯</button>'}
             </td>
         `;

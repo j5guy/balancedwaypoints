@@ -1,3 +1,7 @@
+v0.10.3b
+------
+Add user-configurable colors for the Scheduled, Due, and Autopay badges (My Account > Appearance)
+
 v0.10.2b
 ------
 Add autopay schedules — tag a schedule as autopay, optionally drafted from another account, and see a badge on the transactions it posts

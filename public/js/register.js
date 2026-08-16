@@ -1535,7 +1535,7 @@
         window.BWDragReorder.makeSortable(tbody, async (ids) => {
             refreshBalanceDisplay();
             try {
-                await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids } });
+                await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids, account: accountId } });
                 // A drag only "sticks" under manual sort (see
                 // services/database/transactions.js's SORTS) — date modes
                 // ignore sortOrder entirely, so without this the very next

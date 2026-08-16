@@ -57,6 +57,16 @@ select {
     }
 }
 
+// The register's column show/hide + reorder list (see public/js/register.js's
+// renderColumnToggles/BWDragReorder wiring) — a vertical stack instead of
+// .form-row's usual wrapping horizontal layout, since drag-to-reorder reads
+// top-to-bottom (dragReorder.js splits at each row's vertical midpoint).
+#column-toggle-list {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
 // A .form-row whose last child is a pair of action buttons rather than
 // another labeled field (e.g. the imports page's inline "create account"
 // row) — floats them to the row's input baseline instead of its top, and

@@ -23,6 +23,7 @@ function serialize(t) {
         transferId: t.transferId || null,
         importedId: t.importedId || null,
         schedule: t.schedule || null,
+        autopay: !!t.autopay,
         sortOrder: t.sortOrder,
         createdAt: t.createdAt
     };

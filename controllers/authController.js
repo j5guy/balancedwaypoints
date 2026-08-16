@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const usersDb = require('../services/database/users');
 const { adminEmail } = require('../config/config');
 const { resolveLdapConfig, authenticateLdap } = require('../config/ldapAuth');
+const { resolveOidcConfig, buildAuthorizationRequest, handleCallback } = require('../config/oidcAuth');
 const THEME_COLOR_FIELDS = require('../utils/themeColorFields');
 const logger = require('../utils/logger');
 
@@ -84,11 +85,15 @@ async function login(req, res) {
     });
 }
 
-// Public — the login page uses this to decide whether to show the LDAP
-// login form at all, so it isn't presented as an option when nobody's
-// configured it.
+// Public — the login page uses these to decide whether to show the LDAP/OIDC
+// login options at all, so they aren't presented when nobody's configured them.
 async function ldapStatus(req, res) {
     const config = await resolveLdapConfig().catch(() => null);
+    res.json({ enabled: !!(config && config.enabled) });
+}
+
+async function oidcStatus(req, res) {
+    const config = await resolveOidcConfig().catch(() => null);
     res.json({ enabled: !!(config && config.enabled) });
 }
 
@@ -174,6 +179,96 @@ async function loginLdap(req, res) {
     });
 }
 
+// Starts the OIDC authorization-code + PKCE flow — see config/oidcAuth.js.
+// The verifier/state have to survive the redirect round-trip to the IdP and
+// back, so they're stashed in this (already-authenticated-cookie-bearing)
+// session rather than passed through the URL.
+async function oidcStart(req, res) {
+    try {
+        const { url, codeVerifier, state } = await buildAuthorizationRequest();
+        req.session.oidcCodeVerifier = codeVerifier;
+        req.session.oidcState = state;
+        req.session.save((err) => {
+            if (err) logger.error('Session save error: ' + err.message);
+            res.redirect(url);
+        });
+    } catch (err) {
+        logger.error('OIDC start error: ' + err.message);
+        res.redirect('/auth/login?error=' + encodeURIComponent('OIDC login is not available'));
+    }
+}
+
+async function oidcCallback(req, res) {
+    const codeVerifier = req.session.oidcCodeVerifier;
+    const state = req.session.oidcState;
+    delete req.session.oidcCodeVerifier;
+    delete req.session.oidcState;
+
+    if (!codeVerifier || !state) {
+        return res.redirect('/auth/login?error=' + encodeURIComponent('OIDC login session expired — try again'));
+    }
+
+    let claims;
+    try {
+        claims = await handleCallback(req, { codeVerifier, state });
+    } catch (err) {
+        logger.info(`OIDC callback failed: ${err.message}`);
+        return res.redirect('/auth/login?error=' + encodeURIComponent('OIDC login failed'));
+    }
+
+    const subject = claims.sub;
+    let user = await usersDb.findByOidcSubject(subject);
+    if (!user) {
+        // No guaranteed email claim from every IdP — fall back to a clearly
+        // non-routable placeholder, same reasoning as loginLdap's `email`
+        // fallback above; the user sets a real notifyEmail themselves from
+        // My Account before any email actually goes out.
+        const email = (claims.email || `${subject}@oidc.local`).toLowerCase();
+        const displayName = claims.name || claims.preferred_username || email.split('@')[0];
+
+        const emailConflict = await usersDb.findByEmail(email);
+        if (emailConflict) {
+            logger.error(`OIDC login for subject "${subject}" resolved to email "${email}", which already belongs to a different account`);
+            return res.redirect('/auth/login?error=' + encodeURIComponent('An account with this email already exists — ask an admin to resolve this'));
+        }
+
+        const userCount = await usersDb.count();
+        const isAdmin = userCount === 0 || email === adminEmail;
+        user = await usersDb.create({
+            email, displayName, isAdmin, authSource: 'oidc', oidcSubject: subject, lastLoginAt: new Date(),
+            notifyEmail: claims.email || null
+        });
+        logger.info(`New OIDC-provisioned account: ${subject}${isAdmin ? ' (admin)' : ''}`);
+    } else {
+        // Self-heal: the IdP is the source of truth for these two fields,
+        // same reasoning as loginLdap's self-heal below. Skipped if the new
+        // email would belong to a different existing account already —
+        // never silently merge two accounts into one email.
+        const freshEmail = claims.email ? claims.email.toLowerCase() : null;
+        const freshDisplayName = claims.name || claims.preferred_username || null;
+        if (freshEmail && freshEmail !== user.email) {
+            const conflict = await usersDb.findByEmail(freshEmail);
+            if (!conflict || String(conflict._id) === String(user._id)) {
+                user.email = freshEmail;
+            } else {
+                logger.error(`OIDC login for subject "${subject}": IdP email "${freshEmail}" already belongs to a different account — not updating`);
+            }
+        }
+        if (freshDisplayName && freshDisplayName !== user.displayName) {
+            user.displayName = freshDisplayName;
+        }
+        user.lastLoginAt = new Date();
+        await user.save();
+    }
+
+    establishSession(req, user);
+    logger.info(`OIDC login: ${subject}`);
+    req.session.save((err) => {
+        if (err) logger.error('Session save error: ' + err.message);
+        res.redirect('/');
+    });
+}
+
 function logout(req, res) {
     const email = req.session.email;
     req.session.destroy((err) => {
@@ -200,10 +295,12 @@ async function getPreferences(req, res) {
         registerSort: user.preferences.registerSort,
         registerMask: user.preferences.registerMask,
         registerColumns: user.preferences.registerColumns,
+        registerColumnOrder: user.preferences.registerColumnOrder,
         upcomingSchedules: user.preferences.upcomingSchedules,
         registerHistory: user.preferences.registerHistory,
         weeklyReportEmail: user.preferences.weeklyReportEmail,
         dashboard: user.preferences.dashboard,
+        badgeColors: user.preferences.badgeColors,
         notifyEmail: user.notifyEmail,
         themeColors: user.themeColors
     });
@@ -226,6 +323,46 @@ function sanitizeThemeColorGroup(input, existing) {
         else if (HEX_COLOR_RE.test(value)) result[key] = value;
         // Silently ignored if it's neither empty nor a valid hex color —
         // the color <input> in the UI can't produce anything else anyway.
+    }
+    return result;
+}
+
+// The register's reorderable columns — the source of truth both
+// registerColumns (show/hide) and registerColumnOrder (left-to-right order)
+// validate against. Mirrors public/js/register.js's own COLUMN_LABELS keys;
+// keep the two in sync by hand (client-side code can't require() this file).
+const REGISTER_COLUMN_KEYS = ['date', 'payee', 'category', 'notes', 'tags', 'amount', 'balance', 'cleared'];
+
+// Only accepts a value that's a permutation of REGISTER_COLUMN_KEYS (same
+// length, no duplicates, no unknown keys) — anything else is silently
+// ignored (keeping whatever order was already stored) rather than trying to
+// partially repair it, same "reject, don't guess" stance the rest of this
+// file takes with malformed input. public/js/register.js separately
+// tolerates a stored order that's missing a key (e.g. a column added in a
+// later release) by appending it at render time — this validation just
+// guards against corrupt/malicious input at save time.
+function sanitizeColumnOrder(input, existing) {
+    if (!Array.isArray(input) || input.length !== REGISTER_COLUMN_KEYS.length) return existing;
+    const unique = new Set(input);
+    if (unique.size !== REGISTER_COLUMN_KEYS.length) return existing;
+    for (const key of unique) {
+        if (!REGISTER_COLUMN_KEYS.includes(key)) return existing;
+    }
+    return input;
+}
+
+// Same validation as sanitizeThemeColorGroup above, just over the flat
+// {scheduled, due, autopay} shape instead of a per-theme field list — see
+// models/user.js's preferences.badgeColors.
+const BADGE_COLOR_FIELDS = ['scheduled', 'due', 'autopay'];
+function sanitizeBadgeColors(input, existing) {
+    const result = {};
+    for (const key of BADGE_COLOR_FIELDS) {
+        result[key] = existing[key];
+        if (!(key in (input || {}))) continue;
+        const value = input[key];
+        if (!value) result[key] = null;
+        else if (HEX_COLOR_RE.test(value)) result[key] = value;
     }
     return result;
 }
@@ -308,15 +445,17 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { homeDashboard, registerSort, registerMask, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, notifyEmail, themeColors } = req.body || {};
+    const { homeDashboard, registerSort, registerMask, registerColumns, registerColumnOrder, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, badgeColors, notifyEmail, themeColors } = req.body || {};
     if (['budget', 'accounts', 'dashboard'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
     if (['newest', 'oldest', 'manual'].includes(registerSort)) user.preferences.registerSort = registerSort;
     if (registerMask) Object.assign(user.preferences.registerMask, registerMask);
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
+    if (registerColumnOrder !== undefined) user.preferences.registerColumnOrder = sanitizeColumnOrder(registerColumnOrder, user.preferences.registerColumnOrder);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
     if (registerHistory) Object.assign(user.preferences.registerHistory, registerHistory);
     if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
     if (dashboard) user.preferences.dashboard = sanitizeDashboard(dashboard, user.preferences.dashboard);
+    if (badgeColors) user.preferences.badgeColors = sanitizeBadgeColors(badgeColors, user.preferences.badgeColors);
     // notifyEmail lives directly on the user doc (see models/user.js), not
     // under preferences, but is accepted here too so the My Account page's
     // notification-settings card can save it independent of the SMTP
@@ -346,14 +485,19 @@ async function updatePreferences(req, res) {
             registerSort: user.preferences.registerSort,
             registerMask: user.preferences.registerMask,
             registerColumns: user.preferences.registerColumns,
+            registerColumnOrder: user.preferences.registerColumnOrder,
             upcomingSchedules: user.preferences.upcomingSchedules,
             registerHistory: user.preferences.registerHistory,
             weeklyReportEmail: user.preferences.weeklyReportEmail,
             dashboard: user.preferences.dashboard,
+            badgeColors: user.preferences.badgeColors,
             notifyEmail: user.notifyEmail,
             themeColors: user.themeColors
         });
     });
 }
 
-module.exports = { signup, login, loginLdap, ldapStatus, logout, me, getPreferences, updatePreferences };
+module.exports = {
+    signup, login, loginLdap, ldapStatus, oidcStart, oidcCallback, oidcStatus,
+    logout, me, getPreferences, updatePreferences
+};

@@ -1,3 +1,19 @@
+v0.10.4b
+------
+Register columns can now be reordered by drag-and-drop, in addition to show/hide — both persist per-user, with a "Reset columns to default" button
+
+v0.10.3b
+------
+Add user-configurable colors for the Scheduled, Due, and Autopay badges (My Account > Appearance)
+
+v0.10.2b
+------
+Add autopay schedules — tag a schedule as autopay, optionally drafted from another account, and see a badge on the transactions it posts
+
+v0.10.1b
+------
+Fix drag-and-drop register reorder not persisting after a page refresh
+
 v0.10.0b
 ------
 Adding SimpleFIN Support for Optional Account Sync

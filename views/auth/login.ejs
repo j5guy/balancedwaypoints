@@ -3,7 +3,7 @@
 <main class="page page-auth">
     <div class="auth-card">
         <h1>Log in</h1>
-        <div id="login-error" class="form-error" hidden></div>
+        <div id="login-error" class="form-error" <%= error ? '' : 'hidden' %>><%= error || '' %></div>
         <form id="login-form">
             <div class="form-group">
                 <label for="email">Email</label>
@@ -30,6 +30,10 @@
             </div>
             <button type="submit" class="btn btn-primary btn-block" id="ldap-login-submit">Log in with LDAP</button>
         </form>
+
+        <p class="form-hint" id="oidc-row" hidden>
+            <a href="/auth/oidc/start?redirect=<%= encodeURIComponent(redirect) %>" class="btn btn-secondary btn-block" id="oidc-login-link">Log in with SSO</a>
+        </p>
 
         <p class="form-hint">
             Need an account? <a href="/auth/signup">Sign up</a>

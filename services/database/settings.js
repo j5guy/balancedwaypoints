@@ -44,6 +44,41 @@ async function clearLdapSettings() {
     await Settings.findByIdAndUpdate(SINGLETON_ID, { $set: { ldap: {} } }, { upsert: true }).exec();
 }
 
+// Same null-vs-disabled distinction as getLdapSettings — callers fall back
+// to OIDC_* env vars, see config/oidcAuth.js.
+async function getOidcSettings() {
+    const doc = await Settings.findById(SINGLETON_ID).lean();
+    if (!doc || !doc.oidc || !doc.oidc.issuerUrl) return null;
+    return {
+        enabled: !!doc.oidc.enabled,
+        issuerUrl: doc.oidc.issuerUrl,
+        clientId: doc.oidc.clientId,
+        clientSecret: decrypt({ iv: doc.oidc.clientSecretIv, ciphertext: doc.oidc.clientSecretCiphertext }),
+        scopes: doc.oidc.scopes || 'openid profile email',
+        updatedAt: doc.updatedAt
+    };
+}
+
+async function setOidcSettings({ enabled, issuerUrl, clientId, clientSecret, scopes }, actorId) {
+    const set = {
+        'oidc.enabled': !!enabled,
+        'oidc.issuerUrl': issuerUrl || null,
+        'oidc.clientId': clientId || null,
+        'oidc.scopes': scopes || 'openid profile email',
+        oidcUpdatedBy: actorId || null
+    };
+    if (clientSecret) {
+        const { iv, ciphertext } = encrypt(clientSecret);
+        set['oidc.clientSecretIv'] = iv;
+        set['oidc.clientSecretCiphertext'] = ciphertext;
+    }
+    await Settings.findByIdAndUpdate(SINGLETON_ID, { $set: set }, { upsert: true, runValidators: true }).exec();
+}
+
+async function clearOidcSettings() {
+    await Settings.findByIdAndUpdate(SINGLETON_ID, { $set: { oidc: {} } }, { upsert: true }).exec();
+}
+
 // Nothing here is a secret, so unlike LDAP this is always fully populated —
 // schema defaults (frequency: 'disabled', etc.) apply even before an admin
 // has ever saved anything.
@@ -75,5 +110,6 @@ async function setBackupSettings({ destination, frequency, time, dayOfWeek, rete
 
 module.exports = {
     getLdapSettings, setLdapSettings, clearLdapSettings,
+    getOidcSettings, setOidcSettings, clearOidcSettings,
     getBackupSettings, setBackupSettings
 };

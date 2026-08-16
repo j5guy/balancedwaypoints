@@ -64,6 +64,26 @@
     // actually changed instead of everything currently shown.
     let themeOverrides = { light: {}, dark: {} };
 
+    // Same "only touched fields get sent" convention as themeOverrides
+    // above, for the register's Scheduled/Due/Autopay badge colors (see
+    // models/user.js's preferences.badgeColors). Defaults are just
+    // reasonable starting points shown in the pickers — distinct enough
+    // from each other and from the app's own default badge look (a neutral
+    // gray) to be visually obvious once picked, but purely a UI starting
+    // point; nothing is saved unless the user touches (or resets) a field.
+    const BADGE_FIELDS = ['scheduled', 'due', 'autopay'];
+    const BADGE_DEFAULTS = { scheduled: '#6E8FAE', due: '#E3A93A', autopay: '#1B6E6E' };
+    let badgeOverrides = {};
+
+    function applyBadgeColors(badgeColors) {
+        badgeOverrides = {};
+        BADGE_FIELDS.forEach((field) => {
+            const stored = badgeColors && badgeColors[field];
+            document.getElementById(`badge-color-${field}`).value = stored || BADGE_DEFAULTS[field];
+            if (stored) badgeOverrides[field] = stored;
+        });
+    }
+
     function showError(err) {
         successBox.hidden = true;
         errorBox.textContent = (err && err.message) || 'Something went wrong';
@@ -112,8 +132,12 @@
 
     async function load() {
         try {
-            const account = await window.BWApi.apiFetch('/api/account');
+            const [account, prefs] = await Promise.all([
+                window.BWApi.apiFetch('/api/account'),
+                window.BWApi.apiFetch('/api/auth/preferences')
+            ]);
             applyThemeColors(account.themeColors);
+            applyBadgeColors(prefs.badgeColors);
         } catch (err) {
             showError(err);
         }
@@ -147,6 +171,34 @@
             });
             applyThemeColors(prefs.themeColors);
             showSuccess('Appearance saved — refresh to see it applied everywhere.');
+        } catch (err) {
+            showError(err);
+        }
+    });
+
+    BADGE_FIELDS.forEach((field) => {
+        document.getElementById(`badge-color-${field}`).addEventListener('input', (e) => {
+            badgeOverrides[field] = e.target.value;
+        });
+    });
+    document.getElementById('reset-badge-colors-btn').addEventListener('click', () => {
+        badgeOverrides = {};
+        BADGE_FIELDS.forEach((field) => {
+            document.getElementById(`badge-color-${field}`).value = BADGE_DEFAULTS[field];
+            // Explicit nulls, same reasoning as the theme reset above — Save
+            // needs to actually clear any stored override, not just show the
+            // default in the picker.
+            badgeOverrides[field] = null;
+        });
+    });
+    document.getElementById('save-badge-colors-btn').addEventListener('click', async () => {
+        try {
+            const prefs = await window.BWApi.apiFetch('/api/auth/preferences', {
+                method: 'PUT',
+                body: { badgeColors: badgeOverrides }
+            });
+            applyBadgeColors(prefs.badgeColors);
+            showSuccess('Badge colors saved.');
         } catch (err) {
             showError(err);
         }

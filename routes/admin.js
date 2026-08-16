@@ -14,6 +14,10 @@ router.get('/ldap', requireAdmin, (req, res) => {
     res.render('admin/ldap', { title: 'LDAP' });
 });
 
+router.get('/oidc', requireAdmin, (req, res) => {
+    res.render('admin/oidc', { title: 'OIDC' });
+});
+
 router.get('/backups', requireAdmin, (req, res) => {
     res.render('admin/backups', { title: 'Backups' });
 });

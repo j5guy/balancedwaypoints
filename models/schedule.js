@@ -47,6 +47,22 @@ const scheduleSchema = new mongoose.Schema({
     // transferAccount field; controllers/schedulesController.js enforces
     // that rather than the schema, matching how Transaction does it too.
     transferAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
+    // Purely a register/UI label meaning "this bill is paid automatically
+    // by the biller" — unrelated to autoEnter below, which controls whether
+    // THIS APP posts the transaction on its own vs. leaving it as a manual
+    // reminder. Independent of transferAccount, too: a recurring transfer
+    // can be autopay-flagged as well (e.g. an automatic draft to savings).
+    autopay: { type: Boolean, default: false },
+    // Optional — the account autopay actually drafts from, when it differs
+    // from `account` (e.g. a credit card bill (account) auto-paid out of
+    // checking (autopayFromAccount)). Mutually exclusive with
+    // transferAccount, which already fully describes both sides of the
+    // money movement for a transfer schedule; controllers/schedulesController.js
+    // enforces that rather than the schema, same convention as
+    // transferAccount's own comment above. When set, posting an occurrence
+    // creates a linked pair (see services/database/transactions.js's
+    // createAutopayOccurrence) instead of a single categorized transaction.
+    autopayFromAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
     frequency: {
         unit: { type: String, enum: FREQUENCY_UNITS, default: 'months' },
         interval: { type: Number, default: 1, min: 1 }

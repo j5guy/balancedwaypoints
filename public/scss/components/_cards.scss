@@ -35,17 +35,21 @@
     }
 }
 
+// --badge-bg/--badge-color are hooks for a per-user color override (see
+// public/js/badgeColor.js and My Account > Appearance's "Register badges"
+// section) — unset, they fall back to the normal default below exactly as
+// before this existed.
 .badge {
     display: inline-block;
     padding: 2px 10px;
     border-radius: $radius-full;
     font-size: 0.75rem;
     font-weight: 600;
-    background: $bg-hover;
-    color: $text-secondary;
+    background: var(--badge-bg, #{$bg-hover});
+    color: var(--badge-color, #{$text-secondary});
 }
 
 .badge-warn {
-    background: rgba($gold, 0.22);
-    color: darken($gold, 25%);
+    background: var(--badge-bg, #{rgba($gold, 0.22)});
+    color: var(--badge-color, #{darken($gold, 25%)});
 }

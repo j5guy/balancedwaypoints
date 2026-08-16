@@ -1,6 +1,6 @@
 {
   "name": "balancedwaypoints",
-  "version": "0.10.0b",
+  "version": "0.10.4b",
   "description": "Balanced Waypoints — envelope budgeting, schedules, rules, and payees for your household finances",
   "main": "server.js",
   "dependencies": {
@@ -22,6 +22,7 @@
     "multer": "^1.4.5-lts.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.0",
+    "openid-client": "^5.7.1",
     "sass": "^1.97.3",
     "winston": "^3.19.0"
   },

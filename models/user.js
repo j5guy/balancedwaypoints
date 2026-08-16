@@ -45,13 +45,12 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    // 'ldap' accounts have no passwordHash — they authenticate against the
-    // directory every time (see config/ldapAuth.js) and are auto-provisioned
-    // on first successful LDAP login (services/database/users.js's
-    // findOrCreateFromLdap).
+    // 'ldap'/'oidc' accounts have no passwordHash — they authenticate against
+    // the directory/IdP every time (see config/ldapAuth.js, config/oidcAuth.js)
+    // and are auto-provisioned on first successful login.
     authSource: {
         type: String,
-        enum: ['local', 'ldap'],
+        enum: ['local', 'ldap', 'oidc'],
         default: 'local'
     },
     // The username this account was looked up by in LDAP — only set for
@@ -62,6 +61,13 @@ const userSchema = new mongoose.Schema({
         type: String,
         lowercase: true,
         trim: true,
+        default: null
+    },
+    // The IdP's stable subject identifier — only set for authSource: 'oidc'.
+    // Not email, since a directory-backed IdP's email claim can change while
+    // `sub` never does.
+    oidcSubject: {
+        type: String,
         default: null
     },
     passwordHash: {
@@ -186,6 +192,30 @@ const userSchema = new mongoose.Schema({
             balance: { type: Boolean, default: true },
             cleared: { type: Boolean, default: true }
         },
+        // Left-to-right display order of the same 8 columns as
+        // registerColumns above — an ORDERED array of column keys rather
+        // than a flat sub-object, since order (unlike show/hide) can't be
+        // expressed as independent booleans. Validated in
+        // controllers/authController.js's updatePreferences (must be a
+        // permutation of the known keys) before save; public/js/register.js
+        // falls back to this same default order if a stored value is ever
+        // missing a key (e.g. a column added in a later release).
+        registerColumnOrder: {
+            type: [String],
+            default: ['date', 'payee', 'category', 'notes', 'tags', 'amount', 'balance', 'cleared']
+        },
+        // Optional per-user override for the register's "Scheduled"/"Due"/
+        // "Autopay" badge colors (public/js/badgeColor.js turns these into
+        // an inline style; public/scss/components/_cards.scss's --badge-bg/
+        // --badge-color hooks are what they override). null means "use the
+        // app's default badge color" for that one — same null-means-default
+        // convention as themeColors below, validated the same way
+        // (controllers/authController.js's HEX_COLOR_RE).
+        badgeColors: {
+            scheduled: { type: String, default: null },
+            due: { type: String, default: null },
+            autopay: { type: String, default: null }
+        },
         upcomingSchedules: {
             enabled: { type: Boolean, default: false },
             amount: { type: Number, default: 14 },
@@ -260,5 +290,6 @@ const userSchema = new mongoose.Schema({
 // actually have one, and is what makes requireApiKeyOrAuth's per-request
 // lookup (find the user by this exact hash) an indexed O(1) query.
 userSchema.index({ 'apiKey.hash': 1 }, { sparse: true });
+userSchema.index({ oidcSubject: 1 }, { sparse: true });
 
 module.exports = mongoose.model('User', userSchema);

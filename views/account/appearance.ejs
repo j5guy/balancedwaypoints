@@ -26,5 +26,30 @@
             <button type="button" class="btn btn-primary" id="save-appearance-btn">Save appearance</button>
         </div>
     </div>
+
+    <div class="card">
+        <h3>Register badges</h3>
+        <p class="muted">Pick a color for the "Scheduled", "Due", and "Autopay" badges shown on the register and
+        Schedules page, so each is easier to tell apart at a glance. Leave a field at its default (or hit
+        "Reset badge colors") to keep the app's normal look.</p>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="badge-color-scheduled">Scheduled</label>
+                <input type="color" id="badge-color-scheduled">
+            </div>
+            <div class="form-group">
+                <label for="badge-color-due">Due</label>
+                <input type="color" id="badge-color-due">
+            </div>
+            <div class="form-group">
+                <label for="badge-color-autopay">Autopay</label>
+                <input type="color" id="badge-color-autopay">
+            </div>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-badge-colors-btn">Save badge colors</button>
+            <button type="button" class="btn btn-secondary" id="reset-badge-colors-btn">Reset badge colors</button>
+        </div>
+    </div>
 </main>
 <%- include('../components/footer', { pageScripts: ['/js/accountAppearance.js'] }) %>

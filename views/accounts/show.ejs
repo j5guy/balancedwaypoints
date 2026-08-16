@@ -51,8 +51,9 @@
             </select>
         </div>
         <div class="form-group">
-            <label>Columns to show</label>
+            <label>Columns to show &amp; order (drag ⠿ to reorder)</label>
             <div class="form-row" id="column-toggle-list"></div>
+            <button type="button" class="btn btn-secondary btn-sm" id="reset-columns-btn" style="margin-top:8px;">Reset columns to default</button>
         </div>
         <div class="checkbox-row form-group">
             <input type="checkbox" id="pref-show-upcoming">
@@ -371,4 +372,4 @@
     </div>
 </div>
 
-<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/chartHover.js', '/js/register.js'] }) %>
+<%- include('../components/footer', { pageScripts: ['/js/dragReorder.js', '/js/chartHover.js', '/js/badgeColor.js', '/js/register.js'] }) %>

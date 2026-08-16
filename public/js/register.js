@@ -60,12 +60,15 @@
         date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
         tags: 'Tags', amount: 'Amount', balance: 'Balance', cleared: 'Cleared'
     };
+    const DEFAULT_COLUMN_ORDER = ['date', 'payee', 'category', 'notes', 'tags', 'amount', 'balance', 'cleared'];
     const DEFAULT_PREFERENCES = {
         registerSort: 'newest',
         registerMask: { amount: false, balance: false },
         registerColumns: { date: true, payee: true, category: true, notes: true, tags: true, amount: true, balance: true, cleared: true },
+        registerColumnOrder: DEFAULT_COLUMN_ORDER.slice(),
         upcomingSchedules: { enabled: false, amount: 14, unit: 'days' },
-        registerHistory: { enabled: false, amount: 3, unit: 'months' }
+        registerHistory: { enabled: false, amount: 3, unit: 'months' },
+        badgeColors: { scheduled: null, due: null, autopay: null }
     };
 
     function showError(err) {
@@ -246,6 +249,18 @@
         tr.draggable = accountRole !== 'readonly' && !isFiltering();
         tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
+        // Autopay is denormalized onto the transaction at posting time (see
+        // models/transaction.js) — no schedule lookup needed here. When the
+        // schedule had a source account, this leg's own transferAccount IS
+        // that source (see services/database/transactions.js's
+        // createAutopayOccurrence), so it doubles as the "drafted from"
+        // account for the tooltip; on the source account's OWN register the
+        // draft leg shows this same badge next to its "Transfer" category text.
+        const autopayFromName = t.transferAccount ? (accounts.find(a => a.id === t.transferAccount)?.name || null) : null;
+        const autopayColor = window.BWBadgeColor.badgeStyle(preferences.badgeColors && preferences.badgeColors.autopay);
+        const autopayBadge = t.autopay
+            ? ` <span class="badge" style="${autopayColor}" title="Autopay${autopayFromName ? ' — drafted from ' + autopayFromName : ''}">⟳ Autopay</span>`
+            : '';
         const maskAmount = preferences.registerMask && preferences.registerMask.amount;
         const maskBalance = preferences.registerMask && preferences.registerMask.balance;
         const amountClass = maskAmount ? 'money-masked' : (t.amountCents < 0 ? 'money-negative' : 'money-positive');
@@ -265,7 +280,7 @@
             </td>
             <td class="drag-handle" title="${isFiltering() ? 'Clear filters to reorder' : 'Drag to reorder'}">⠿</td>
             <td class="editable-cell" data-col="date">${window.BWDate.formatDate(t.date)}</td>
-            <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
+            <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}${autopayBadge}</td>
             <td class="editable-cell" data-col="category">${category}</td>
             <td class="editable-cell" data-col="notes" title="${escapeAttr(t.notes || '')}">${t.notes || ''}</td>
             <td class="editable-cell" data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
@@ -294,6 +309,7 @@
         tr.querySelectorAll('.editable-cell').forEach((td) => {
             td.addEventListener('click', () => startCellEdit(tr, td, t));
         });
+        applyColumnOrder(tr, normalizedColumnOrder());
         return tr;
     }
 
@@ -447,18 +463,61 @@
         applyColumnPreferences();
     }
 
+    // Tolerates a stored order that doesn't exactly match DEFAULT_COLUMN_ORDER
+    // (missing a key — e.g. a column added in a later release — or carrying
+    // an unknown one) rather than discarding the whole thing: known keys
+    // keep the saved order, anything missing gets appended at the end in
+    // its default position. controllers/authController.js's
+    // sanitizeColumnOrder rejects genuinely malformed input at save time, so
+    // this is just a soft self-heal for the one legitimate way a stored
+    // order can drift out of sync with the app.
+    function normalizedColumnOrder() {
+        const stored = Array.isArray(preferences.registerColumnOrder) ? preferences.registerColumnOrder : [];
+        const known = stored.filter((key) => DEFAULT_COLUMN_ORDER.includes(key));
+        const missing = DEFAULT_COLUMN_ORDER.filter((key) => !known.includes(key));
+        return [...known, ...missing];
+    }
+
+    // Reorders `parent`'s own [data-col] children (a <colgroup>, a <thead>
+    // row, the filter/quick-add rows, or one register <tr>) to match `order`
+    // — moving each one, in order, to just before whichever child ISN'T a
+    // data column (the trailing row-actions cell/col, always last — see
+    // views/accounts/show.ejs's table markup). Leading fixed cells (the
+    // checkbox/drag-handle columns) are never touched since they have no
+    // data-col to match. Safe to call repeatedly/on an already-ordered
+    // parent — inserting an element already in the right place is a no-op.
+    function applyColumnOrder(parent, order) {
+        if (!parent) return;
+        const anchor = parent.lastElementChild;
+        order.forEach((key) => {
+            const cell = parent.querySelector(`:scope > [data-col="${key}"]`);
+            if (cell) parent.insertBefore(cell, anchor);
+        });
+    }
+
     function applyColumnPreferences() {
         const table = document.querySelector('.register-table');
         Object.keys(COLUMN_LABELS).forEach((key) => {
             table.classList.toggle(`hide-col-${key}`, !preferences.registerColumns[key]);
         });
+        const order = normalizedColumnOrder();
+        applyColumnOrder(table.querySelector('colgroup'), order);
+        applyColumnOrder(table.querySelector('thead tr'), order);
+        applyColumnOrder(document.querySelector('.filter-row'), order);
+        applyColumnOrder(document.querySelector('.quick-add-row'), order);
     }
 
-    function renderColumnToggles() {
-        document.getElementById('column-toggle-list').innerHTML = Object.entries(COLUMN_LABELS).map(([key, label]) => `
-            <label class="checkbox-row" style="width:auto;">
-                <input type="checkbox" class="col-toggle-checkbox" data-col-key="${key}" ${preferences.registerColumns[key] ? 'checked' : ''}>
-                ${label}
+    // `order`/`columns` are passed explicitly (rather than always reading
+    // `preferences`) so the "Reset to default" button can render the
+    // default layout into this same list without touching saved
+    // preferences until "Save settings" is actually clicked — same
+    // stage-then-save convention the rest of this panel already follows.
+    function renderColumnToggles(order, columns) {
+        document.getElementById('column-toggle-list').innerHTML = order.map((key) => `
+            <label class="checkbox-row col-toggle-row" draggable="true" data-drag-id="${key}" style="width:auto;">
+                <span class="drag-handle" title="Drag to reorder">⠿</span>
+                <input type="checkbox" class="col-toggle-checkbox" data-col-key="${key}" ${columns[key] ? 'checked' : ''}>
+                ${COLUMN_LABELS[key]}
             </label>
         `).join('');
     }
@@ -493,7 +552,7 @@
         const panel = document.getElementById('settings-panel');
         if (!panel.hidden) { panel.hidden = true; return; }
         document.getElementById('mask-panel').hidden = true;
-        renderColumnToggles();
+        renderColumnToggles(normalizedColumnOrder(), preferences.registerColumns);
         document.getElementById('pref-register-sort').value = preferences.registerSort || 'newest';
         document.getElementById('pref-show-upcoming').checked = preferences.upcomingSchedules.enabled;
         document.getElementById('pref-upcoming-amount').value = preferences.upcomingSchedules.amount;
@@ -506,10 +565,25 @@
     document.getElementById('cancel-settings-btn').addEventListener('click', () => {
         document.getElementById('settings-panel').hidden = true;
     });
+    document.getElementById('reset-columns-btn').addEventListener('click', () => {
+        // Only re-renders the toggle list with the default layout — doesn't
+        // touch saved preferences (or the live register) until "Save
+        // settings" is clicked, same staged-until-save convention as every
+        // other field in this panel.
+        renderColumnToggles(DEFAULT_COLUMN_ORDER, DEFAULT_PREFERENCES.registerColumns);
+    });
+    // Wired once against the list container itself (its identity never
+    // changes — only its innerHTML is replaced by renderColumnToggles),
+    // same reasoning as the register-tbody row reorder in init() below.
+    // makeSortable already live-reorders the DOM as you drag, so
+    // save-settings-btn's handler can just read the current DOM order at
+    // save time — no need to track the reorder callback's own `ids` here.
+    window.BWDragReorder.makeSortable(document.getElementById('column-toggle-list'), () => {});
     document.getElementById('save-settings-btn').addEventListener('click', async () => {
         const registerSort = document.getElementById('pref-register-sort').value;
         const registerColumns = {};
         document.querySelectorAll('.col-toggle-checkbox').forEach((cb) => { registerColumns[cb.dataset.colKey] = cb.checked; });
+        const registerColumnOrder = [...document.querySelectorAll('#column-toggle-list [data-drag-id]')].map((el) => el.dataset.dragId);
         const upcomingSchedules = {
             enabled: document.getElementById('pref-show-upcoming').checked,
             amount: Math.max(1, Number(document.getElementById('pref-upcoming-amount').value) || 1),
@@ -521,7 +595,7 @@
             unit: document.getElementById('pref-history-unit').value
         };
         try {
-            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerSort, registerColumns, upcomingSchedules, registerHistory } });
+            preferences = await window.BWApi.apiFetch('/api/auth/preferences', { method: 'PUT', body: { registerSort, registerColumns, registerColumnOrder, upcomingSchedules, registerHistory } });
             applyColumnPreferences();
             document.getElementById('settings-panel').hidden = true;
             await loadTransactions();
@@ -556,6 +630,9 @@
         const maskBalance = preferences.registerMask && preferences.registerMask.balance;
         const amountClass = maskAmount ? 'money-masked' : (s.amountCents < 0 ? 'money-negative' : 'money-positive');
         const balanceClass = maskBalance ? 'money-masked' : (occurrence.projectedBalanceCents < 0 ? 'money-negative' : 'money-positive');
+        const badgeColors = preferences.badgeColors || {};
+        const dueBadgeColor = window.BWBadgeColor.badgeStyle(occurrence.isDue ? badgeColors.due : badgeColors.scheduled);
+        const autopayBadgeColor = window.BWBadgeColor.badgeStyle(badgeColors.autopay);
         tr.innerHTML = `
             <td></td>
             <td></td>
@@ -568,7 +645,8 @@
             <td class="money ${balanceClass}" data-col="balance" title="Estimated — assumes every scheduled item between now and here happens on time">${window.BWMoney.formatCents(occurrence.projectedBalanceCents, maskBalance)}</td>
             <td data-col="cleared"></td>
             <td class="row-actions">
-                <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>
+                <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" style="${dueBadgeColor}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>
+                ${s.autopay ? `<span class="badge" style="${autopayBadgeColor}" title="Autopay${s.autopayFromAccount ? ' — drafted from ' + s.autopayFromAccount.name : ''}">⟳</span>` : ''}
                 ${accountRole === 'readonly' ? '' : '<button type="button" class="btn btn-secondary btn-sm icon-btn" data-occ-actions title="Edit or post this occurrence">⋯</button>'}
             </td>
         `;
@@ -578,6 +656,7 @@
         // on setOccurrenceOverride/postOccurrence.
         const actionsBtn = tr.querySelector('[data-occ-actions]');
         if (actionsBtn) actionsBtn.addEventListener('click', () => openOccurrenceModal(occurrence));
+        applyColumnOrder(tr, normalizedColumnOrder());
         return tr;
     }
 
@@ -1535,7 +1614,7 @@
         window.BWDragReorder.makeSortable(tbody, async (ids) => {
             refreshBalanceDisplay();
             try {
-                await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids } });
+                await window.BWApi.apiFetch('/api/transactions/reorder', { method: 'POST', body: { ids, account: accountId } });
                 // A drag only "sticks" under manual sort (see
                 // services/database/transactions.js's SORTS) — date modes
                 // ignore sortOrder entirely, so without this the very next

@@ -35,6 +35,19 @@ async function runDueSchedules() {
                     notes: schedule.notes,
                     schedule: schedule._id
                 });
+            } else if (schedule.autopay && schedule.autopayFromAccount) {
+                await transactionsDb.createAutopayOccurrence({
+                    owner: schedule.owner,
+                    account: schedule.account,
+                    autopayFromAccount: schedule.autopayFromAccount,
+                    date: schedule.nextDate,
+                    amountCents: schedule.amountCents,
+                    payee: schedule.payee,
+                    category: schedule.category,
+                    splits: schedule.splits,
+                    notes: schedule.notes,
+                    schedule: schedule._id
+                });
             } else {
                 await transactionsDb.create({
                     owner: schedule.owner,
@@ -45,7 +58,8 @@ async function runDueSchedules() {
                     category: schedule.category,
                     splits: schedule.splits,
                     notes: schedule.notes,
-                    schedule: schedule._id
+                    schedule: schedule._id,
+                    autopay: !!schedule.autopay
                 });
             }
 

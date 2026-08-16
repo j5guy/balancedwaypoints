@@ -1,8 +1,8 @@
 const Schedule = require('../../models/schedule');
 const { reconcile } = require('../schedules/occurrenceOverrides');
 
-const list = (ownerId) => Schedule.find({ owner: ownerId }).sort({ nextDate: 1 }).populate('account payee category transferAccount').exec();
-const findById = (id, ownerId) => Schedule.findOne({ _id: id, owner: ownerId }).populate('account payee category transferAccount').exec();
+const list = (ownerId) => Schedule.find({ owner: ownerId }).sort({ nextDate: 1 }).populate('account payee category transferAccount autopayFromAccount').exec();
+const findById = (id, ownerId) => Schedule.findOne({ _id: id, owner: ownerId }).populate('account payee category transferAccount autopayFromAccount').exec();
 
 // Deliberately NOT owner-scoped — used only by services/schedules/scheduler.js's
 // cron job, which runs outside any request context and is supposed to
@@ -26,7 +26,7 @@ const listActiveForAccount = (accountId, ownerId) => Schedule.find({
     active: true,
     $or: [{ account: accountId }, { transferAccount: accountId }]
 })
-    .populate(['account', 'payee', 'category', 'transferAccount', 'occurrenceOverrides.payee', 'occurrenceOverrides.category'])
+    .populate(['account', 'payee', 'category', 'transferAccount', 'autopayFromAccount', 'occurrenceOverrides.payee', 'occurrenceOverrides.category'])
     .exec();
 
 // Unscoped — used to discover a schedule's own `account` before access has
@@ -61,7 +61,7 @@ const findNotifiable = (asOf = new Date()) => Schedule.find({
             asOf
         ]
     }
-}).populate('account payee category transferAccount').exec();
+}).populate('account payee category transferAccount autopayFromAccount').exec();
 
 const create = (data) => Schedule.create(data);
 const update = (id, data, ownerId) => Schedule.findOneAndUpdate({ _id: id, owner: ownerId }, data, { new: true, runValidators: true }).exec();

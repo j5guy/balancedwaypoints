@@ -2,11 +2,11 @@ const mongoose = require('mongoose');
 
 // Singleton document (services/database/settings.js always reads/writes the
 // fixed _id below) holding household-wide server config that admins can
-// change from the UI without a redeploy — currently LDAP and backups. .env
-// remains the bootstrap/fallback path for a first run before any admin has
-// visited the settings page (see config/ldapAuth.js). Unlike LDAP, SMTP here
-// is deliberately per-user (see models/user.js) rather than shared — each
-// person configures their own outgoing mail server.
+// change from the UI without a redeploy — currently LDAP, OIDC, and backups.
+// .env remains the bootstrap/fallback path for a first run before any admin
+// has visited the settings page (see config/ldapAuth.js, config/oidcAuth.js).
+// Unlike LDAP/OIDC, SMTP here is deliberately per-user (see models/user.js)
+// rather than shared — each person configures their own outgoing mail server.
 const settingsSchema = new mongoose.Schema({
     _id: { type: String, default: 'singleton' },
     ldap: {
@@ -22,6 +22,17 @@ const settingsSchema = new mongoose.Schema({
         searchFilter: { type: String, trim: true, default: null }
     },
     ldapUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    // Generic OIDC/SSO (Authentik/Keycloak/Authelia/etc) — see config/oidcAuth.js.
+    oidc: {
+        enabled: { type: Boolean, default: false },
+        issuerUrl: { type: String, trim: true, default: null },
+        clientId: { type: String, trim: true, default: null },
+        // AES-256-GCM ciphertext — see utils/secretCrypto.js.
+        clientSecretIv: { type: String, default: null },
+        clientSecretCiphertext: { type: String, default: null },
+        scopes: { type: String, trim: true, default: null }
+    },
+    oidcUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     // See services/backup/backupService.js/backupScheduler.js. `destination`
     // is a path inside the app container — defaults to ./backups (baked into
     // the image, backed by the bundled `backups-data` volume) when null.

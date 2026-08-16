@@ -61,6 +61,13 @@
         });
     }
 
+    const oidcRow = document.getElementById('oidc-row');
+    if (oidcRow) {
+        window.BWApi.apiFetch('/api/auth/oidc-status').then((status) => {
+            oidcRow.hidden = !status.enabled;
+        }).catch(() => { /* leave hidden — no SSO option shown if this fails */ });
+    }
+
     const signupForm = document.getElementById('signup-form');
     if (signupForm) {
         signupForm.addEventListener('submit', async function (e) {

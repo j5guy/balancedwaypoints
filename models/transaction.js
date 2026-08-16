@@ -39,6 +39,12 @@ const transactionSchema = new mongoose.Schema({
     // the schedule's upcoming projection know this occurrence is already
     // posted even though it isn't dated on its "natural" schedule date.
     scheduleOccurrenceDate: { type: Date, default: null },
+    // Denormalized from the originating schedule at posting time (see
+    // services/schedules/scheduler.js and controllers/schedulesController.js's
+    // postOccurrence) — lets the register mark this row as an automatic
+    // payment without a lookup against the schedule. Purely cosmetic, like
+    // `schedule` itself; never affects balance math.
+    autopay: { type: Boolean, default: false },
     // Manual display-order override for the register (drag-and-drop) —
     // purely cosmetic, never used for balance math (see
     // services/budget/envelope.js and the register's running-balance

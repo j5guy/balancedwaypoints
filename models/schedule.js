@@ -63,9 +63,26 @@ const scheduleSchema = new mongoose.Schema({
     // creates a linked pair (see services/database/transactions.js's
     // createAutopayOccurrence) instead of a single categorized transaction.
     autopayFromAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
+    // 'interval' (default — every schedule from before ordinal-weekday
+    // recurrence existed) uses unit/interval below. 'ordinalWeekday' uses
+    // weekday/ordinals instead — unit/interval are left at their defaults
+    // and simply unused, rather than making them conditionally required,
+    // since services/schedules/nextOccurrence.js (the only code that reads
+    // this object) dispatches on `kind` and ignores whichever pair doesn't
+    // apply.
     frequency: {
+        kind: { type: String, enum: ['interval', 'ordinalWeekday'], default: 'interval' },
         unit: { type: String, enum: FREQUENCY_UNITS, default: 'months' },
-        interval: { type: Number, default: 1, min: 1 }
+        interval: { type: Number, default: 1, min: 1 },
+        // Only meaningful when kind is 'ordinalWeekday' — 0 (Sunday)
+        // through 6 (Saturday), matching Date#getUTCDay's convention.
+        weekday: { type: Number, min: 0, max: 6, default: null },
+        // Only meaningful when kind is 'ordinalWeekday' — which
+        // occurrence(s) of that weekday within the month to recur on: 1-4
+        // for 1st..4th, -1 for "last" (whichever ordinal that turns out to
+        // be that month). Multiple values recur on all of them at once —
+        // e.g. [2, -1] is "the 2nd and last Wednesday of every month".
+        ordinals: { type: [Number], default: [] }
     },
     nextDate: { type: Date, required: true },
     endDate: { type: Date, default: null },

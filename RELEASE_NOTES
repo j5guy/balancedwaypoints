@@ -1,3 +1,7 @@
+v0.10.5b
+------
+Schedules can now recur on a specific weekday of the month (e.g. "the 2nd Wednesday" or "the 2nd and last Wednesday"), not just a fixed interval
+
 v0.10.4b
 ------
 Register columns can now be reordered by drag-and-drop, in addition to show/hide — both persist per-user, with a "Reset columns to default" button

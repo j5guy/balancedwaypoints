@@ -5,6 +5,41 @@ const { resolveActingOwner } = require('../services/authz/actingOwner');
 const { FREQUENCY_UNITS } = require('../models/schedule');
 const { projectSchedule, advanceNextDatePastPosted } = require('../services/schedules/occurrenceProjection');
 const { resolve: resolveOverride } = require('../services/schedules/occurrenceOverrides');
+const { firstOrdinalWeekdayOnOrAfter } = require('../services/schedules/nextOccurrence');
+
+// The only ordinals accepted for an 'ordinalWeekday' schedule (see
+// models/schedule.js) — 1st through 4th, or -1 for "last", matching the
+// same fixed set every calendar app's "monthly on the Nth weekday" picker
+// offers (a "5th" isn't offered since most months don't have one).
+const ORDINAL_WEEKDAY_VALUES = [1, 2, 3, 4, -1];
+
+// Validates and normalizes a request body's `frequency` into the exact
+// shape models/schedule.js expects, returning { error } on anything
+// malformed or { frequency } on success. Centralized here since create()
+// and update() both need identical validation — previously just a single
+// `unit` enum check inline in each, now enough logic (two full recurrence
+// shapes) to warrant its own function.
+function resolveFrequency(input) {
+    if (!input || input.kind !== 'ordinalWeekday') {
+        const unit = (input && input.unit) || 'months';
+        if (!FREQUENCY_UNITS.includes(unit)) return { error: 'Invalid frequency unit' };
+        const interval = input && input.interval !== undefined ? Number(input.interval) : 1;
+        if (!(interval > 0)) return { error: 'interval must be greater than 0' };
+        return { frequency: { kind: 'interval', unit, interval } };
+    }
+    const weekday = Number(input.weekday);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+        return { error: 'weekday must be 0 (Sunday) through 6 (Saturday)' };
+    }
+    if (!Array.isArray(input.ordinals) || input.ordinals.length === 0) {
+        return { error: 'ordinals must be a non-empty array' };
+    }
+    const ordinals = input.ordinals.map(Number);
+    if (!ordinals.every((o) => ORDINAL_WEEKDAY_VALUES.includes(o))) {
+        return { error: 'ordinals must each be 1, 2, 3, 4, or -1 (last)' };
+    }
+    return { frequency: { kind: 'ordinalWeekday', weekday, ordinals: [...new Set(ordinals)].sort((a, b) => a - b), unit: 'months', interval: 1 } };
+}
 
 function serialize(schedule) {
     const now = new Date();
@@ -90,7 +125,8 @@ async function create(req, res) {
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (amountCents === undefined) return res.status(400).json({ error: 'amountCents is required' });
     if (!nextDate) return res.status(400).json({ error: 'nextDate is required' });
-    if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
+    const resolvedFrequency = resolveFrequency(frequency);
+    if (resolvedFrequency.error) return res.status(400).json({ error: resolvedFrequency.error });
 
     // A transfer schedule (mirrors the register's own "this is a transfer"
     // toggle) needs write access to BOTH accounts, and both must belong to
@@ -138,6 +174,15 @@ async function create(req, res) {
         }
     }
 
+    // For an ordinal-weekday schedule, `nextDate` from the client is really
+    // a "starting from" date, not necessarily itself a valid occurrence
+    // (the date picker has no way to only offer, say, 2nd-Wednesdays) — snap
+    // it forward to the actual first matching date. Interval schedules keep
+    // whatever date was picked, same as before this feature existed.
+    const effectiveNextDate = resolvedFrequency.frequency.kind === 'ordinalWeekday'
+        ? firstOrdinalWeekdayOnOrAfter(new Date(nextDate), resolvedFrequency.frequency)
+        : nextDate;
+
     const schedule = await schedules.create({
         owner: access.ownerId,
         name: String(name).trim(), account,
@@ -145,8 +190,8 @@ async function create(req, res) {
         ...categorization,
         autopay: !!autopay,
         autopayFromAccount: resolvedAutopayFromAccount,
-        frequency: frequency || { unit: 'months', interval: 1 },
-        nextDate, endDate: endDate || null,
+        frequency: resolvedFrequency.frequency,
+        nextDate: effectiveNextDate, endDate: endDate || null,
         autoEnter: !!autoEnter,
         reminderDaysBefore: reminderDaysBefore !== undefined ? Number(reminderDaysBefore) : 3,
         notes: notes || '',
@@ -163,7 +208,11 @@ async function update(req, res) {
     if (!access) return;
 
     const { name, account, payee, amountCents, category, splits, transferAccount, autopay, autopayFromAccount, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes, notifyByEmail } = req.body || {};
-    if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
+    let resolvedFrequency = null;
+    if (frequency !== undefined) {
+        resolvedFrequency = resolveFrequency(frequency);
+        if (resolvedFrequency.error) return res.status(400).json({ error: resolvedFrequency.error });
+    }
 
     // Moving a schedule to a different account requires write access to
     // THAT account too, and — same reasoning as transactionsController's
@@ -181,7 +230,7 @@ async function update(req, res) {
     if (name !== undefined) data.name = String(name).trim();
     if (account !== undefined) data.account = account;
     if (amountCents !== undefined) data.amountCents = Number(amountCents);
-    if (frequency !== undefined) data.frequency = frequency;
+    if (resolvedFrequency) data.frequency = resolvedFrequency.frequency;
     if (nextDate !== undefined) data.nextDate = nextDate;
     if (endDate !== undefined) data.endDate = endDate || null;
     if (autoEnter !== undefined) data.autoEnter = !!autoEnter;
@@ -190,6 +239,18 @@ async function update(req, res) {
     if (notes !== undefined) data.notes = notes;
     if (notifyByEmail !== undefined) data.notifyByEmail = !!notifyByEmail;
     if (autopay !== undefined) data.autopay = !!autopay;
+
+    // Same "nextDate is really just a starting point" snapping as create()
+    // — only when this update actually touches frequency and/or nextDate,
+    // and only for the ordinal-weekday kind (an interval schedule's
+    // nextDate has no "wrong" value to correct). Seeded from whichever of
+    // the two this request is actually changing, falling back to the
+    // existing stored value for whichever it isn't.
+    const finalFrequency = resolvedFrequency ? resolvedFrequency.frequency : existing.frequency;
+    if (finalFrequency && finalFrequency.kind === 'ordinalWeekday' && (resolvedFrequency || nextDate !== undefined)) {
+        const seed = nextDate !== undefined ? nextDate : existing.nextDate;
+        data.nextDate = firstOrdinalWeekdayOnOrAfter(new Date(seed), finalFrequency);
+    }
 
     // Same mutual-exclusivity rule as create(), applied against whatever
     // the final account/transferAccount pair resolves to once this update

@@ -80,6 +80,19 @@
             '<option value="__new__">+ Create new category…</option>';
     }
 
+    // Human-readable "Repeats" text for both recurrence kinds — shared by
+    // row()'s table cell and matchesFilters' live filter below, so what you
+    // type against always matches what's actually displayed.
+    const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const ORDINAL_LABELS = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', '-1': 'last' };
+    function frequencyText(frequency) {
+        if (frequency.kind === 'ordinalWeekday') {
+            const ordinals = frequency.ordinals.map((o) => ORDINAL_LABELS[o] || o).join(' & ');
+            return `${ordinals} ${WEEKDAY_NAMES[frequency.weekday]} of the month`;
+        }
+        return `every ${frequency.interval} ${frequency.unit}`;
+    }
+
     function row(schedule) {
         const tr = document.createElement('tr');
         const account = accounts.find(a => a.id === schedule.account);
@@ -101,7 +114,7 @@
             <td class="money ${amountClass}">${window.BWMoney.formatCents(schedule.amountCents)}</td>
             <td>${categoryCell}</td>
             <td>${window.BWDate.formatDate(schedule.nextDate)}</td>
-            <td>every ${schedule.frequency.interval} ${schedule.frequency.unit}</td>
+            <td>${frequencyText(schedule.frequency)}</td>
             <td><input type="checkbox" data-auto-toggle ${schedule.autoEnter ? 'checked' : ''}></td>
             <td class="row-actions">
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
@@ -142,7 +155,7 @@
         const categoryText = schedule.transferAccount ? 'transfer' : (schedule.category ? schedule.category.name : '');
         if (f.category && !categoryText.toLowerCase().includes(f.category)) return false;
         if (f.nextdate && !window.BWDate.formatDate(schedule.nextDate).toLowerCase().includes(f.nextdate)) return false;
-        const repeatsText = `every ${schedule.frequency.interval} ${schedule.frequency.unit}`;
+        const repeatsText = frequencyText(schedule.frequency);
         if (f.repeats && !repeatsText.toLowerCase().includes(f.repeats)) return false;
         return true;
     }
@@ -251,6 +264,25 @@
         }
     });
 
+    // Shared by startEdit and resetForm — populates every frequency-related
+    // field (kind select, interval/unit OR weekday/ordinal checkboxes) and
+    // toggles the two mode-specific groups + the next-date hint, so the two
+    // callers can't drift out of sync with each other.
+    function applyFrequencyToForm(frequency) {
+        const isOrdinal = frequency.kind === 'ordinalWeekday';
+        document.getElementById('sched-freq-kind').value = isOrdinal ? 'ordinalWeekday' : 'interval';
+        document.getElementById('sched-interval-group').hidden = isOrdinal;
+        document.getElementById('sched-ordinal-weekday-group').hidden = !isOrdinal;
+        document.getElementById('sched-next-date-hint').hidden = !isOrdinal;
+        document.getElementById('sched-interval').value = isOrdinal ? 1 : frequency.interval;
+        document.getElementById('sched-unit').value = isOrdinal ? 'months' : frequency.unit;
+        document.getElementById('sched-weekday').value = isOrdinal ? frequency.weekday : 3;
+        const ordinals = isOrdinal ? frequency.ordinals.map(String) : [];
+        document.querySelectorAll('.sched-ordinal-checkbox').forEach((cb) => {
+            cb.checked = ordinals.includes(cb.value);
+        });
+    }
+
     function startEdit(schedule) {
         editingId = schedule.id;
         document.getElementById('schedule-form-title').textContent = `Edit ${schedule.name}`;
@@ -271,8 +303,7 @@
         document.getElementById('sched-new-category-fields').hidden = true;
         document.getElementById('sched-next-date').value = window.BWDate.toDateInputValue(schedule.nextDate);
         document.getElementById('sched-end-date').value = schedule.endDate ? window.BWDate.toDateInputValue(schedule.endDate) : '';
-        document.getElementById('sched-interval').value = schedule.frequency.interval;
-        document.getElementById('sched-unit').value = schedule.frequency.unit;
+        applyFrequencyToForm(schedule.frequency);
         document.getElementById('sched-reminder').value = schedule.reminderDaysBefore;
         document.getElementById('sched-notes').value = schedule.notes || '';
         document.getElementById('sched-auto-enter').checked = schedule.autoEnter;
@@ -303,8 +334,7 @@
         document.getElementById('sched-new-category-group-select').value = '';
         document.getElementById('sched-next-date').value = '';
         document.getElementById('sched-end-date').value = '';
-        document.getElementById('sched-interval').value = '1';
-        document.getElementById('sched-unit').value = 'months';
+        applyFrequencyToForm({ kind: 'interval', interval: 1, unit: 'months' });
         document.getElementById('sched-reminder').value = '3';
         document.getElementById('sched-notes').value = '';
         document.getElementById('sched-auto-enter').checked = false;
@@ -334,6 +364,12 @@
     document.getElementById('sched-autopay').addEventListener('change', (e) => {
         document.getElementById('sched-autopay-from-group').hidden = !e.target.checked || document.getElementById('sched-is-transfer').checked;
     });
+    document.getElementById('sched-freq-kind').addEventListener('change', (e) => {
+        const isOrdinal = e.target.value === 'ordinalWeekday';
+        document.getElementById('sched-interval-group').hidden = isOrdinal;
+        document.getElementById('sched-ordinal-weekday-group').hidden = !isOrdinal;
+        document.getElementById('sched-next-date-hint').hidden = !isOrdinal;
+    });
 
     document.getElementById('save-schedule-btn').addEventListener('click', async () => {
         const name = document.getElementById('sched-name').value.trim();
@@ -344,6 +380,11 @@
         if (isTransfer && !document.getElementById('sched-transfer-account').value) {
             return showError(new Error('Pick which account this transfers to'));
         }
+        const isOrdinalFrequency = document.getElementById('sched-freq-kind').value === 'ordinalWeekday';
+        const ordinals = [...document.querySelectorAll('.sched-ordinal-checkbox:checked')].map((cb) => Number(cb.value));
+        if (isOrdinalFrequency && ordinals.length === 0) {
+            return showError(new Error('Pick at least one occurrence (1st, 2nd, 3rd, 4th, or last)'));
+        }
 
         try {
             const body = {
@@ -352,10 +393,13 @@
                 amountCents,
                 nextDate,
                 endDate: document.getElementById('sched-end-date').value || null,
-                frequency: {
-                    interval: Number(document.getElementById('sched-interval').value) || 1,
-                    unit: document.getElementById('sched-unit').value
-                },
+                frequency: isOrdinalFrequency
+                    ? { kind: 'ordinalWeekday', weekday: Number(document.getElementById('sched-weekday').value), ordinals }
+                    : {
+                        kind: 'interval',
+                        interval: Number(document.getElementById('sched-interval').value) || 1,
+                        unit: document.getElementById('sched-unit').value
+                    },
                 reminderDaysBefore: Number(document.getElementById('sched-reminder').value) || 0,
                 notes: document.getElementById('sched-notes').value,
                 autoEnter: document.getElementById('sched-auto-enter').checked,

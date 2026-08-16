@@ -67,13 +67,25 @@
             <div class="form-group">
                 <label for="sched-next-date">Next date</label>
                 <input type="date" id="sched-next-date">
+                <p class="form-hint" id="sched-next-date-hint" hidden>Used as a starting point — automatically snapped forward to the next date matching the rule below.</p>
             </div>
             <div class="form-group">
                 <label for="sched-end-date">End date (optional)</label>
                 <input type="date" id="sched-end-date">
             </div>
+            <div class="form-group">
+                <label for="sched-reminder">Remind days before</label>
+                <input type="number" id="sched-reminder" value="3" min="0">
+            </div>
         </div>
-        <div class="form-row">
+        <div class="form-group">
+            <label for="sched-freq-kind">Repeats</label>
+            <select id="sched-freq-kind" style="max-width:280px;">
+                <option value="interval">Every fixed interval</option>
+                <option value="ordinalWeekday">A specific weekday of the month</option>
+            </select>
+        </div>
+        <div class="form-row" id="sched-interval-group">
             <div class="form-group">
                 <label for="sched-interval">Repeat every</label>
                 <input type="number" id="sched-interval" value="1" min="1">
@@ -87,9 +99,30 @@
                     <option value="years">Year(s)</option>
                 </select>
             </div>
+        </div>
+        <div class="form-row" id="sched-ordinal-weekday-group" hidden>
             <div class="form-group">
-                <label for="sched-reminder">Remind days before</label>
-                <input type="number" id="sched-reminder" value="3" min="0">
+                <label for="sched-weekday">Weekday</label>
+                <select id="sched-weekday">
+                    <option value="0">Sunday</option>
+                    <option value="1">Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3" selected>Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Which occurrence(s) — pick one or more</label>
+                <div class="form-row" style="flex-wrap:wrap;gap:4px 12px;">
+                    <label class="checkbox-row" style="width:auto;"><input type="checkbox" class="sched-ordinal-checkbox" value="1"> 1st</label>
+                    <label class="checkbox-row" style="width:auto;"><input type="checkbox" class="sched-ordinal-checkbox" value="2"> 2nd</label>
+                    <label class="checkbox-row" style="width:auto;"><input type="checkbox" class="sched-ordinal-checkbox" value="3"> 3rd</label>
+                    <label class="checkbox-row" style="width:auto;"><input type="checkbox" class="sched-ordinal-checkbox" value="4"> 4th</label>
+                    <label class="checkbox-row" style="width:auto;"><input type="checkbox" class="sched-ordinal-checkbox" value="-1"> Last</label>
+                </div>
+                <p class="form-hint">E.g. check "2nd" and "Last" for "the 2nd and last Wednesday of every month".</p>
             </div>
         </div>
         <div class="form-group">

@@ -60,6 +60,15 @@
             .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
+    // Same exclusion as populateTransferAccountOptions above, and re-run at
+    // the same times (account change, load) — see its own comment.
+    function populateAutopayFromAccountOptions() {
+        const currentAccount = document.getElementById('sched-account').value;
+        document.getElementById('sched-autopay-from-account').innerHTML = '<option value="">— same account —</option>' + accounts
+            .filter(a => a.id !== currentAccount)
+            .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
     // Shared by load() and resolveCategorySelection() below (the latter
     // re-populates after creating a category inline, so it shows up without
     // a full page reload).
@@ -80,8 +89,9 @@
         // own transactionRow() uses for posted transfers.
         const payeeCell = schedule.transferAccount ? `→ ${schedule.transferAccount.name}` : (schedule.payee ? schedule.payee.name : '');
         const categoryCell = schedule.transferAccount ? 'Transfer' : (schedule.category ? schedule.category.name : '');
+        const autopayTitle = schedule.autopayFromAccount ? `Autopay — drafted from ${schedule.autopayFromAccount.name}` : 'Autopay';
         tr.innerHTML = `
-            <td>${schedule.name}${schedule.dueSoon ? ' <span class="badge badge-warn">Due soon</span>' : ''}${schedule.notifyByEmail ? ' <span class="badge" title="Emails everyone with a mail server configured when due">✉</span>' : ''}</td>
+            <td>${schedule.name}${schedule.dueSoon ? ' <span class="badge badge-warn">Due soon</span>' : ''}${schedule.notifyByEmail ? ' <span class="badge" title="Emails everyone with a mail server configured when due">✉</span>' : ''}${schedule.autopay ? ` <span class="badge" title="${autopayTitle}">⟳ Autopay</span>` : ''}</td>
             <td>${account ? account.name : ''}</td>
             <td>${payeeCell}</td>
             <td class="money ${amountClass}">${window.BWMoney.formatCents(schedule.amountCents)}</td>
@@ -166,6 +176,7 @@
                 '<option value="">— pick a group —</option>' + categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
             document.getElementById('sched-payee-options').innerHTML = payees.map(p => `<option value="${p.name}">`).join('');
             populateTransferAccountOptions();
+            populateAutopayFromAccountOptions();
 
             currentSchedules = schedulesRes.schedules;
             renderSchedulesTable();
@@ -241,10 +252,14 @@
         document.getElementById('sched-account').value = schedule.account;
         document.getElementById('sched-amount').value = (schedule.amountCents / 100).toFixed(2);
         populateTransferAccountOptions();
+        populateAutopayFromAccountOptions();
         document.getElementById('sched-is-transfer').checked = !!schedule.transferAccount;
         document.getElementById('sched-transfer-group').hidden = !schedule.transferAccount;
         document.getElementById('sched-category-group').hidden = !!schedule.transferAccount;
         document.getElementById('sched-transfer-account').value = schedule.transferAccount ? schedule.transferAccount.id : '';
+        document.getElementById('sched-autopay').checked = !!schedule.autopay;
+        document.getElementById('sched-autopay-from-group').hidden = !schedule.autopay || !!schedule.transferAccount;
+        document.getElementById('sched-autopay-from-account').value = schedule.autopayFromAccount ? schedule.autopayFromAccount.id : '';
         document.getElementById('sched-payee').value = schedule.payee ? schedule.payee.name : '';
         document.getElementById('sched-category').value = schedule.category ? schedule.category.id : '';
         document.getElementById('sched-new-category-fields').hidden = true;
@@ -271,6 +286,10 @@
         document.getElementById('sched-category-group').hidden = false;
         populateTransferAccountOptions();
         document.getElementById('sched-transfer-account').value = '';
+        document.getElementById('sched-autopay').checked = false;
+        document.getElementById('sched-autopay-from-group').hidden = true;
+        populateAutopayFromAccountOptions();
+        document.getElementById('sched-autopay-from-account').value = '';
         document.getElementById('sched-payee').value = '';
         document.getElementById('sched-category').value = '';
         document.getElementById('sched-new-category-fields').hidden = true;
@@ -294,10 +313,20 @@
     });
     document.getElementById('cancel-schedule-btn').addEventListener('click', resetForm);
 
-    document.getElementById('sched-account').addEventListener('change', populateTransferAccountOptions);
+    document.getElementById('sched-account').addEventListener('change', () => {
+        populateTransferAccountOptions();
+        populateAutopayFromAccountOptions();
+    });
     document.getElementById('sched-is-transfer').addEventListener('change', (e) => {
         document.getElementById('sched-transfer-group').hidden = !e.target.checked;
         document.getElementById('sched-category-group').hidden = e.target.checked;
+        // autopayFromAccount is mutually exclusive with transferAccount
+        // (see controllers/schedulesController.js) — hide it here too so the
+        // form doesn't offer a combination the server will silently clear.
+        document.getElementById('sched-autopay-from-group').hidden = e.target.checked || !document.getElementById('sched-autopay').checked;
+    });
+    document.getElementById('sched-autopay').addEventListener('change', (e) => {
+        document.getElementById('sched-autopay-from-group').hidden = !e.target.checked || document.getElementById('sched-is-transfer').checked;
     });
 
     document.getElementById('save-schedule-btn').addEventListener('click', async () => {
@@ -326,14 +355,17 @@
                 autoEnter: document.getElementById('sched-auto-enter').checked,
                 notifyByEmail: document.getElementById('sched-notify-email').checked
             };
+            body.autopay = document.getElementById('sched-autopay').checked;
             if (isTransfer) {
                 body.transferAccount = document.getElementById('sched-transfer-account').value;
                 body.payee = null;
                 body.category = null;
+                body.autopayFromAccount = null;
             } else {
                 body.transferAccount = null;
                 body.payee = await resolvePayee(document.getElementById('sched-payee').value.trim());
                 body.category = await resolveCategorySelection();
+                body.autopayFromAccount = body.autopay ? (document.getElementById('sched-autopay-from-account').value || null) : null;
             }
             if (editingId) {
                 await window.BWApi.apiFetch(`/api/schedules/${editingId}`, { method: 'PUT', body });

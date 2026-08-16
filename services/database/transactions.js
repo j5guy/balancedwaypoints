@@ -71,6 +71,26 @@ const createTransfer = async ({ owner, fromAccount, toAccount, date, amountCents
 
 const removeTransferPair = async (transferId, ownerId) => Transaction.deleteMany({ transferId, owner: ownerId }).exec();
 
+// Posts an autopay bill that drafts from a different account than the one
+// it's billed against (a schedule with both autopay and autopayFromAccount
+// set — see models/schedule.js). Same paired-transaction shape as
+// createTransfer above (linked by a shared transferId, opposite-signed,
+// draft leg auto-cleared since there's no external institution to
+// reconcile it against), except the billed leg keeps its own payee/
+// category/splits instead of being a bare transfer, and both legs are
+// flagged `autopay: true` for the register's badge. Deleting/removing
+// either leg already cascades to the other via the shared transferId (see
+// controllers/transactionsController.js's remove(), which doesn't
+// distinguish a transfer pair from an autopay pair).
+const createAutopayOccurrence = async ({ owner, account, autopayFromAccount, date, amountCents, payee, category, splits, notes, schedule = null, scheduleOccurrenceDate = null }) => {
+    const transferId = new mongoose.Types.ObjectId();
+    const [draft, bill] = await Transaction.create([
+        { owner, account: autopayFromAccount, transferAccount: account, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', autopay: true },
+        { owner, account, transferAccount: autopayFromAccount, date, amountCents, payee, category, splits, transferId, notes, schedule, scheduleOccurrenceDate, autopay: true }
+    ]);
+    return { draft, bill };
+};
+
 // Bulk-persists a new manual display order from the register's drag-and-drop
 // (see public/js/dragReorder.js) — ids top-to-bottom as currently displayed.
 // Allowed even for transfer/schedule-created rows, since this only ever
@@ -117,5 +137,5 @@ const sumForCategoryMonth = async (categoryId, month, ownerId) => {
 
 module.exports = {
     list, findById, findByIdRaw, findByImportedIds, create, update, remove,
-    createTransfer, removeTransferPair, reorder, sumForAccount, sumForCategoryMonth
+    createTransfer, removeTransferPair, createAutopayOccurrence, reorder, sumForAccount, sumForCategoryMonth
 };

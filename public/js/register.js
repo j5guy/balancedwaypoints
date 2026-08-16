@@ -246,6 +246,17 @@
         tr.draggable = accountRole !== 'readonly' && !isFiltering();
         tr.dataset.dragId = t.id;
         const category = t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : (t.transferAccount ? 'Transfer' : ''));
+        // Autopay is denormalized onto the transaction at posting time (see
+        // models/transaction.js) — no schedule lookup needed here. When the
+        // schedule had a source account, this leg's own transferAccount IS
+        // that source (see services/database/transactions.js's
+        // createAutopayOccurrence), so it doubles as the "drafted from"
+        // account for the tooltip; on the source account's OWN register the
+        // draft leg shows this same badge next to its "Transfer" category text.
+        const autopayFromName = t.transferAccount ? (accounts.find(a => a.id === t.transferAccount)?.name || null) : null;
+        const autopayBadge = t.autopay
+            ? ` <span class="badge" title="Autopay${autopayFromName ? ' — drafted from ' + autopayFromName : ''}">⟳ Autopay</span>`
+            : '';
         const maskAmount = preferences.registerMask && preferences.registerMask.amount;
         const maskBalance = preferences.registerMask && preferences.registerMask.balance;
         const amountClass = maskAmount ? 'money-masked' : (t.amountCents < 0 ? 'money-negative' : 'money-positive');
@@ -265,7 +276,7 @@
             </td>
             <td class="drag-handle" title="${isFiltering() ? 'Clear filters to reorder' : 'Drag to reorder'}">⠿</td>
             <td class="editable-cell" data-col="date">${window.BWDate.formatDate(t.date)}</td>
-            <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}</td>
+            <td class="editable-cell" data-col="payee">${t.payee ? t.payee.name : ''}${autopayBadge}</td>
             <td class="editable-cell" data-col="category">${category}</td>
             <td class="editable-cell" data-col="notes" title="${escapeAttr(t.notes || '')}">${t.notes || ''}</td>
             <td class="editable-cell" data-col="tags">${(t.tags || []).map(tag => `<span class="badge">${tag.name}</span>`).join(' ')}</td>
@@ -569,6 +580,7 @@
             <td data-col="cleared"></td>
             <td class="row-actions">
                 <span class="badge ${occurrence.isDue ? 'badge-warn' : ''}" title="From schedule &quot;${s.name}&quot; — projected, not a real transaction yet">${occurrence.isDue ? 'Due' : 'Scheduled'}</span>
+                ${s.autopay ? `<span class="badge" title="Autopay${s.autopayFromAccount ? ' — drafted from ' + s.autopayFromAccount.name : ''}">⟳</span>` : ''}
                 ${accountRole === 'readonly' ? '' : '<button type="button" class="btn btn-secondary btn-sm icon-btn" data-occ-actions title="Edit or post this occurrence">⋯</button>'}
             </td>
         `;

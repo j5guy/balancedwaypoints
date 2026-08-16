@@ -18,6 +18,8 @@ function serialize(schedule) {
         category: schedule.category ? { id: schedule.category._id, name: schedule.category.name } : null,
         splits: schedule.splits,
         transferAccount: schedule.transferAccount ? { id: schedule.transferAccount._id || schedule.transferAccount, name: schedule.transferAccount.name } : null,
+        autopay: !!schedule.autopay,
+        autopayFromAccount: schedule.autopayFromAccount ? { id: schedule.autopayFromAccount._id || schedule.autopayFromAccount, name: schedule.autopayFromAccount.name } : null,
         frequency: schedule.frequency,
         nextDate: schedule.nextDate,
         endDate: schedule.endDate,
@@ -82,7 +84,7 @@ async function list(req, res) {
 }
 
 async function create(req, res) {
-    const { name, account, payee, amountCents, category, splits, transferAccount, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, notes, notifyByEmail } = req.body || {};
+    const { name, account, payee, amountCents, category, splits, transferAccount, autopay, autopayFromAccount, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, notes, notifyByEmail } = req.body || {};
     const access = await requireAccountAccess(req, res, account, { write: true });
     if (!access) return;
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
@@ -97,6 +99,7 @@ async function create(req, res) {
     // move check below. It also isn't categorized: payee/category/splits
     // are cleared rather than trusted from the request.
     let categorization;
+    let resolvedAutopayFromAccount = null;
     if (transferAccount) {
         if (String(transferAccount) === String(account)) {
             return res.status(400).json({ error: "Account and transfer account can't be the same" });
@@ -107,6 +110,10 @@ async function create(req, res) {
             return res.status(400).json({ error: "Can't transfer to an account with a different owner" });
         }
         categorization = { transferAccount, payee: null, category: null, splits: [] };
+        // transferAccount already fully describes both sides of the money
+        // movement — autopayFromAccount would be redundant/contradictory,
+        // so it's silently cleared here rather than trusted from the
+        // request, same convention as payee/category/splits just above.
     } else {
         const splitError = validateSplits(amountCents, splits);
         if (splitError) return res.status(400).json({ error: splitError });
@@ -116,6 +123,19 @@ async function create(req, res) {
             category: splits && splits.length ? null : (category || null),
             splits: splits || []
         };
+        // Needs write access to the source account too, and same owner —
+        // same rules as transferAccount just above.
+        if (autopayFromAccount) {
+            if (String(autopayFromAccount) === String(account)) {
+                return res.status(400).json({ error: "Account and autopay source account can't be the same" });
+            }
+            const autopayAccess = await requireAccountAccess(req, res, autopayFromAccount, { write: true });
+            if (!autopayAccess) return;
+            if (String(autopayAccess.ownerId) !== String(access.ownerId)) {
+                return res.status(400).json({ error: "Can't autopay from an account with a different owner" });
+            }
+            resolvedAutopayFromAccount = autopayFromAccount;
+        }
     }
 
     const schedule = await schedules.create({
@@ -123,6 +143,8 @@ async function create(req, res) {
         name: String(name).trim(), account,
         amountCents: Number(amountCents),
         ...categorization,
+        autopay: !!autopay,
+        autopayFromAccount: resolvedAutopayFromAccount,
         frequency: frequency || { unit: 'months', interval: 1 },
         nextDate, endDate: endDate || null,
         autoEnter: !!autoEnter,
@@ -140,7 +162,7 @@ async function update(req, res) {
     const access = await requireAccountAccess(req, res, existing.account, { write: true });
     if (!access) return;
 
-    const { name, account, payee, amountCents, category, splits, transferAccount, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes, notifyByEmail } = req.body || {};
+    const { name, account, payee, amountCents, category, splits, transferAccount, autopay, autopayFromAccount, frequency, nextDate, endDate, autoEnter, reminderDaysBefore, active, notes, notifyByEmail } = req.body || {};
     if (frequency && frequency.unit && !FREQUENCY_UNITS.includes(frequency.unit)) return res.status(400).json({ error: 'Invalid frequency unit' });
 
     // Moving a schedule to a different account requires write access to
@@ -167,6 +189,7 @@ async function update(req, res) {
     if (active !== undefined) data.active = !!active;
     if (notes !== undefined) data.notes = notes;
     if (notifyByEmail !== undefined) data.notifyByEmail = !!notifyByEmail;
+    if (autopay !== undefined) data.autopay = !!autopay;
 
     // Same mutual-exclusivity rule as create(), applied against whatever
     // the final account/transferAccount pair resolves to once this update
@@ -190,11 +213,33 @@ async function update(req, res) {
         data.payee = null;
         data.category = null;
         data.splits = [];
+        // Silently cleared for the same reason as create()'s own comment —
+        // transferAccount already fully describes the money movement.
+        data.autopayFromAccount = null;
     } else {
         if (transferAccount !== undefined) data.transferAccount = null;
         if (payee !== undefined) data.payee = payee || null;
         if (splits !== undefined) { data.splits = splits; data.category = splits.length ? null : (category || null); }
         else if (category !== undefined) data.category = category || null;
+
+        // Same resolution as create()'s own autopayFromAccount validation,
+        // against the FINAL value (covers both "this request changes
+        // autopayFromAccount" and re-validates an unchanged one in case its
+        // share was revoked since).
+        const finalAutopayFromAccount = autopayFromAccount !== undefined ? (autopayFromAccount || null) : existing.autopayFromAccount;
+        if (finalAutopayFromAccount) {
+            if (String(finalAutopayFromAccount) === String(finalAccount)) {
+                return res.status(400).json({ error: "Account and autopay source account can't be the same" });
+            }
+            const autopayAccess = await requireAccountAccess(req, res, finalAutopayFromAccount, { write: true });
+            if (!autopayAccess) return;
+            if (String(autopayAccess.ownerId) !== String(access.ownerId)) {
+                return res.status(400).json({ error: "Can't autopay from an account with a different owner" });
+            }
+            if (autopayFromAccount !== undefined) data.autopayFromAccount = autopayFromAccount;
+        } else if (autopayFromAccount !== undefined) {
+            data.autopayFromAccount = null;
+        }
     }
 
     const schedule = await schedules.update(req.params.id, data, access.ownerId);
@@ -242,7 +287,11 @@ function serializeOccurrence(o, viewingIncomingSide) {
             transferAccount,
             notes: o.notes,
             amountCents: o.amountCents,
-            splits: o.splits
+            splits: o.splits,
+            autopay: !!schedule.autopay,
+            autopayFromAccount: schedule.autopayFromAccount
+                ? { id: schedule.autopayFromAccount._id || schedule.autopayFromAccount, name: schedule.autopayFromAccount.name }
+                : null
         }
     };
 }
@@ -333,6 +382,12 @@ async function postOccurrence(req, res) {
     if (schedule.transferAccount) {
         const transferAccess = await requireAccountAccess(req, res, schedule.transferAccount, { write: true });
         if (!transferAccess) return;
+    } else if (schedule.autopay && schedule.autopayFromAccount) {
+        // Same reasoning as the transfer branch above — posting needs write
+        // access to both accounts, or a readwrite share on just the billed
+        // side could be used as a backdoor into the draft account.
+        const autopayAccess = await requireAccountAccess(req, res, schedule.autopayFromAccount, { write: true });
+        if (!autopayAccess) return;
     }
 
     const occDate = new Date(occurrenceDate);
@@ -353,6 +408,21 @@ async function postOccurrence(req, res) {
             scheduleOccurrenceDate: occDate
         });
         txn = outgoing;
+    } else if (schedule.autopay && schedule.autopayFromAccount) {
+        const { bill } = await transactionsDb.createAutopayOccurrence({
+            owner: access.ownerId,
+            account: schedule.account,
+            autopayFromAccount: schedule.autopayFromAccount,
+            date: postDate,
+            amountCents: fields.amountCents,
+            payee: fields.payee,
+            category: fields.category,
+            splits: fields.splits,
+            notes: fields.notes,
+            schedule: schedule._id,
+            scheduleOccurrenceDate: occDate
+        });
+        txn = bill;
     } else {
         txn = await transactionsDb.create({
             owner: access.ownerId,
@@ -364,7 +434,8 @@ async function postOccurrence(req, res) {
             splits: fields.splits,
             notes: fields.notes,
             schedule: schedule._id,
-            scheduleOccurrenceDate: occDate
+            scheduleOccurrenceDate: occDate,
+            autopay: !!schedule.autopay
         });
     }
     await advanceNextDatePastPosted(schedule);
@@ -378,6 +449,7 @@ async function postOccurrence(req, res) {
         amountCents: populated.amountCents,
         category: populated.category ? { id: populated.category._id, name: populated.category.name } : null,
         transferAccount: populated.transferAccount || null,
+        autopay: !!populated.autopay,
         notes: populated.notes
     });
 }

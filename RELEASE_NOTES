@@ -1,3 +1,7 @@
+v0.10.4b
+------
+Register columns can now be reordered by drag-and-drop, in addition to show/hide — both persist per-user, with a "Reset columns to default" button
+
 v0.10.3b
 ------
 Add user-configurable colors for the Scheduled, Due, and Autopay badges (My Account > Appearance)

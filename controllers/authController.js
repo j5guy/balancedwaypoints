@@ -295,6 +295,7 @@ async function getPreferences(req, res) {
         registerSort: user.preferences.registerSort,
         registerMask: user.preferences.registerMask,
         registerColumns: user.preferences.registerColumns,
+        registerColumnOrder: user.preferences.registerColumnOrder,
         upcomingSchedules: user.preferences.upcomingSchedules,
         registerHistory: user.preferences.registerHistory,
         weeklyReportEmail: user.preferences.weeklyReportEmail,
@@ -324,6 +325,30 @@ function sanitizeThemeColorGroup(input, existing) {
         // the color <input> in the UI can't produce anything else anyway.
     }
     return result;
+}
+
+// The register's reorderable columns — the source of truth both
+// registerColumns (show/hide) and registerColumnOrder (left-to-right order)
+// validate against. Mirrors public/js/register.js's own COLUMN_LABELS keys;
+// keep the two in sync by hand (client-side code can't require() this file).
+const REGISTER_COLUMN_KEYS = ['date', 'payee', 'category', 'notes', 'tags', 'amount', 'balance', 'cleared'];
+
+// Only accepts a value that's a permutation of REGISTER_COLUMN_KEYS (same
+// length, no duplicates, no unknown keys) — anything else is silently
+// ignored (keeping whatever order was already stored) rather than trying to
+// partially repair it, same "reject, don't guess" stance the rest of this
+// file takes with malformed input. public/js/register.js separately
+// tolerates a stored order that's missing a key (e.g. a column added in a
+// later release) by appending it at render time — this validation just
+// guards against corrupt/malicious input at save time.
+function sanitizeColumnOrder(input, existing) {
+    if (!Array.isArray(input) || input.length !== REGISTER_COLUMN_KEYS.length) return existing;
+    const unique = new Set(input);
+    if (unique.size !== REGISTER_COLUMN_KEYS.length) return existing;
+    for (const key of unique) {
+        if (!REGISTER_COLUMN_KEYS.includes(key)) return existing;
+    }
+    return input;
 }
 
 // Same validation as sanitizeThemeColorGroup above, just over the flat
@@ -420,11 +445,12 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { homeDashboard, registerSort, registerMask, registerColumns, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, badgeColors, notifyEmail, themeColors } = req.body || {};
+    const { homeDashboard, registerSort, registerMask, registerColumns, registerColumnOrder, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, badgeColors, notifyEmail, themeColors } = req.body || {};
     if (['budget', 'accounts', 'dashboard'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
     if (['newest', 'oldest', 'manual'].includes(registerSort)) user.preferences.registerSort = registerSort;
     if (registerMask) Object.assign(user.preferences.registerMask, registerMask);
     if (registerColumns) Object.assign(user.preferences.registerColumns, registerColumns);
+    if (registerColumnOrder !== undefined) user.preferences.registerColumnOrder = sanitizeColumnOrder(registerColumnOrder, user.preferences.registerColumnOrder);
     if (upcomingSchedules) Object.assign(user.preferences.upcomingSchedules, upcomingSchedules);
     if (registerHistory) Object.assign(user.preferences.registerHistory, registerHistory);
     if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
@@ -459,6 +485,7 @@ async function updatePreferences(req, res) {
             registerSort: user.preferences.registerSort,
             registerMask: user.preferences.registerMask,
             registerColumns: user.preferences.registerColumns,
+            registerColumnOrder: user.preferences.registerColumnOrder,
             upcomingSchedules: user.preferences.upcomingSchedules,
             registerHistory: user.preferences.registerHistory,
             weeklyReportEmail: user.preferences.weeklyReportEmail,

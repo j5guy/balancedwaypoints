@@ -83,6 +83,7 @@
             <select id="sched-freq-kind" style="max-width:280px;">
                 <option value="interval">Every fixed interval</option>
                 <option value="ordinalWeekday">A specific weekday of the month</option>
+                <option value="dayOfMonth">A specific day of the month</option>
             </select>
         </div>
         <div class="form-row" id="sched-interval-group">
@@ -123,6 +124,18 @@
                     <label class="checkbox-row" style="width:auto;"><input type="checkbox" class="sched-ordinal-checkbox" value="-1"> Last</label>
                 </div>
                 <p class="form-hint">E.g. check "2nd" and "Last" for "the 2nd and last Wednesday of every month".</p>
+            </div>
+        </div>
+        <div class="form-row" id="sched-day-of-month-group" hidden>
+            <div class="form-group">
+                <label for="sched-day-of-month">Day</label>
+                <select id="sched-day-of-month" style="max-width:160px;">
+                    <% for (let d = 1; d <= 31; d++) { %>
+                        <option value="<%= d %>"><%= d %><%= (d === 1 || d === 21 || d === 31) ? 'st' : (d === 2 || d === 22) ? 'nd' : (d === 3 || d === 23) ? 'rd' : 'th' %></option>
+                    <% } %>
+                    <option value="-1">Last day</option>
+                </select>
+                <p class="form-hint">A day beyond a given month's length (e.g. the 31st in February) falls back to that month's own last day.</p>
             </div>
         </div>
         <div class="form-group">

@@ -2,24 +2,39 @@
 // arithmetic (via the Date UTC setters) rather than a duration library —
 // "every 1 month" needs to mean "same day next month", not "+30 days".
 //
-// Two recurrence kinds, dispatched on frequency.kind:
-//  - 'interval' (default, and every schedule from before ordinal-weekday
-//    recurrence existed — see models/schedule.js) — step by a fixed
-//    {unit, interval}.
+// Three recurrence kinds, dispatched on frequency.kind:
+//  - 'interval' (default, and every schedule from before ordinal-weekday/
+//    day-of-month recurrence existed — see models/schedule.js) — step by a
+//    fixed {unit, interval}. Note this ALREADY covers "the 1st of every
+//    month" (nextDate on the 1st, unit:'months', interval:1) — every month
+//    has a 1st, so plain calendar-month stepping just works. It does NOT
+//    cover "the last day of every month" (below), since month lengths vary
+//    and stepping a fixed day-of-month forward by calendar months rolls
+//    over into the next month once that day doesn't exist (e.g. Jan 31 + 1
+//    month lands in early March, skipping February entirely).
 //  - 'ordinalWeekday' — the Nth (or "last") weekday of every month, e.g.
 //    "the 2nd Wednesday" or "the 2nd AND last Wednesday" (multiple
-//    ordinals recur on all of them). `date` is assumed to already BE a
-//    valid occurrence of the rule, same contract as the interval branch —
-//    this returns the next one strictly after it.
+//    ordinals recur on all of them).
+//  - 'dayOfMonth' — a specific day-of-month (1-31), or -1 for "the last day
+//    of the month" whatever that day turns out to be. A day beyond a given
+//    month's length (e.g. 31 in February) clamps down to that month's own
+//    last day, same idea as -1 but for an explicit day the user picked.
+//
+// Both 'ordinalWeekday' and 'dayOfMonth' assume `date` already IS a valid
+// occurrence of the rule, same contract as the interval branch — this
+// returns the next one strictly after it.
 //
 // This is the one seam every recurrence-aware caller (occurrenceProjection.js,
 // occurrenceOverrides.js's advanceOccurrences/occurrencesBetween below,
 // services/schedules/scheduler.js) funnels a date-step through, so kind
-// dispatch living here is what lets all of those work unchanged for
-// ordinal-weekday schedules too.
+// dispatch living here is what lets all of those work unchanged for both
+// calendar-based recurrence kinds too.
 function nextOccurrence(date, frequency) {
     if (frequency && frequency.kind === 'ordinalWeekday') {
         return scanForOrdinalWeekday(date, frequency, false);
+    }
+    if (frequency && frequency.kind === 'dayOfMonth') {
+        return scanForDayOfMonth(date, frequency, false);
     }
     const next = new Date(date);
     const { unit, interval } = frequency;
@@ -84,8 +99,40 @@ function scanForOrdinalWeekday(date, frequency, includeDateItself) {
     return new Date(date);
 }
 
-// See scanForOrdinalWeekday's includeDateItself doc above.
-function firstOrdinalWeekdayOnOrAfter(date, frequency) {
+// The single UTC date matching a 'dayOfMonth' rule within the given month —
+// `day` clamped to that month's actual length (so `day: 31` lands on Feb
+// 28/29 in a month that doesn't have a 31st), or that month's last day
+// outright when `day === -1`.
+function dayOfMonthDate(year, monthIndex, day) {
+    const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const clampedDay = day === -1 ? daysInMonth : Math.min(day, daysInMonth);
+    return new Date(Date.UTC(year, monthIndex, clampedDay));
+}
+
+// See scanForOrdinalWeekday's includeDateItself doc — same contract, just
+// one candidate date per month instead of a list.
+function scanForDayOfMonth(date, frequency, includeDateItself) {
+    let year = date.getUTCFullYear();
+    let month = date.getUTCMonth();
+    for (let i = 0; i < MAX_MONTHS_SCANNED; i++) {
+        const candidate = dayOfMonthDate(year, month, frequency.day);
+        if (includeDateItself ? candidate.getTime() >= date.getTime() : candidate.getTime() > date.getTime()) {
+            return candidate;
+        }
+        month++;
+        if (month > 11) { month = 0; year++; }
+    }
+    return new Date(date);
+}
+
+// Snaps a user-picked "starting from" date onto whichever calendar-based
+// rule `frequency` describes ('ordinalWeekday' or 'dayOfMonth') — used when
+// a schedule is first created/edited, since the date picker has no way to
+// only offer, say, 2nd-Wednesdays or month-end dates (see
+// controllers/schedulesController.js). Interval schedules have no such
+// "wrong" nextDate to correct, so this is never called for that kind.
+function firstOccurrenceOnOrAfter(date, frequency) {
+    if (frequency.kind === 'dayOfMonth') return scanForDayOfMonth(date, frequency, true);
     return scanForOrdinalWeekday(date, frequency, true);
 }
 
@@ -116,4 +163,4 @@ function occurrencesBetween(start, end, frequency) {
 module.exports = nextOccurrence;
 module.exports.advanceOccurrences = advanceOccurrences;
 module.exports.occurrencesBetween = occurrencesBetween;
-module.exports.firstOrdinalWeekdayOnOrAfter = firstOrdinalWeekdayOnOrAfter;
+module.exports.firstOccurrenceOnOrAfter = firstOccurrenceOnOrAfter;

@@ -5,7 +5,7 @@ const { resolveActingOwner } = require('../services/authz/actingOwner');
 const { FREQUENCY_UNITS } = require('../models/schedule');
 const { projectSchedule, advanceNextDatePastPosted } = require('../services/schedules/occurrenceProjection');
 const { resolve: resolveOverride } = require('../services/schedules/occurrenceOverrides');
-const { firstOrdinalWeekdayOnOrAfter } = require('../services/schedules/nextOccurrence');
+const { firstOccurrenceOnOrAfter } = require('../services/schedules/nextOccurrence');
 
 // The only ordinals accepted for an 'ordinalWeekday' schedule (see
 // models/schedule.js) — 1st through 4th, or -1 for "last", matching the
@@ -13,32 +13,45 @@ const { firstOrdinalWeekdayOnOrAfter } = require('../services/schedules/nextOccu
 // offers (a "5th" isn't offered since most months don't have one).
 const ORDINAL_WEEKDAY_VALUES = [1, 2, 3, 4, -1];
 
+// A schedule's frequency.kind that isn't 'interval' — both are calendar-
+// based (a specific spot in every month) rather than a fixed step, and
+// both need their nextDate SNAPPED onto the rule rather than trusted
+// as-is — see resolveFrequency's callers in create()/update() below.
+const CALENDAR_BASED_KINDS = ['ordinalWeekday', 'dayOfMonth'];
+
 // Validates and normalizes a request body's `frequency` into the exact
 // shape models/schedule.js expects, returning { error } on anything
 // malformed or { frequency } on success. Centralized here since create()
 // and update() both need identical validation — previously just a single
-// `unit` enum check inline in each, now enough logic (two full recurrence
+// `unit` enum check inline in each, now enough logic (three full recurrence
 // shapes) to warrant its own function.
 function resolveFrequency(input) {
-    if (!input || input.kind !== 'ordinalWeekday') {
-        const unit = (input && input.unit) || 'months';
-        if (!FREQUENCY_UNITS.includes(unit)) return { error: 'Invalid frequency unit' };
-        const interval = input && input.interval !== undefined ? Number(input.interval) : 1;
-        if (!(interval > 0)) return { error: 'interval must be greater than 0' };
-        return { frequency: { kind: 'interval', unit, interval } };
+    if (input && input.kind === 'ordinalWeekday') {
+        const weekday = Number(input.weekday);
+        if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+            return { error: 'weekday must be 0 (Sunday) through 6 (Saturday)' };
+        }
+        if (!Array.isArray(input.ordinals) || input.ordinals.length === 0) {
+            return { error: 'ordinals must be a non-empty array' };
+        }
+        const ordinals = input.ordinals.map(Number);
+        if (!ordinals.every((o) => ORDINAL_WEEKDAY_VALUES.includes(o))) {
+            return { error: 'ordinals must each be 1, 2, 3, 4, or -1 (last)' };
+        }
+        return { frequency: { kind: 'ordinalWeekday', weekday, ordinals: [...new Set(ordinals)].sort((a, b) => a - b), unit: 'months', interval: 1 } };
     }
-    const weekday = Number(input.weekday);
-    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
-        return { error: 'weekday must be 0 (Sunday) through 6 (Saturday)' };
+    if (input && input.kind === 'dayOfMonth') {
+        const day = Number(input.day);
+        if (!Number.isInteger(day) || day === 0 || day < -1 || day > 31) {
+            return { error: 'day must be 1-31, or -1 for the last day of the month' };
+        }
+        return { frequency: { kind: 'dayOfMonth', day, unit: 'months', interval: 1 } };
     }
-    if (!Array.isArray(input.ordinals) || input.ordinals.length === 0) {
-        return { error: 'ordinals must be a non-empty array' };
-    }
-    const ordinals = input.ordinals.map(Number);
-    if (!ordinals.every((o) => ORDINAL_WEEKDAY_VALUES.includes(o))) {
-        return { error: 'ordinals must each be 1, 2, 3, 4, or -1 (last)' };
-    }
-    return { frequency: { kind: 'ordinalWeekday', weekday, ordinals: [...new Set(ordinals)].sort((a, b) => a - b), unit: 'months', interval: 1 } };
+    const unit = (input && input.unit) || 'months';
+    if (!FREQUENCY_UNITS.includes(unit)) return { error: 'Invalid frequency unit' };
+    const interval = input && input.interval !== undefined ? Number(input.interval) : 1;
+    if (!(interval > 0)) return { error: 'interval must be greater than 0' };
+    return { frequency: { kind: 'interval', unit, interval } };
 }
 
 function serialize(schedule) {
@@ -174,13 +187,14 @@ async function create(req, res) {
         }
     }
 
-    // For an ordinal-weekday schedule, `nextDate` from the client is really
-    // a "starting from" date, not necessarily itself a valid occurrence
-    // (the date picker has no way to only offer, say, 2nd-Wednesdays) — snap
-    // it forward to the actual first matching date. Interval schedules keep
-    // whatever date was picked, same as before this feature existed.
-    const effectiveNextDate = resolvedFrequency.frequency.kind === 'ordinalWeekday'
-        ? firstOrdinalWeekdayOnOrAfter(new Date(nextDate), resolvedFrequency.frequency)
+    // For a calendar-based schedule (ordinal-weekday or day-of-month),
+    // `nextDate` from the client is really a "starting from" date, not
+    // necessarily itself a valid occurrence (the date picker has no way to
+    // only offer, say, 2nd-Wednesdays or month-end dates) — snap it forward
+    // to the actual first matching date. Interval schedules keep whatever
+    // date was picked, same as before this feature existed.
+    const effectiveNextDate = CALENDAR_BASED_KINDS.includes(resolvedFrequency.frequency.kind)
+        ? firstOccurrenceOnOrAfter(new Date(nextDate), resolvedFrequency.frequency)
         : nextDate;
 
     const schedule = await schedules.create({
@@ -242,14 +256,14 @@ async function update(req, res) {
 
     // Same "nextDate is really just a starting point" snapping as create()
     // — only when this update actually touches frequency and/or nextDate,
-    // and only for the ordinal-weekday kind (an interval schedule's
-    // nextDate has no "wrong" value to correct). Seeded from whichever of
-    // the two this request is actually changing, falling back to the
-    // existing stored value for whichever it isn't.
+    // and only for a calendar-based kind (an interval schedule's nextDate
+    // has no "wrong" value to correct). Seeded from whichever of the two
+    // this request is actually changing, falling back to the existing
+    // stored value for whichever it isn't.
     const finalFrequency = resolvedFrequency ? resolvedFrequency.frequency : existing.frequency;
-    if (finalFrequency && finalFrequency.kind === 'ordinalWeekday' && (resolvedFrequency || nextDate !== undefined)) {
+    if (finalFrequency && CALENDAR_BASED_KINDS.includes(finalFrequency.kind) && (resolvedFrequency || nextDate !== undefined)) {
         const seed = nextDate !== undefined ? nextDate : existing.nextDate;
-        data.nextDate = firstOrdinalWeekdayOnOrAfter(new Date(seed), finalFrequency);
+        data.nextDate = firstOccurrenceOnOrAfter(new Date(seed), finalFrequency);
     }
 
     // Same mutual-exclusivity rule as create(), applied against whatever

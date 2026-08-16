@@ -1,3 +1,7 @@
+v0.10.6b
+------
+Schedules can now also recur on a specific day of the month, including "the last day of the month"
+
 v0.10.5b
 ------
 Schedules can now recur on a specific weekday of the month (e.g. "the 2nd Wednesday" or "the 2nd and last Wednesday"), not just a fixed interval

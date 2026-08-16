@@ -63,15 +63,15 @@ const scheduleSchema = new mongoose.Schema({
     // creates a linked pair (see services/database/transactions.js's
     // createAutopayOccurrence) instead of a single categorized transaction.
     autopayFromAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
-    // 'interval' (default — every schedule from before ordinal-weekday
-    // recurrence existed) uses unit/interval below. 'ordinalWeekday' uses
-    // weekday/ordinals instead — unit/interval are left at their defaults
-    // and simply unused, rather than making them conditionally required,
-    // since services/schedules/nextOccurrence.js (the only code that reads
-    // this object) dispatches on `kind` and ignores whichever pair doesn't
-    // apply.
+    // 'interval' (default — every schedule from before ordinal-weekday/
+    // day-of-month recurrence existed) uses unit/interval below.
+    // 'ordinalWeekday' uses weekday/ordinals; 'dayOfMonth' uses day. Each
+    // kind's own fields are left at their defaults and simply unused by the
+    // other kinds, rather than making them conditionally required, since
+    // services/schedules/nextOccurrence.js (the only code that reads this
+    // object) dispatches on `kind` and ignores whichever fields don't apply.
     frequency: {
-        kind: { type: String, enum: ['interval', 'ordinalWeekday'], default: 'interval' },
+        kind: { type: String, enum: ['interval', 'ordinalWeekday', 'dayOfMonth'], default: 'interval' },
         unit: { type: String, enum: FREQUENCY_UNITS, default: 'months' },
         interval: { type: Number, default: 1, min: 1 },
         // Only meaningful when kind is 'ordinalWeekday' — 0 (Sunday)
@@ -82,7 +82,13 @@ const scheduleSchema = new mongoose.Schema({
         // for 1st..4th, -1 for "last" (whichever ordinal that turns out to
         // be that month). Multiple values recur on all of them at once —
         // e.g. [2, -1] is "the 2nd and last Wednesday of every month".
-        ordinals: { type: [Number], default: [] }
+        ordinals: { type: [Number], default: [] },
+        // Only meaningful when kind is 'dayOfMonth' — 1-31, or -1 for "the
+        // last day of the month" whatever that turns out to be. A day
+        // beyond a given month's length (e.g. 31 in February) clamps down
+        // to that month's own last day (see nextOccurrence.js's
+        // dayOfMonthDate) rather than rolling into the next month.
+        day: { type: Number, min: -1, max: 31, default: null }
     },
     nextDate: { type: Date, required: true },
     endDate: { type: Date, default: null },

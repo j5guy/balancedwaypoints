@@ -1,41 +1,19 @@
-// Handles the two ways scripts/setup-wizard.js (and scripts/update.js) can
-// end, once .env is written and the app itself has been (or is about to be)
-// brought up:
-//
-// - relocateFullCheckout: the "Full checkout" footprint just needs the
-//   scratch clone moved to its final home (a no-op if it's already there).
-// - trimToMinimalFootprint: the "Docker only, minimal footprint" choice —
-//   builds a stably-tagged local image (this project always builds locally,
-//   never pulls a published one — see the README's "Why build locally
-//   instead of pulling an image?"), writes a small self-contained
-//   docker-compose.yml (no build context, so it works with no source
-//   present), copies nginx/nginx.conf.template and update.sh alongside it,
-//   brings the trimmed stack up from finalDir, then deletes the scratch
-//   checkout — .env/certs/ are written directly to finalDir by the wizard
-//   already (see scripts/setup-wizard.js), so there's nothing to carry over
-//   for those.
+// Handles what scripts/setup-wizard.js (and scripts/update.js) do once .env
+// is written and the app itself has been (or is about to be) brought up:
+// builds a stably-tagged local image (this project always builds locally,
+// never pulls a published one — see the README's "Why build locally instead
+// of pulling an image?"), writes a small self-contained docker-compose.yml
+// (no build context, so it works with no source present), copies
+// nginx/nginx.conf.template and update.sh alongside it, brings the trimmed
+// stack up from finalDir, then deletes the scratch checkout — .env/certs/
+// are written directly to finalDir by the wizard already (see
+// scripts/setup-wizard.js), so there's nothing to carry over for those.
 const fs = require('fs');
 const path = require('path');
 const { printAccessUrls } = require('./network');
 const { run, ensureDockerInstalled, writeDeployState } = require('./bringUp');
 
 const LOCAL_BUILD_TAG = 'balancedwaypoints-app:local';
-
-function relocateFullCheckout(scratchDir, finalDir) {
-    console.log(`\n== Moving checkout to ${finalDir} ==`);
-    fs.mkdirSync(finalDir, { recursive: true });
-    // cp -a (not fs.renameSync, which fails across filesystems/devices)
-    // copies everything from the scratch clone into finalDir, merging with
-    // whatever's already there (.env/certs/, written directly to finalDir
-    // by the wizard) rather than clobbering it.
-    if (!run('cp', ['-a', `${scratchDir}/.`, `${finalDir}/`])) {
-        console.error(`Failed to copy the checkout into ${finalDir} — it remains at ${scratchDir}. Fix the error above and copy it manually.`);
-        process.exit(1);
-    }
-    if (!run('rm', ['-rf', scratchDir])) {
-        console.error(`Copied to ${finalDir}, but failed to remove the scratch checkout at ${scratchDir} — remove it by hand.`);
-    }
-}
 
 // Always includes the nginx service — unlike fondwaypoints, this project's
 // host-nginx wiring (scripts/lib/bringUp.js's installHostNginxSite) sits IN
@@ -165,4 +143,4 @@ function trimToMinimalFootprint(scratchDir, finalDir, opts) {
     printAccessUrls(webFqdn, nginxHttpsPort);
 }
 
-module.exports = { relocateFullCheckout, trimToMinimalFootprint };
+module.exports = { trimToMinimalFootprint };

@@ -5,7 +5,7 @@ services:
     env_file:
       - .env
     volumes:
-      - logs-data:/app/logs
+      - ${LOGS_HOST_DIR:-logs-data}:/app/logs
       - ${BACKUP_HOST_DIR:-backups-data}:/app/backups
 
 volumes:

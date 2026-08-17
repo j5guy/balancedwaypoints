@@ -1,3 +1,19 @@
+v0.12.0b
+------
+Every Docker-managed volume (logs, and MongoDB's data directory when using the bundled internal
+container) can now be redirected to a host path instead of the managed Docker volume, via new
+LOGS_HOST_DIR/MONGO_HOST_DIR vars in .env — same pattern as the existing BACKUP_HOST_DIR/SSL_CERT_FILE/
+SSL_KEY_FILE. Leave blank to keep using the managed volume (the default — no change needed for existing
+installs). Also fixed: the minimal-footprint install path wasn't honoring BACKUP_HOST_DIR in its
+generated docker-compose.yml — it now does, matching the full-checkout path.
+
+v0.11.1b
+------
+Linking this app's login to the Waypoints Portal (checked during setup) now fully automates SSO — it
+registers this app as an OIDC client of the portal (headless, via the portal's own container) and
+writes the OIDC_* fields into this app's own .env automatically, recreating the container to pick them
+up. Previously this last step needed a manual visit to the portal's Admin > SSO clients.
+
 v0.11.0b
 ------
 Setup wizard: no longer offers a "Full checkout" footprint choice (always trims to the minimal

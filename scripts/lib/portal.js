@@ -78,83 +78,126 @@ function run(cmd, args, opts = {}) {
 // fresh manual install would; all configurable later from Admin > LDAP/OIDC
 // without a redeploy — then brings its Docker stack up. No interactive
 // wizard involved at any point.
-function installPortalNonInteractive({ webFqdn, port }) {
+async function installPortalNonInteractive({ webFqdn, port }) {
     console.log('\n== Installing the Waypoints Portal ==');
 
     // Re-checked right here, not just when the form was first rendered — a
     // portal could have been installed by a concurrent process/another
     // sibling app's wizard in the time since, and this is the last point
     // before actually provisioning a second one.
-    return detectPortal().then((already) => {
-        if (already.running) {
-            console.log(`A Waypoints Portal is already running at ${already.url} — skipping install.`);
-            return;
-        }
+    const already = await detectPortal();
+    if (already.running) {
+        console.log(`A Waypoints Portal is already running at ${already.url} — skipping install.`);
+        return;
+    }
 
-        if (!fs.existsSync(path.join(PORTAL_INSTALL_DIR, 'docker-compose.yml'))) {
-            // A non-empty PORTAL_INSTALL_DIR without a docker-compose.yml can
-            // only be a previous attempt that didn't finish (this path is
-            // never used for anything else) — clear it so `git clone` has an
-            // empty target instead of failing on it.
-            if (fs.existsSync(PORTAL_INSTALL_DIR) && fs.readdirSync(PORTAL_INSTALL_DIR).length > 0) {
-                console.log(`${PORTAL_INSTALL_DIR} exists but looks like an incomplete previous attempt — clearing it and retrying...`);
-                run('sudo', ['rm', '-rf', PORTAL_INSTALL_DIR]);
-            }
-            console.log(`Cloning ${PORTAL_REPO_URL} into ${PORTAL_INSTALL_DIR}...`);
-            if (!fs.existsSync(PORTAL_INSTALL_DIR)) {
-                if (!run('sudo', ['mkdir', '-p', PORTAL_INSTALL_DIR])) {
-                    console.error(`Failed to create ${PORTAL_INSTALL_DIR} — install the portal manually later: https://github.com/j5guy/waypointsportal`);
-                    return;
-                }
-                run('sudo', ['chown', `${os.userInfo().username}:${os.userInfo().username}`, PORTAL_INSTALL_DIR]);
-            }
-            const cloneArgs = ['clone', '--depth', '1'];
-            if (PORTAL_REPO_REF) cloneArgs.push('--branch', PORTAL_REPO_REF);
-            cloneArgs.push(PORTAL_REPO_URL, PORTAL_INSTALL_DIR);
-            // cwd explicitly set (not inherited) — this can run after a
-            // minimal-footprint install has already deleted this process's
-            // original scratch-checkout cwd, which would otherwise make git
-            // fail its own getcwd() at startup. GIT_TERMINAL_PROMPT=0 makes a
-            // repo that needs auth fail immediately with a clear error
-            // instead of silently hanging this non-interactive install
-            // waiting on a username/password prompt nothing will ever answer.
-            if (!run('git', cloneArgs, { cwd: os.tmpdir(), env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })) {
-                console.error(`Portal clone failed (auth required, or ${PORTAL_REPO_URL} is unreachable?) — install it manually later: https://github.com/j5guy/waypointsportal`);
+    if (!fs.existsSync(path.join(PORTAL_INSTALL_DIR, 'docker-compose.yml'))) {
+        // A non-empty PORTAL_INSTALL_DIR without a docker-compose.yml can
+        // only be a previous attempt that didn't finish (this path is
+        // never used for anything else) — clear it so `git clone` has an
+        // empty target instead of failing on it.
+        if (fs.existsSync(PORTAL_INSTALL_DIR) && fs.readdirSync(PORTAL_INSTALL_DIR).length > 0) {
+            console.log(`${PORTAL_INSTALL_DIR} exists but looks like an incomplete previous attempt — clearing it and retrying...`);
+            run('sudo', ['rm', '-rf', PORTAL_INSTALL_DIR]);
+        }
+        console.log(`Cloning ${PORTAL_REPO_URL} into ${PORTAL_INSTALL_DIR}...`);
+        if (!fs.existsSync(PORTAL_INSTALL_DIR)) {
+            if (!run('sudo', ['mkdir', '-p', PORTAL_INSTALL_DIR])) {
+                console.error(`Failed to create ${PORTAL_INSTALL_DIR} — install the portal manually later: https://github.com/j5guy/waypointsportal`);
                 return;
             }
-        } else {
-            console.log(`${PORTAL_INSTALL_DIR} already has a checkout — using it as-is.`);
+            run('sudo', ['chown', `${os.userInfo().username}:${os.userInfo().username}`, PORTAL_INSTALL_DIR]);
         }
-
-        const envPath = path.join(PORTAL_INSTALL_DIR, '.env');
-        if (!fs.existsSync(envPath)) {
-            let envText = fs.readFileSync(path.join(PORTAL_INSTALL_DIR, '.env.example'), 'utf8');
-            const overrides = {
-                WEB_FQDN: webFqdn || 'localhost',
-                PORT: String(port || PORTAL_DEFAULT_PORT),
-                sessionSecret: crypto.randomBytes(64).toString('hex'),
-                mongoHost: 'mongo',
-            };
-            for (const [key, value] of Object.entries(overrides)) {
-                const re = new RegExp(`^${key}=.*$`, 'm');
-                envText = re.test(envText) ? envText.replace(re, `${key}=${value}`) : `${envText}\n${key}=${value}\n`;
-            }
-            fs.writeFileSync(envPath, envText, { mode: 0o600 });
-        } else {
-            console.log(`${envPath} already exists — leaving it as-is.`);
-        }
-
-        console.log('\n== Bringing up the portal Docker stack ==');
-        if (!run('docker', ['compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.mongo.yml', 'up', '-d', '--build'], { cwd: PORTAL_INSTALL_DIR })) {
-            console.error(`\ndocker compose up failed for the portal — see output above. Fix the issue, then run it yourself:\n  cd ${PORTAL_INSTALL_DIR} && docker compose -f docker-compose.yml -f docker-compose.mongo.yml up -d --build`);
+        const cloneArgs = ['clone', '--depth', '1'];
+        if (PORTAL_REPO_REF) cloneArgs.push('--branch', PORTAL_REPO_REF);
+        cloneArgs.push(PORTAL_REPO_URL, PORTAL_INSTALL_DIR);
+        // cwd explicitly set (not inherited) — this can run after a
+        // minimal-footprint install has already deleted this process's
+        // original scratch-checkout cwd, which would otherwise make git
+        // fail its own getcwd() at startup. GIT_TERMINAL_PROMPT=0 makes a
+        // repo that needs auth fail immediately with a clear error
+        // instead of silently hanging this non-interactive install
+        // waiting on a username/password prompt nothing will ever answer.
+        if (!run('git', cloneArgs, { cwd: os.tmpdir(), env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })) {
+            console.error(`Portal clone failed (auth required, or ${PORTAL_REPO_URL} is unreachable?) — install it manually later: https://github.com/j5guy/waypointsportal`);
             return;
         }
-        console.log(`\nPortal is up: http://${overrideOrLocalhost(webFqdn)}:${port || PORTAL_DEFAULT_PORT}/ — visit it and sign up; the first account created becomes the portal admin.`);
-    });
+    } else {
+        console.log(`${PORTAL_INSTALL_DIR} already has a checkout — using it as-is.`);
+    }
+
+    const envPath = path.join(PORTAL_INSTALL_DIR, '.env');
+    if (!fs.existsSync(envPath)) {
+        let envText = fs.readFileSync(path.join(PORTAL_INSTALL_DIR, '.env.example'), 'utf8');
+        const overrides = {
+            WEB_FQDN: webFqdn || 'localhost',
+            PORT: String(port || PORTAL_DEFAULT_PORT),
+            sessionSecret: crypto.randomBytes(64).toString('hex'),
+            mongoHost: 'mongo',
+        };
+        for (const [key, value] of Object.entries(overrides)) {
+            const re = new RegExp(`^${key}=.*$`, 'm');
+            envText = re.test(envText) ? envText.replace(re, `${key}=${value}`) : `${envText}\n${key}=${value}\n`;
+        }
+        fs.writeFileSync(envPath, envText, { mode: 0o600 });
+    } else {
+        console.log(`${envPath} already exists — leaving it as-is.`);
+    }
+
+    console.log('\n== Bringing up the portal Docker stack ==');
+    if (!run('docker', ['compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.mongo.yml', 'up', '-d', '--build'], { cwd: PORTAL_INSTALL_DIR })) {
+        console.error(`\ndocker compose up failed for the portal — see output above. Fix the issue, then run it yourself:\n  cd ${PORTAL_INSTALL_DIR} && docker compose -f docker-compose.yml -f docker-compose.mongo.yml up -d --build`);
+        return;
+    }
+    console.log(`\nPortal is up: http://${overrideOrLocalhost(webFqdn)}:${port || PORTAL_DEFAULT_PORT}/ — visit it and sign up; the first account created becomes the portal admin.`);
 }
 
 function overrideOrLocalhost(webFqdn) {
     return webFqdn && webFqdn.trim() ? webFqdn.trim() : 'localhost';
 }
 
-module.exports = { detectPortal, installPortalNonInteractive };
+// Reads the portal's own .env directly off disk (same host, co-located at
+// PORTAL_INSTALL_DIR) rather than guessing at its WEB_FQDN/PORT — reliable
+// whether the portal was just installed by installPortalNonInteractive above
+// or was already running from some earlier install.
+function readPortalEnv() {
+    const envPath = path.join(PORTAL_INSTALL_DIR, '.env');
+    if (!fs.existsSync(envPath)) return null;
+    const values = {};
+    for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+        const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+        if (m) values[m[1]] = m[2];
+    }
+    return values;
+}
+
+// Registers this app as an SSO client of the portal's OIDC provider —
+// headless equivalent of the portal's Admin > SSO clients, via its own
+// `npm run create-oidc-client` script run inside its container (see
+// waypointsportal/scripts/createOidcClient.js). Only possible when the
+// portal's checkout is right here on this host (needed for `docker compose
+// exec`) — when it isn't (a portal running on a different host, or set up
+// some other way), this returns null and the caller falls back to printing
+// manual instructions instead.
+function registerOidcClient(appSlug, redirectUris) {
+    if (!fs.existsSync(path.join(PORTAL_INSTALL_DIR, 'docker-compose.yml'))) return null;
+    console.log(`\n== Registering "${appSlug}" as an SSO client of the portal ==`);
+    const result = spawnSync(
+        'docker', ['compose', 'exec', '-T', 'app', 'node', 'scripts/createOidcClient.js', appSlug, ...redirectUris],
+        { cwd: PORTAL_INSTALL_DIR, encoding: 'utf8' }
+    );
+    if (result.status !== 0) {
+        console.error(`Couldn't register this app as an SSO client automatically:\n${result.stderr || result.stdout || ''}`);
+        return null;
+    }
+    console.log(result.stdout);
+    const idMatch = result.stdout.match(/OIDC_CLIENT_ID=(\S+)/);
+    const secretMatch = result.stdout.match(/OIDC_CLIENT_SECRET=(\S+)/);
+    if (!idMatch || !secretMatch) {
+        console.error("Registration succeeded but the client ID/secret couldn't be parsed from the portal's output — link this app manually from the portal's Admin > SSO clients.");
+        return null;
+    }
+    return { clientId: idMatch[1], clientSecret: secretMatch[1] };
+}
+
+module.exports = { detectPortal, installPortalNonInteractive, readPortalEnv, registerOidcClient };

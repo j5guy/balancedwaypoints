@@ -33,10 +33,10 @@ const { lanAddresses, printAccessUrls, highlight } = require('./lib/network');
 const {
     mongoNeedsLegacyArmImage, LEGACY_ARM_MONGO_IMAGE, generateCert, bringUpDocker,
     detectHostNginx, installHostNginxSite, findOpenPort, isPortFree,
-    writeDeployState, APP_PORT
+    writeDeployState, APP_PORT, run
 } = require('./lib/bringUp');
 const { trimToMinimalFootprint } = require('./lib/footprint');
-const { detectPortal, installPortalNonInteractive } = require('./lib/portal');
+const { detectPortal, installPortalNonInteractive, readPortalEnv, registerOidcClient } = require('./lib/portal');
 
 function parseArgs(argv) {
     const args = { finalDir: null };
@@ -86,6 +86,7 @@ const FIELD_LABELS = {
 const MASKED_KEYS = new Set(['mongoPass', 'LDAP_BIND_PASSWORD']);
 const HIDDEN_KEYS = new Set(['sessionSecret', 'MONGO_IMAGE']);
 const MONGO_EXTERNAL_ONLY_KEYS = new Set(['mongoHost', 'mongoUser', 'mongoPass']);
+const MONGO_INTERNAL_ONLY_KEYS = new Set(['MONGO_HOST_DIR']);
 const REQUIRED_KEYS = new Set(['WEB_FQDN']);
 
 function parseExample(text) {
@@ -148,7 +149,8 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
     const rows = fields.filter(f => !HIDDEN_KEYS.has(f.key) && !NGINX_PORT_KEYS.has(f.key)).map(f => {
         const value = values[f.key] !== undefined ? values[f.key] : f.default;
         const isMongoOnly = MONGO_EXTERNAL_ONLY_KEYS.has(f.key);
-        const disabled = isMongoOnly && mongoMode !== 'external';
+        const isMongoInternalOnly = MONGO_INTERNAL_ONLY_KEYS.has(f.key);
+        const disabled = (isMongoOnly && mongoMode !== 'external') || (isMongoInternalOnly && mongoMode !== 'internal');
         const isCertField = f.key === 'SSL_CERT_FILE' || f.key === 'SSL_KEY_FILE';
         const certDisabled = isCertField && certMode !== 'own';
         const inputType = MASKED_KEYS.has(f.key) ? 'password' : 'text';
@@ -234,11 +236,13 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
     // ./lib/portal), so two portals never end up installed by accident.
     // Installed non-interactively (see installPortalNonInteractive) using
     // just the domain/port collected right here — its own setup wizard
-    // never opens.
+    // never opens. Either way (already running, or freshly installed here),
+    // checking this also registers this app as an SSO client of the portal
+    // and turns on OIDC login automatically — see registerOidcClient.
     const portalDefaultFqdn = values.WEB_FQDN || (fields.find(f => f.key === 'WEB_FQDN') || {}).default || 'localhost';
     const portalHtml = portalInfo.running
-        ? `<p class="help">A Waypoints Portal is already running on this host at <code>${escapeHtml(portalInfo.url)}</code> — nothing to install.</p>`
-        : `<label class="checkbox-label"><input type="checkbox" id="installPortal" name="installPortal" value="1" /> Also install the Waypoints Portal on this host, for shared login (SSO) across your Waypoints apps</label>
+        ? `<label class="checkbox-label"><input type="checkbox" id="installPortal" name="installPortal" value="1" checked /> Link this app's login to the Waypoints Portal already running at <code>${escapeHtml(portalInfo.url)}</code>, for shared login (SSO)</label>`
+        : `<label class="checkbox-label"><input type="checkbox" id="installPortal" name="installPortal" value="1" /> Also install the Waypoints Portal on this host, and link this app's login to it, for shared login (SSO) across your Waypoints apps</label>
       <div id="portal-install-fields" style="display:none">
         <div class="field">
           <label for="PORTAL_WEB_FQDN">Portal domain (or IP)</label>
@@ -626,7 +630,52 @@ async function main() {
         installHostNginxSite(values.WEB_FQDN, values.HOST_NGINX_IP_PORT || '8511', values.NGINX_HTTPS_PORT || APP_PORT, values.SSL_CERT_FILE, values.SSL_KEY_FILE);
     }
 
-    if (installPortal) await installPortalNonInteractive({ webFqdn: portalWebFqdn, port: portalPort });
+    if (installPortal) {
+        await installPortalNonInteractive({ webFqdn: portalWebFqdn, port: portalPort });
+
+        // Registers this app as an SSO client of the portal and turns on
+        // OIDC login — only possible when the portal's checkout is right
+        // here on this host (see registerOidcClient); otherwise this is a
+        // no-op and OIDC can still be wired up by hand later from the
+        // portal's Admin > SSO clients.
+        const portalEnv = readPortalEnv();
+        if (portalEnv) {
+            const appWebFqdn = values.WEB_FQDN || 'localhost';
+            const appHttpsPort = values.NGINX_HTTPS_PORT || APP_PORT;
+            // Both variants registered — whichever way this app actually
+            // ends up being browsed to (a shared host nginx on the plain
+            // domain, or this app's own bundled nginx on its own port), the
+            // OIDC redirect_uri has to match exactly what was registered.
+            const redirectUris = [
+                `https://${appWebFqdn}/auth/oidc/callback`,
+                `https://${appWebFqdn}:${appHttpsPort}/auth/oidc/callback`,
+            ];
+            const oidc = registerOidcClient('balancedwaypoints', redirectUris);
+            if (oidc) {
+                const portalWebFqdnActual = portalEnv.WEB_FQDN || 'localhost';
+                const portalPortActual = portalEnv.PORT || '5585';
+                let envText = fs.readFileSync(ENV_PATH, 'utf8');
+                const overrides = {
+                    OIDC_ENABLED: 'true',
+                    OIDC_ISSUER_URL: `http://${portalWebFqdnActual}:${portalPortActual}/oidc`,
+                    OIDC_CLIENT_ID: oidc.clientId,
+                    OIDC_CLIENT_SECRET: oidc.clientSecret,
+                    OIDC_SCOPES: 'openid profile email',
+                };
+                for (const [key, value] of Object.entries(overrides)) {
+                    const re = new RegExp(`^${key}=.*$`, 'm');
+                    envText = re.test(envText) ? envText.replace(re, `${key}=${value}`) : `${envText}\n${key}=${value}\n`;
+                }
+                fs.writeFileSync(ENV_PATH, envText);
+                console.log('\nOIDC login enabled — recreating this app\'s container to pick up the new settings...');
+                if (footprint === 'minimal') {
+                    run('docker', ['compose', 'up', '-d'], { cwd: FINAL_DIR });
+                } else {
+                    bringUpDocker(FINAL_DIR, mongoMode);
+                }
+            }
+        }
+    }
 }
 
 main().catch(err => {

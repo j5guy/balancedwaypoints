@@ -28,8 +28,8 @@ function buildMinimalComposeYaml({ mongoMode, appImage, nginxHttpsPort, nginxHtt
     env_file:
       - .env
     volumes:
-      - logs-data:/app/logs
-      - backups-data:/app/backups`;
+      - \${LOGS_HOST_DIR:-logs-data}:/app/logs
+      - \${BACKUP_HOST_DIR:-backups-data}:/app/backups`;
     if (mongoMode === 'internal') {
         app += `
     depends_on:
@@ -63,7 +63,7 @@ function buildMinimalComposeYaml({ mongoMode, appImage, nginxHttpsPort, nginxHtt
     image: \${MONGO_IMAGE:-mongo:7}
     restart: unless-stopped
     volumes:
-      - mongo-data:/data/db
+      - \${MONGO_HOST_DIR:-mongo-data}:/data/db
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval \\"db.adminCommand('ping')\\" || mongo --quiet --eval \\"db.adminCommand('ping')\\""]
       interval: 5s

@@ -1,3 +1,10 @@
+v0.12.1b
+------
+Fixed installing the Waypoints Portal alongside this app never making the portal reachable by FQDN or
+a dedicated LAN-IP port — it only ever came up on its raw Docker-published port (plain HTTP). The
+portal now also gets a host nginx site of its own (https://<portal-fqdn>/ plus LAN-IP port 8510 by
+default) whenever one's available, added or repaired every time the portal is installed or linked to.
+
 v0.12.0b
 ------
 Every Docker-managed volume (logs, and MongoDB's data directory when using the bundled internal

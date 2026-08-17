@@ -1,3 +1,15 @@
+v0.11.0b
+------
+Setup wizard: no longer offers a "Full checkout" footprint choice (always trims to the minimal
+Docker-only footprint on a scratch install); fixed Docker auto-install failing on Rocky Linux;
+install.sh now checks for Docker up front instead of failing deep into setup; MongoDB now defaults to
+"External" (a shared instance) instead of bundling its own container; "Add an nginx site" is now
+checked by default when a host nginx is detected; the host nginx direct-IP-access port default moved
+from 8443 to 8511 (every Waypoints app now has its own, since a shared host nginx can't have two apps
+on the same port — see PORTS.md in the portal repo); setup now offers to install the Waypoints Portal
+(shared login across the family) non-interactively alongside its own setup, detecting an existing one
+first so two never end up installed on one host
+
 v0.10.6b
 ------
 Schedules can now also recur on a specific day of the month, including "the last day of the month"

@@ -208,8 +208,8 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
       becomes the public TLS terminator on the standard 80/443 for your domain (plus direct LAN-IP access on
       its own port below), reverse-proxying to the bundled Docker nginx container, which keeps terminating
       TLS internally too.</p>
-      <label class="checkbox-label"><input type="checkbox" id="add-nginx-site-toggle" name="addNginxSite" value="1" /> Add an nginx site for this host's existing nginx</label>
-      <div class="field" id="host-nginx-ip-port-field" style="display:none">
+      <label class="checkbox-label"><input type="checkbox" id="add-nginx-site-toggle" name="addNginxSite" value="1" checked /> Add an nginx site for this host's existing nginx</label>
+      <div class="field" id="host-nginx-ip-port-field">
         <label for="HOST_NGINX_IP_PORT">Port for direct LAN-IP HTTPS access</label>
         <p class="help">nginx will also listen here so this app is reachable at
         <code>https://&lt;lan-ip&gt;:&lt;this port&gt;/</code> directly, without the domain — separate from
@@ -246,7 +246,7 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
         </div>
         <div class="field">
           <label for="PORTAL_PORT">Portal port</label>
-          <input type="text" id="PORTAL_PORT" name="PORTAL_PORT" value="5580" autocomplete="off" data-port-check="1" />
+          <input type="text" id="PORTAL_PORT" name="PORTAL_PORT" value="5585" autocomplete="off" data-port-check="1" />
           <p class="help port-status" id="port-status-PORTAL_PORT" style="display:none"></p>
         </div>
       </div>`;
@@ -286,8 +286,8 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
     <fieldset>
       <legend>MongoDB</legend>
       <div class="radio-row">
-        <label><input type="radio" name="mongoMode" value="internal" ${mongoMode !== 'external' ? 'checked' : ''} /> Internal (bundled MongoDB container, recommended)</label>
-        <label><input type="radio" name="mongoMode" value="external" ${mongoMode === 'external' ? 'checked' : ''} /> External (point at an existing MongoDB server)</label>
+        <label><input type="radio" name="mongoMode" value="external" ${mongoMode === 'external' ? 'checked' : ''} /> External (point at an existing MongoDB server, recommended — share one instance across your Waypoints apps instead of a separate container per app)</label>
+        <label><input type="radio" name="mongoMode" value="internal" ${mongoMode !== 'external' ? 'checked' : ''} /> Internal (bundled MongoDB container, standalone)</label>
       </div>
       ${armNote}
     </fieldset>
@@ -478,7 +478,7 @@ async function computePortSuggestions(fields, existing, nginxInfo) {
     const result = {
         http: existing.NGINX_HTTP_PORT || httpDefault,
         https: existing.NGINX_HTTPS_PORT || httpsDefault,
-        ip: existing.HOST_NGINX_IP_PORT || '8443'
+        ip: existing.HOST_NGINX_IP_PORT || '8511'
     };
     if (nginxInfo.running) {
         if (!existing.NGINX_HTTP_PORT || existing.NGINX_HTTP_PORT === httpDefault) {
@@ -489,7 +489,7 @@ async function computePortSuggestions(fields, existing, nginxInfo) {
         }
     }
     if (!existing.HOST_NGINX_IP_PORT) {
-        result.ip = String(await findOpenPort(8443));
+        result.ip = String(await findOpenPort(8511));
     }
     return result;
 }
@@ -513,7 +513,7 @@ async function main() {
         const portalInfo = await detectPortal();
         res.send(renderForm(
             fields, existing,
-            existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal',
+            existing.mongoHost !== 'mongo' ? 'external' : 'internal',
             existing.SSL_CERT_FILE ? 'own' : 'generate',
             nginxInfo, portSuggestions,
             portalInfo
@@ -623,7 +623,7 @@ async function main() {
     }
 
     if (addNginxSite) {
-        installHostNginxSite(values.WEB_FQDN, values.HOST_NGINX_IP_PORT || '8443', values.NGINX_HTTPS_PORT || APP_PORT, values.SSL_CERT_FILE, values.SSL_KEY_FILE);
+        installHostNginxSite(values.WEB_FQDN, values.HOST_NGINX_IP_PORT || '8511', values.NGINX_HTTPS_PORT || APP_PORT, values.SSL_CERT_FILE, values.SSL_KEY_FILE);
     }
 
     if (installPortal) await installPortalNonInteractive({ webFqdn: portalWebFqdn, port: portalPort });

@@ -13,7 +13,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
-const PORTAL_DEFAULT_PORT = 5580;
+const PORTAL_DEFAULT_PORT = 5585;
 // Same override convention as this app's own install.sh (REPO_URL/REPO_REF/
 // INSTALL_DIR) — lets all of this be pointed at a local Gitea (or any other)
 // mirror for testing.
@@ -23,7 +23,7 @@ const PORTAL_INSTALL_DIR = process.env.PORTAL_INSTALL_DIR || '/opt/waypointsport
 
 // Any locally running container whose image/name mentions the portal —
 // covers a custom-ported install (docker ps reports the actual published
-// port even when it isn't 5580). Docker not being installed/running just
+// port even when it isn't 5585). Docker not being installed/running just
 // yields no candidates, which is fine: the default-port probe in
 // detectPortal below still catches a manually-run (non-Docker) portal.
 function dockerPortalCandidatePorts() {
@@ -92,6 +92,14 @@ function installPortalNonInteractive({ webFqdn, port }) {
         }
 
         if (!fs.existsSync(path.join(PORTAL_INSTALL_DIR, 'docker-compose.yml'))) {
+            // A non-empty PORTAL_INSTALL_DIR without a docker-compose.yml can
+            // only be a previous attempt that didn't finish (this path is
+            // never used for anything else) — clear it so `git clone` has an
+            // empty target instead of failing on it.
+            if (fs.existsSync(PORTAL_INSTALL_DIR) && fs.readdirSync(PORTAL_INSTALL_DIR).length > 0) {
+                console.log(`${PORTAL_INSTALL_DIR} exists but looks like an incomplete previous attempt — clearing it and retrying...`);
+                run('sudo', ['rm', '-rf', PORTAL_INSTALL_DIR]);
+            }
             console.log(`Cloning ${PORTAL_REPO_URL} into ${PORTAL_INSTALL_DIR}...`);
             if (!fs.existsSync(PORTAL_INSTALL_DIR)) {
                 if (!run('sudo', ['mkdir', '-p', PORTAL_INSTALL_DIR])) {
@@ -106,9 +114,12 @@ function installPortalNonInteractive({ webFqdn, port }) {
             // cwd explicitly set (not inherited) — this can run after a
             // minimal-footprint install has already deleted this process's
             // original scratch-checkout cwd, which would otherwise make git
-            // fail its own getcwd() at startup.
-            if (!run('git', cloneArgs, { cwd: os.tmpdir() })) {
-                console.error('Portal clone failed — install it manually later: https://github.com/j5guy/waypointsportal');
+            // fail its own getcwd() at startup. GIT_TERMINAL_PROMPT=0 makes a
+            // repo that needs auth fail immediately with a clear error
+            // instead of silently hanging this non-interactive install
+            // waiting on a username/password prompt nothing will ever answer.
+            if (!run('git', cloneArgs, { cwd: os.tmpdir(), env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })) {
+                console.error(`Portal clone failed (auth required, or ${PORTAL_REPO_URL} is unreachable?) — install it manually later: https://github.com/j5guy/waypointsportal`);
                 return;
             }
         } else {

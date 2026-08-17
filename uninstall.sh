@@ -82,7 +82,7 @@ fi
 
 if [ "$HAVE_DOCKER" -eq 1 ] && [ -d "$FINAL_DIR" ]; then
   COMPOSE_ARGS=()
-  for f in docker-compose.yml docker-compose.mongo.yml docker-compose.nginx.yml docker-compose.pull.yml; do
+  for f in docker-compose.yml docker-compose.mongo.yml docker-compose.tls-acme.yml docker-compose.nginx.yml docker-compose.pull.yml; do
     [ -f "$FINAL_DIR/$f" ] && COMPOSE_ARGS+=(-f "$f")
   done
   if [ ${#COMPOSE_ARGS[@]} -gt 0 ]; then

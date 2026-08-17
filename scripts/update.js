@@ -62,15 +62,16 @@ function main() {
         const finalDir = path.resolve(args.finalDir);
         const state = bringUp.readDeployState(finalDir) || {};
         const env = readEnv(finalDir);
+        // The external waypoints-proxy network has to exist before
+        // trimToMinimalFootprint's own `docker compose up` runs below.
+        bringUp.ensureTraefikStack();
         // This script's own checkout (__dirname/..) is the fresh scratch
         // clone update.sh just made — trimToMinimalFootprint uses it as the
-        // Docker build context and the source of nginx.conf.template/
-        // update.sh, then deletes it once the rebuilt stack is up, exactly
-        // like a fresh minimal install.
+        // Docker build context and the source of update.sh, then deletes it
+        // once the rebuilt stack is up, exactly like a fresh minimal install.
         trimToMinimalFootprint(path.join(__dirname, '..'), finalDir, {
             mongoMode: resolveMongoMode(state, env),
-            nginxHttpsPort: env.NGINX_HTTPS_PORT || '5570',
-            nginxHttpPort: env.NGINX_HTTP_PORT || '80',
+            tlsMode: bringUp.resolveTlsMode(env.WEB_FQDN || 'localhost', env.TLS_MODE),
             installedVersion
         });
         return;
@@ -83,9 +84,11 @@ function main() {
     const state = bringUp.readDeployState(rootDir) || {};
     const env = readEnv(rootDir);
     const mongoMode = resolveMongoMode(state, env);
+    const tlsMode = bringUp.resolveTlsMode(env.WEB_FQDN || 'localhost', env.TLS_MODE);
 
+    bringUp.ensureTraefikStack();
     bringUp.writeDeployState(rootDir, { footprint: 'full', mongoMode, installedVersion });
-    bringUp.bringUpDocker(rootDir, mongoMode);
+    bringUp.bringUpDocker(rootDir, mongoMode, tlsMode);
 }
 
 main();

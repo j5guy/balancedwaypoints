@@ -3,11 +3,11 @@
 // builds a stably-tagged local image (this project always builds locally,
 // never pulls a published one — see the README's "Why build locally instead
 // of pulling an image?"), writes a small self-contained docker-compose.yml
-// (no build context, so it works with no source present), copies
-// nginx/nginx.conf.template and update.sh alongside it, brings the trimmed
-// stack up from finalDir, then deletes the scratch checkout — .env/certs/
-// are written directly to finalDir by the wizard already (see
-// scripts/setup-wizard.js), so there's nothing to carry over for those.
+// (no build context, so it works with no source present), copies update.sh
+// alongside it, brings the trimmed stack up from finalDir, then deletes the
+// scratch checkout — .env/certs/ are written directly to finalDir by the
+// wizard already (see scripts/setup-wizard.js), so there's nothing to carry
+// over for those.
 const fs = require('fs');
 const path = require('path');
 const { printAccessUrls } = require('./network');
@@ -15,44 +15,45 @@ const { run, ensureDockerInstalled, writeDeployState } = require('./bringUp');
 
 const LOCAL_BUILD_TAG = 'balancedwaypoints-app:local';
 
-// Always includes the nginx service — unlike fondwaypoints, this project's
-// host-nginx wiring (scripts/lib/bringUp.js's installHostNginxSite) sits IN
-// FRONT of the bundled nginx sidecar over loopback HTTPS rather than
-// replacing it (see that function's own doc comment for why), so there's no
-// "omit the sidecar" branch to make here.
-function buildMinimalComposeYaml({ mongoMode, appImage, nginxHttpsPort, nginxHttpPort }) {
+// Mirrors the networks/labels shape of the repo's own docker-compose.yml —
+// this trimmed file has no build context and isn't `docker compose -f`'d
+// alongside the real one, so it needs its own copy of the Traefik wiring
+// rather than layering on top of it.
+function buildMinimalComposeYaml({ mongoMode, appImage, tlsMode }) {
     const volumes = ['logs-data', 'backups-data'];
     let app = `  app:
     image: ${appImage}
     restart: unless-stopped
     env_file:
       - .env
+    expose:
+      - "5570"
+    networks:
+      - default
+      - waypoints-proxy
     volumes:
       - \${LOGS_HOST_DIR:-logs-data}:/app/logs
-      - \${BACKUP_HOST_DIR:-backups-data}:/app/backups`;
+      - \${BACKUP_HOST_DIR:-backups-data}:/app/backups
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.balanced.loadbalancer.server.port=5570
+      - traefik.http.routers.balanced.rule=Host(\`\${WEB_FQDN}\`)
+      - traefik.http.routers.balanced.entrypoints=websecure
+      - traefik.http.routers.balanced.tls=true
+      - traefik.http.routers.balanced-http.rule=Host(\`\${WEB_FQDN}\`)
+      - traefik.http.routers.balanced-http.entrypoints=web
+      - traefik.http.routers.balanced-http.middlewares=balanced-https-redirect
+      - traefik.http.middlewares.balanced-https-redirect.redirectscheme.scheme=https`;
+    if (tlsMode === 'acme') {
+        app += `
+      - traefik.http.routers.balanced.tls.certresolver=le`;
+    }
     if (mongoMode === 'internal') {
         app += `
     depends_on:
       mongo:
         condition: service_healthy`;
     }
-
-    const nginx = `
-
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    depends_on:
-      - app
-    env_file:
-      - .env
-    ports:
-      - "${nginxHttpPort}:80"
-      - "${nginxHttpsPort}:${nginxHttpsPort}"
-    volumes:
-      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
-      - \${SSL_CERT_FILE:-./certs/cert.pem}:/etc/nginx/certs/server.pem:ro
-      - \${SSL_KEY_FILE:-./certs/cert.key}:/etc/nginx/certs/server.key:ro`;
 
     let mongo = '';
     if (mongoMode === 'internal') {
@@ -68,7 +69,9 @@ function buildMinimalComposeYaml({ mongoMode, appImage, nginxHttpsPort, nginxHtt
       test: ["CMD-SHELL", "mongosh --quiet --eval \\"db.adminCommand('ping')\\" || mongo --quiet --eval \\"db.adminCommand('ping')\\""]
       interval: 5s
       timeout: 5s
-      retries: 20`;
+      retries: 20
+    networks:
+      - default`;
     }
 
     const volumesBlock = volumes.map(v => `  ${v}:`).join('\n');
@@ -79,20 +82,25 @@ function buildMinimalComposeYaml({ mongoMode, appImage, nginxHttpsPort, nginxHtt
 # Regenerated on every update.sh run to pick up upstream compose changes;
 # hand edits here will be overwritten by the next update.
 services:
-${app}${nginx}${mongo}
+${app}${mongo}
 
 volumes:
 ${volumesBlock}
+
+networks:
+  default:
+  waypoints-proxy:
+    external: true
 `;
 }
 
 // Builds the app image (tagged so it survives the scratch checkout being
-// deleted), writes the trimmed compose file, copies update.sh/nginx's
-// template, brings the stack up from finalDir, then deletes scratchDir.
-// .env/certs/ are already at finalDir (written there directly by the
-// wizard), so this only ever touches the Docker-runtime side of things.
+// deleted), writes the trimmed compose file, copies update.sh, brings the
+// stack up from finalDir, then deletes scratchDir. .env/certs/ are already
+// at finalDir (written there directly by the wizard), so this only ever
+// touches the Docker-runtime side of things.
 function trimToMinimalFootprint(scratchDir, finalDir, opts) {
-    const { mongoMode, nginxHttpsPort, nginxHttpPort, installedVersion } = opts;
+    const { mongoMode, tlsMode, installedVersion } = opts;
 
     if (!ensureDockerInstalled()) {
         console.error('\nInstall Docker manually, then re-run this install to bring the minimal-footprint stack up.');
@@ -108,13 +116,7 @@ function trimToMinimalFootprint(scratchDir, finalDir, opts) {
     fs.mkdirSync(finalDir, { recursive: true });
     fs.writeFileSync(
         path.join(finalDir, 'docker-compose.yml'),
-        buildMinimalComposeYaml({ mongoMode, appImage: LOCAL_BUILD_TAG, nginxHttpsPort, nginxHttpPort })
-    );
-
-    fs.mkdirSync(path.join(finalDir, 'nginx'), { recursive: true });
-    fs.copyFileSync(
-        path.join(scratchDir, 'nginx', 'nginx.conf.template'),
-        path.join(finalDir, 'nginx', 'nginx.conf.template')
+        buildMinimalComposeYaml({ mongoMode, appImage: LOCAL_BUILD_TAG, tlsMode })
     );
 
     fs.copyFileSync(path.join(scratchDir, 'update.sh'), path.join(finalDir, 'update.sh'));
@@ -140,7 +142,7 @@ function trimToMinimalFootprint(scratchDir, finalDir, opts) {
         const match = envText.match(/^WEB_FQDN=(.*)$/m);
         if (match) webFqdn = match[1];
     } catch { /* fall back to localhost */ }
-    printAccessUrls(webFqdn, nginxHttpsPort);
+    printAccessUrls(webFqdn);
 }
 
 module.exports = { trimToMinimalFootprint };

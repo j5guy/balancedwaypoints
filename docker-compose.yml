@@ -4,10 +4,34 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    expose:
+      - "5570"
+    networks:
+      - default
+      - waypoints-proxy
     volumes:
       - ${LOGS_HOST_DIR:-logs-data}:/app/logs
       - ${BACKUP_HOST_DIR:-backups-data}:/app/backups
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.balanced.loadbalancer.server.port=5570
+      # HTTPS router — this is the one actually serving traffic.
+      - traefik.http.routers.balanced.rule=Host(`${WEB_FQDN}`)
+      - traefik.http.routers.balanced.entrypoints=websecure
+      - traefik.http.routers.balanced.tls=true
+      # Plain-HTTP router exists only to redirect to HTTPS — the app is
+      # never reached over plain HTTP (see docker-compose.tls-acme.yml for
+      # the ACME cert resolver, added on top of this when TLS_MODE=acme).
+      - traefik.http.routers.balanced-http.rule=Host(`${WEB_FQDN}`)
+      - traefik.http.routers.balanced-http.entrypoints=web
+      - traefik.http.routers.balanced-http.middlewares=balanced-https-redirect
+      - traefik.http.middlewares.balanced-https-redirect.redirectscheme.scheme=https
 
 volumes:
   logs-data:
   backups-data:
+
+networks:
+  default:
+  waypoints-proxy:
+    external: true

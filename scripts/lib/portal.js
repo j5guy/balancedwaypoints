@@ -130,6 +130,7 @@ async function installPortalNonInteractive({ webFqdn, port }) {
                 PORT: String(port || PORTAL_DEFAULT_PORT),
                 sessionSecret: crypto.randomBytes(64).toString('hex'),
                 mongoHost: 'mongo',
+                TLS_MODE: 'auto',
             };
             for (const [key, value] of Object.entries(overrides)) {
                 const re = new RegExp(`^${key}=.*$`, 'm');
@@ -145,75 +146,80 @@ async function installPortalNonInteractive({ webFqdn, port }) {
             console.error(`\ndocker compose up failed for the portal — see output above. Fix the issue, then run it yourself:\n  cd ${PORTAL_INSTALL_DIR} && docker compose -f docker-compose.yml -f docker-compose.mongo.yml up -d --build`);
             return;
         }
-        console.log(`\nPortal is up: http://${overrideOrLocalhost(webFqdn)}:${port || PORTAL_DEFAULT_PORT}/ — visit it and sign up; the first account created becomes the portal admin.`);
+        console.log(`\nPortal is up — visit it and sign up; the first account created becomes the portal admin.`);
     } else {
         console.log(`A Waypoints Portal is already running at ${already.url} — skipping install.`);
     }
 
     // Always attempted, whether the portal was just installed above or was
-    // already running — idempotent (skips if a site already exists for it)
-    // and self-healing (e.g. host nginx got installed after the portal
-    // already was). The portal has no bundled nginx of its own (unlike the
-    // product apps), so without this it's only ever reachable at its raw
-    // Docker-published port over plain HTTP — never by FQDN, and never over
-    // HTTPS.
+    // already running — idempotent (only fills in .env keys that are
+    // actually missing, only re-registers a cert when needed) and
+    // self-healing (e.g. the shared Traefik stack needs bringing back up
+    // after the portal already existed). See ensurePortalTraefikLabels'
+    // own doc comment above for why this is needed at all.
     const portalEnv = readPortalEnv();
     const finalWebFqdn = (portalEnv && portalEnv.WEB_FQDN) || overrideOrLocalhost(webFqdn);
-    const finalPort = (portalEnv && portalEnv.PORT) || String(port || PORTAL_DEFAULT_PORT);
-    addPortalHostNginxSite(finalWebFqdn, finalPort);
+    ensurePortalTraefikLabels(finalWebFqdn, (portalEnv && portalEnv.TLS_MODE) || 'auto');
 }
 
 function overrideOrLocalhost(webFqdn) {
     return webFqdn && webFqdn.trim() ? webFqdn.trim() : 'localhost';
 }
 
-const PORTAL_SITE_FILE_NAME = 'waypointsportal.conf';
-// Overridable for the same reason every other app's own HOST_NGINX_IP_PORT
-// is — a single shared host nginx can't have two sites claiming the same
-// port. Distinct from every product app's own default (see PORTS.md in the
-// portal repo).
-const PORTAL_HOST_NGINX_IP_PORT = process.env.PORTAL_HOST_NGINX_IP_PORT || '8510';
-
 function commandExistsLocal(cmd) {
     return !spawnSync(cmd, ['--version'], { stdio: 'ignore' }).error;
 }
 
-function portalNginxSiteDir() {
-    if (fs.existsSync('/etc/nginx/sites-available') && fs.existsSync('/etc/nginx/sites-enabled')) {
-        return { style: 'debian', available: '/etc/nginx/sites-available', enabled: '/etc/nginx/sites-enabled' };
+// Same env-overridable convention as PORTAL_REPO_URL/PORTAL_INSTALL_DIR
+// above, duplicated here rather than imported from ./bringUp.js — this file
+// already stands entirely on its own (never requires ./bringUp.js, even
+// though setup-wizard.js requires both as siblings), so a small local copy
+// of the traefik-dir lookup stays consistent with that.
+const TRAEFIK_REPO_URL = process.env.TRAEFIK_REPO_URL || 'https://github.com/j5guy/allthewaypoints.git';
+const TRAEFIK_REPO_REF = process.env.TRAEFIK_REPO_REF || '';
+const TRAEFIK_INSTALL_DIR = process.env.TRAEFIK_INSTALL_DIR || '/opt/waypoints-traefik';
+
+// See the identical function/comment in ./bringUp.js — duplicated rather
+// than imported, per this file's existing "stands on its own" convention.
+function resolveTraefikDirForPortal() {
+    const siblingDir = path.resolve(__dirname, '..', '..', '..', 'traefik');
+    if (fs.existsSync(path.join(siblingDir, 'docker-compose.yml'))) return siblingDir;
+
+    const clonedDir = path.join(TRAEFIK_INSTALL_DIR, 'traefik');
+    if (fs.existsSync(path.join(clonedDir, 'docker-compose.yml'))) return clonedDir;
+
+    console.log('\n== Fetching the shared Traefik stack ==');
+    if (!fs.existsSync(TRAEFIK_INSTALL_DIR)) {
+        if (!run('sudo', ['mkdir', '-p', TRAEFIK_INSTALL_DIR])) {
+            console.error(`Failed to create ${TRAEFIK_INSTALL_DIR} — bring up the shared Traefik stack manually: https://github.com/j5guy/allthewaypoints`);
+            return null;
+        }
+        run('sudo', ['chown', `${os.userInfo().username}:${os.userInfo().username}`, TRAEFIK_INSTALL_DIR]);
     }
-    if (fs.existsSync('/etc/nginx/conf.d')) {
-        return { style: 'rhel', available: '/etc/nginx/conf.d', enabled: null };
+    const cloneArgs = ['clone', '--depth', '1'];
+    if (TRAEFIK_REPO_REF) cloneArgs.push('--branch', TRAEFIK_REPO_REF);
+    cloneArgs.push(TRAEFIK_REPO_URL, TRAEFIK_INSTALL_DIR);
+    if (!run('git', cloneArgs, { cwd: os.tmpdir(), env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })) {
+        console.error(`Traefik clone failed (auth required, or ${TRAEFIK_REPO_URL} is unreachable?) — bring up the shared Traefik stack manually: https://github.com/j5guy/allthewaypoints`);
+        return null;
     }
-    return null;
+    return clonedDir;
 }
 
-function detectHostNginxForPortal() {
-    const installed = commandExistsLocal('nginx');
-    let running = false;
-    if (installed) {
-        const status = spawnSync('systemctl', ['is-active', 'nginx'], { encoding: 'utf8' });
-        running = status.status === 0 && status.stdout.trim() === 'active';
-    }
-    const siteDir = installed ? portalNginxSiteDir() : null;
-    const siteExists = !!siteDir && fs.existsSync(path.join(siteDir.available, PORTAL_SITE_FILE_NAME));
-    return { installed, running, canWriteSite: !!siteDir, siteExists };
-}
-
-// A plain self-signed cert (no local CA — this is simpler than the product
-// apps' generateCert since it's only ever used for this one site, not
-// reused/regenerated across repeated wizard runs) for the portal's own host
-// nginx site — the portal itself has no TLS/cert concept of its own to
-// borrow one from.
+// A plain self-signed cert (no local CA — simpler than the product apps'
+// own generateCert in ./bringUp.js, since this is only ever used to
+// register one cert with the shared Traefik store, never reissued/reused
+// beyond that) for the portal — it has no bringUp.js of its own to borrow
+// generateCert from, and no TLS/cert concept of its own either.
 function generatePortalCert(webFqdn) {
     if (!commandExistsLocal('openssl')) {
-        console.error('openssl not found on this host — skipping the certificate for the portal\'s host nginx site.');
+        console.error('openssl not found on this host — skipping the certificate for the portal.');
         return null;
     }
     const certsDir = path.join(PORTAL_INSTALL_DIR, 'certs');
     fs.mkdirSync(certsDir, { recursive: true });
-    const certPath = path.join(certsDir, 'hostnginx-cert.pem');
-    const keyPath = path.join(certsDir, 'hostnginx-cert.key');
+    const certPath = path.join(certsDir, 'cert.pem');
+    const keyPath = path.join(certsDir, 'cert.key');
     const result = spawnSync('openssl', [
         'req', '-x509', '-nodes', '-newkey', 'rsa:2048',
         '-keyout', keyPath, '-out', certPath,
@@ -223,128 +229,52 @@ function generatePortalCert(webFqdn) {
     return { certPath, keyPath };
 }
 
-function portalLanAddresses() {
-    const nets = os.networkInterfaces();
-    const addrs = [];
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name] || []) {
-            if (net.family === 'IPv4' && !net.internal) addrs.push(net.address);
+// Always attempted, whether the portal was just installed above or was
+// already running — idempotent (only writes .env keys that are actually
+// missing, only re-registers a cert when tlsMode is selfsigned) and
+// self-healing (e.g. the shared Traefik stack got taken down and needs
+// bringing back up after the portal already existed). The portal has no
+// bundled nginx of its own (unlike the product apps), so without this it's
+// only ever reachable at its raw Docker-published port over plain HTTP —
+// never by FQDN, and never over HTTPS. Mirrors ensureTraefikStack/
+// resolveTlsMode in ./bringUp.js, duplicated rather than imported per this
+// file's existing convention (see resolveTraefikDirForPortal above).
+function ensurePortalTraefikLabels(finalWebFqdn, explicitTlsMode) {
+    const traefikDir = resolveTraefikDirForPortal();
+    if (!traefikDir) return;
+    const { ensureStack } = require(path.join(traefikDir, 'scripts', 'ensure-stack.js'));
+    if (!ensureStack(traefikDir)) return;
+    const { resolveTlsMode } = require(path.join(traefikDir, 'scripts', 'tls-mode.js'));
+    const tlsMode = resolveTlsMode(finalWebFqdn, explicitTlsMode);
+
+    const envPath = path.join(PORTAL_INSTALL_DIR, '.env');
+    if (fs.existsSync(envPath)) {
+        let envText = fs.readFileSync(envPath, 'utf8');
+        const overrides = {};
+        if (!/^WEB_FQDN=.+$/m.test(envText)) overrides.WEB_FQDN = finalWebFqdn;
+        if (!/^TLS_MODE=.+$/m.test(envText)) overrides.TLS_MODE = tlsMode;
+        for (const [key, value] of Object.entries(overrides)) {
+            const re = new RegExp(`^${key}=.*$`, 'm');
+            envText = re.test(envText) ? envText.replace(re, `${key}=${value}`) : `${envText}\n${key}=${value}\n`;
+        }
+        if (Object.keys(overrides).length) fs.writeFileSync(envPath, envText, { mode: 0o600 });
+
+        // Picks up any .env change just made above (WEB_FQDN feeds the
+        // Traefik router's Host() label at compose-interpolation time) —
+        // labels themselves live in the portal's own docker-compose.yml,
+        // not here.
+        run('docker', ['compose', '-f', 'docker-compose.yml', 'up', '-d'], { cwd: PORTAL_INSTALL_DIR });
+    }
+
+    if (tlsMode === 'selfsigned') {
+        const cert = generatePortalCert(finalWebFqdn);
+        if (cert) {
+            const { registerCert } = require(path.join(traefikDir, 'scripts', 'register-cert.js'));
+            registerCert('waypointsportal', cert.certPath, cert.keyPath);
+        } else {
+            console.error("Couldn't generate a certificate for the portal — add one manually and register it with the shared Traefik stack if you want HTTPS access to it.");
         }
     }
-    return addrs;
-}
-
-// Writes (and enables) a host nginx site for the portal, same shape as the
-// product apps' own installHostNginxSite — reachable by FQDN on the
-// standard 80/443 (80 redirecting to 443) and directly by this host's
-// LAN-IP address(es) on PORTAL_HOST_NGINX_IP_PORT. Proxies over loopback
-// plain HTTP to the portal's own container port — the portal doesn't
-// terminate TLS itself, so this host nginx site is the only place it ever
-// gets HTTPS from.
-function installHostNginxSiteForPortal(webFqdn, portalPort, certPath, keyPath) {
-    console.log('\n== Adding a host nginx site for the portal ==');
-    const siteDir = portalNginxSiteDir();
-    if (!siteDir) {
-        console.error('Could not detect an nginx sites-available/sites-enabled or conf.d layout under /etc/nginx — skipping the host nginx site for the portal.');
-        return false;
-    }
-
-    const proxyBlock = `  location / {
-    proxy_pass http://127.0.0.1:${portalPort};
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Forwarded-Port $server_port;
-
-    proxy_read_timeout 90s;
-    proxy_connect_timeout 90s;
-    proxy_send_timeout 90s;
-  }`;
-
-    const lanAddrs = portalLanAddresses();
-    const confContent = `server {
-  listen 80;
-  server_name ${webFqdn};
-  return 301 https://$host$request_uri;
-}
-
-server {
-  listen 443 ssl;
-  server_name ${webFqdn};
-
-  ssl_certificate ${certPath};
-  ssl_certificate_key ${keyPath};
-  ssl_protocols TLSv1.2 TLSv1.3;
-
-  access_log /var/log/nginx/waypointsportal-access.log;
-  error_log /var/log/nginx/waypointsportal-error.log;
-
-${proxyBlock}
-}
-
-server {
-  listen ${PORTAL_HOST_NGINX_IP_PORT} ssl;
-  server_name ${lanAddrs.length ? lanAddrs.join(' ') : '_'};
-
-  ssl_certificate ${certPath};
-  ssl_certificate_key ${keyPath};
-  ssl_protocols TLSv1.2 TLSv1.3;
-
-  access_log /var/log/nginx/waypointsportal-access.log;
-  error_log /var/log/nginx/waypointsportal-error.log;
-
-${proxyBlock}
-}
-`;
-
-    const targetPath = path.join(siteDir.available, PORTAL_SITE_FILE_NAME);
-    const linkPath = siteDir.style === 'debian' ? path.join(siteDir.enabled, PORTAL_SITE_FILE_NAME) : null;
-
-    console.log(`Writing ${targetPath} (requires sudo)...`);
-    const tee = spawnSync('sudo', ['tee', targetPath], { input: confContent, stdio: ['pipe', 'ignore', 'inherit'] });
-    if (tee.status !== 0) {
-        console.error('Failed to write the nginx site config. Do you have sudo access?');
-        return false;
-    }
-    if (linkPath && !run('sudo', ['ln', '-sf', targetPath, linkPath])) {
-        console.error('Failed to symlink the site into sites-enabled.');
-        return false;
-    }
-    if (!run('sudo', ['nginx', '-t'])) {
-        console.error(`nginx config test failed — the site was written to ${targetPath} but NOT enabled/reloaded. Fix the error above, then run: sudo nginx -t && sudo systemctl reload nginx`);
-        return false;
-    }
-    if (!run('sudo', ['systemctl', 'reload', 'nginx'])) {
-        console.error('Failed to reload nginx — the site config is in place but not yet active. Run: sudo systemctl reload nginx');
-        return false;
-    }
-    const accessUrls = [`https://${webFqdn}/`, ...lanAddrs.map((addr) => `https://${addr}:${PORTAL_HOST_NGINX_IP_PORT}/`)];
-    console.log(`Done — the portal is now also reachable via the host's nginx at:\n${accessUrls.map((u) => `  ${u}`).join('\n')}`);
-    return true;
-}
-
-// Only offered when there's actually something to offer: nginx running, its
-// config layout recognized, and no waypointsportal.conf already there (an
-// existing one is left alone rather than silently overwritten).
-function addPortalHostNginxSite(webFqdn, portalPort) {
-    const nginxInfo = detectHostNginxForPortal();
-    if (!(nginxInfo.running && nginxInfo.canWriteSite && !nginxInfo.siteExists)) {
-        if (nginxInfo.running && nginxInfo.siteExists) {
-            console.log('A host nginx site for the portal already exists — not modifying it.');
-        }
-        return;
-    }
-    const cert = generatePortalCert(webFqdn);
-    if (!cert) {
-        console.error("Couldn't generate a certificate for the portal's host nginx site — add the site manually if you want FQDN/IP access to it.");
-        return;
-    }
-    installHostNginxSiteForPortal(webFqdn, portalPort, cert.certPath, cert.keyPath);
 }
 
 // Reads the portal's own .env directly off disk (same host, co-located at

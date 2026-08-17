@@ -6,7 +6,9 @@ const http = require('http');
 const { spawnSync } = require('child_process');
 
 const PORTAL_DEFAULT_PORT = 5580;
-const PORTAL_INSTALL_URL = 'https://raw.githubusercontent.com/j5guy/waypointsportal/master/install.sh';
+// Overridable so this can be pointed at a local Gitea (or any other) mirror
+// for testing — e.g. PORTAL_INSTALL_URL=http://gitea.local/me/waypointsportal/raw/branch/main/install.sh
+const PORTAL_INSTALL_URL = process.env.PORTAL_INSTALL_URL || 'https://raw.githubusercontent.com/j5guy/waypointsportal/master/install.sh';
 
 // Any locally running container whose image/name mentions the portal —
 // covers a custom-ported install (docker ps reports the actual published

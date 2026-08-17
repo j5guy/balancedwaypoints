@@ -275,14 +275,34 @@ function generateCert(rootDir, webFqdn) {
 function ensureDockerInstalled() {
     if (commandExists('docker')) return true;
 
-    console.log('\nDocker not found. Attempting to install via get.docker.com...');
-    if (spawnSync('curl', ['--version'], { stdio: 'ignore' }).error) {
-        console.log('curl not found — installing it first...');
-        if (commandExists('apt-get')) { run('sudo', ['apt-get', 'update']); run('sudo', ['apt-get', 'install', '-y', 'curl']); }
-        else if (commandExists('dnf')) run('sudo', ['dnf', 'install', '-y', 'curl']);
-        else if (commandExists('yum')) run('sudo', ['yum', 'install', '-y', 'curl']);
+    console.log('\nDocker not found. Attempting to install...');
+
+    let distroId = '';
+    try {
+        const match = fs.readFileSync('/etc/os-release', 'utf8').match(/^ID="?([^"\n]*)"?$/m);
+        distroId = match ? match[1] : '';
+    } catch { /* no /etc/os-release — not this distro family */ }
+
+    let ok;
+    if (distroId === 'rocky') {
+        // get.docker.com resolves Rocky to download.docker.com/linux/rocky/docker-ce.repo, which
+        // Docker only publishes a near-empty stub of (missing docker-ce/docker-ce-cli/
+        // docker-ce-rootless-extras). The rhel path has the full package set and works fine on
+        // Rocky, so set the repo up against that directly instead of using the convenience script.
+        ok = run('sudo', ['dnf', '-y', '-q', 'install', 'dnf-plugins-core'])
+            && run('sudo', ['rm', '-f', '/etc/yum.repos.d/docker-ce.repo', '/etc/yum.repos.d/docker-ce-staging.repo'])
+            && run('sudo', ['dnf', 'config-manager', '--add-repo', 'https://download.docker.com/linux/rhel/docker-ce.repo'])
+            && run('sudo', ['dnf', '-y', '-q', '--best', 'install', 'docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-compose-plugin', 'docker-ce-rootless-extras', 'docker-buildx-plugin']);
+    } else {
+        if (spawnSync('curl', ['--version'], { stdio: 'ignore' }).error) {
+            console.log('curl not found — installing it first...');
+            if (commandExists('apt-get')) { run('sudo', ['apt-get', 'update']); run('sudo', ['apt-get', 'install', '-y', 'curl']); }
+            else if (commandExists('dnf')) run('sudo', ['dnf', 'install', '-y', 'curl']);
+            else if (commandExists('yum')) run('sudo', ['yum', 'install', '-y', 'curl']);
+        }
+        ok = spawnSync('sh', ['-c', 'curl -fsSL https://get.docker.com | sudo sh'], { stdio: 'inherit' }).status === 0;
     }
-    const ok = spawnSync('sh', ['-c', 'curl -fsSL https://get.docker.com | sudo sh'], { stdio: 'inherit' }).status === 0;
+
     if (!ok) {
         console.error('\nDocker auto-install failed — install manually: https://docs.docker.com/engine/install/');
         return false;

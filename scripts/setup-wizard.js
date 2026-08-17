@@ -37,6 +37,7 @@ const {
     readDeployState, writeDeployState, APP_PORT
 } = require('./lib/bringUp');
 const { relocateFullCheckout, trimToMinimalFootprint } = require('./lib/footprint');
+const { detectPortal, installPortalInline } = require('./lib/portal');
 
 function parseArgs(argv) {
     const args = { finalDir: null };
@@ -141,7 +142,7 @@ function renderFootprintFieldset(footprint) {
     </fieldset>`;
 }
 
-function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggestions, footprint) {
+function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggestions, footprint, portalInfo) {
     // NGINX_HTTP_PORT/NGINX_HTTPS_PORT are rendered separately below (not
     // in this generic loop) — when a host nginx is running they're
     // auto-picked and hidden behind an "advanced" toggle instead of shown
@@ -230,6 +231,14 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
         hostNginxHtml = '';
     }
 
+    // Offers to install the Waypoints Portal (shared login across the
+    // Waypoints family) right after this app's own setup finishes — but
+    // only when one isn't already running on this host (see detectPortal in
+    // ./lib/portal), so two portals never end up installed by accident.
+    const portalHtml = portalInfo.running
+        ? `<p class="help">A Waypoints Portal is already running on this host at <code>${escapeHtml(portalInfo.url)}</code> — nothing to install.</p>`
+        : `<label class="checkbox-label"><input type="checkbox" name="installPortal" value="1" /> Also install the Waypoints Portal on this host, for shared login (SSO) across your Waypoints apps</label>`;
+
     return `<!doctype html>
 <html><head><meta charset="utf-8" /><title>Balanced Waypoints Setup</title>
 <style>
@@ -278,6 +287,10 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
       </div>
     </fieldset>
     ${dockerPortsHtml}
+    <fieldset>
+      <legend>Waypoints Portal</legend>
+      ${portalHtml}
+    </fieldset>
     <fieldset><legend>Configuration</legend>${rows}</fieldset>
     <button type="submit">Save &amp; start</button>
   </form>
@@ -476,12 +489,14 @@ async function main() {
         const nginxInfo = detectHostNginx();
         const portSuggestions = await computePortSuggestions(fields, existing, nginxInfo);
         const deployState = readDeployState(FINAL_DIR);
+        const portalInfo = await detectPortal();
         res.send(renderForm(
             fields, existing,
             existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal',
             existing.SSL_CERT_FILE ? 'own' : 'generate',
             nginxInfo, portSuggestions,
-            deployState ? deployState.footprint : 'minimal'
+            deployState ? deployState.footprint : 'minimal',
+            portalInfo
         ));
     });
 
@@ -545,7 +560,7 @@ async function main() {
         fs.writeFileSync(ENV_PATH, envText);
 
         res.send(renderDone(caCertPem));
-        resolveDone({ mongoMode, values, footprint, addNginxSite: body.addNginxSite === '1' });
+        resolveDone({ mongoMode, values, footprint, addNginxSite: body.addNginxSite === '1', installPortal: body.installPortal === '1' });
     });
 
     const server = app.listen(0, () => {
@@ -559,7 +574,7 @@ async function main() {
         for (const url of urls) console.log(`  ${highlight(url)}`);
     });
 
-    const { mongoMode, values, footprint, addNginxSite } = await done;
+    const { mongoMode, values, footprint, addNginxSite, installPortal } = await done;
     server.close();
 
     let installedVersion = 'unknown';
@@ -584,6 +599,8 @@ async function main() {
     if (addNginxSite) {
         installHostNginxSite(values.WEB_FQDN, values.HOST_NGINX_IP_PORT || '8443', values.NGINX_HTTPS_PORT || APP_PORT, values.SSL_CERT_FILE, values.SSL_KEY_FILE);
     }
+
+    if (installPortal) installPortalInline();
 }
 
 main().catch(err => {

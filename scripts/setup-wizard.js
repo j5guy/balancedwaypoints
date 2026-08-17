@@ -38,6 +38,11 @@ const {
 const { trimToMinimalFootprint } = require('./lib/footprint');
 const { detectPortal, installPortalNonInteractive, readPortalEnv, registerOidcClient } = require('./lib/portal');
 
+// Shelved — Waypoints Portal / SSO integration got too complicated to carry
+// alongside this app's own setup. Flip back to true to re-offer it in the
+// wizard; ./lib/portal.js itself is untouched, just not called from here.
+const PORTAL_INTEGRATION_ENABLED = false;
+
 function parseArgs(argv) {
     const args = { finalDir: null };
     for (let i = 0; i < argv.length; i++) {
@@ -246,10 +251,10 @@ function renderForm(fields, values, mongoMode, certMode, tlsMode, portalInfo) {
       </div>
     </fieldset>
     ${tlsModeHtml}
-    <fieldset>
+    ${PORTAL_INTEGRATION_ENABLED ? `<fieldset>
       <legend>Waypoints Portal</legend>
       ${portalHtml}
-    </fieldset>
+    </fieldset>` : ''}
     <fieldset><legend>Configuration</legend>${rows}</fieldset>
     <button type="submit">Save &amp; start</button>
   </form>
@@ -407,7 +412,7 @@ async function main() {
     const done = new Promise(resolve => { resolveDone = resolve; });
 
     app.get('/', async (req, res) => {
-        const portalInfo = await detectPortal();
+        const portalInfo = PORTAL_INTEGRATION_ENABLED ? await detectPortal() : { running: false };
         res.send(renderForm(
             fields, existing,
             existing.mongoHost !== 'mongo' ? 'external' : 'internal',
@@ -474,7 +479,7 @@ async function main() {
         res.send(renderDone(caCertPem));
         resolveDone({
             mongoMode, values, footprint,
-            installPortal: body.installPortal === '1',
+            installPortal: PORTAL_INTEGRATION_ENABLED && body.installPortal === '1',
             portalWebFqdn: body.PORTAL_WEB_FQDN, portalPort: body.PORTAL_PORT
         });
     });

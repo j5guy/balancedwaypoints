@@ -1,28 +1,27 @@
 #!/usr/bin/env node
 // Interactive .env setup wizard. Reads .env.example for the field list, help
 // text, and defaults; serves a form on localhost; writes the result to
-// FINAL_DIR/.env; generates a self-signed TLS cert if needed; then either
-// trims down to a minimal Docker-only footprint or relocates the full
-// checkout to FINAL_DIR (see ./lib/footprint), bringing the Docker stack up
-// either way, and exits.
+// FINAL_DIR/.env; generates a self-signed TLS cert if needed; then trims
+// down to a minimal Docker-only footprint at FINAL_DIR (see ./lib/footprint),
+// brings the Docker stack up, and exits.
 //
 // Deliberately simpler than a from-scratch enterprise installer: Docker-only
 // (no local systemd service path) — see the balancedwaypoints project plan
-// for why. It does optionally wire up an existing host nginx (see
-// detectHostNginx/installHostNginxSite in ./lib/bringUp) when one's
-// detected running and no site for this app exists yet. Everything here can
-// be done by hand instead by editing .env directly and running `docker
-// compose -f docker-compose.yml -f docker-compose.nginx.yml -f
-// docker-compose.mongo.yml up -d --build`.
+// for why. Reachability over HTTPS comes from joining the shared Traefik
+// reverse proxy (see ensureTraefikStack/resolveTlsMode in ./lib/bringUp) —
+// one shared proxy every Waypoints app joins, routed entirely by Docker
+// labels, no per-app port to pick. Everything here can be done by hand
+// instead by editing .env directly and running `docker compose -f
+// docker-compose.yml -f docker-compose.mongo.yml up -d --build`.
 //
 // Runs against ROOT (this checkout — a scratch clone when launched via
 // install.sh with --final-dir, or an existing checkout when run in place)
-// and, once .env is written, either relocates that checkout to FINAL_DIR
-// (the "Full checkout" footprint) or trims it down to just what's needed to
-// run/update Docker and writes THAT to FINAL_DIR instead (the "Docker only,
-// minimal footprint" choice — see ./lib/footprint). FINAL_DIR defaults to
-// ROOT itself (no relocation) when run without --final-dir, which is what
-// an in-place `./install.sh`/`node scripts/setup-wizard.js` does.
+// and, once .env is written, trims it down to just what's needed to
+// run/update Docker and writes THAT to FINAL_DIR (see ./lib/footprint).
+// Skipped entirely when run in place (no --final-dir, e.g. an in-place
+// `./install.sh`/`node scripts/setup-wizard.js`) — there's no separate
+// scratch checkout to trim away in that case, so the full source just stays
+// put and FINAL_DIR defaults to ROOT itself (no relocation).
 const fs = require('fs');
 const net = require('net');
 const dns = require('dns');
@@ -33,10 +32,16 @@ const express = require('express');
 const { lanAddresses, printAccessUrls, highlight } = require('./lib/network');
 const {
     mongoNeedsLegacyArmImage, LEGACY_ARM_MONGO_IMAGE, generateCert, bringUpDocker,
-    detectHostNginx, installHostNginxSite, findOpenPort, isPortFree,
-    readDeployState, writeDeployState, APP_PORT
+    resolveTraefikDir, ensureTraefikStack, resolveTlsMode, findOpenPort, isPortFree,
+    writeDeployState, run
 } = require('./lib/bringUp');
-const { relocateFullCheckout, trimToMinimalFootprint } = require('./lib/footprint');
+const { trimToMinimalFootprint } = require('./lib/footprint');
+const { detectPortal, installPortalNonInteractive, readPortalEnv, registerOidcClient } = require('./lib/portal');
+
+// Shelved — Waypoints Portal / SSO integration got too complicated to carry
+// alongside this app's own setup. Flip back to true to re-offer it in the
+// wizard; ./lib/portal.js itself is untouched, just not called from here.
+const PORTAL_INTEGRATION_ENABLED = false;
 
 function parseArgs(argv) {
     const args = { finalDir: null };
@@ -51,22 +56,20 @@ const ROOT = path.join(__dirname, '..');
 const FINAL_DIR = cliArgs.finalDir ? path.resolve(cliArgs.finalDir) : ROOT;
 // True only when launched by install.sh against a scratch clone distinct
 // from where the app should actually end up living — the only case where
-// the "Docker only, minimal footprint" choice makes sense (see
+// there's a scratch checkout to trim down afterward (see
 // renderFootprintFieldset below).
 const IS_SCRATCH = path.resolve(FINAL_DIR) !== path.resolve(ROOT);
 // .env/certs/ are written straight to FINAL_DIR from the start (not ROOT),
 // even while ROOT is still a scratch clone — that way there's no host-path
-// rewriting needed afterward for either footprint: a generated cert's
-// absolute path, or SSL_CERT_FILE/SSL_KEY_FILE written into .env, already
-// point at FINAL_DIR from the moment they're created. See
-// trimToMinimalFootprint/relocateFullCheckout in scripts/lib/footprint.js.
+// rewriting needed afterward: a generated cert's absolute path, or
+// SSL_CERT_FILE/SSL_KEY_FILE written into .env, already point at FINAL_DIR
+// from the moment they're created. See trimToMinimalFootprint in
+// scripts/lib/footprint.js.
 const ENV_PATH = path.join(FINAL_DIR, '.env');
 const EXAMPLE_PATH = path.join(ROOT, '.env.example');
 
 const FIELD_LABELS = {
     WEB_FQDN: 'Domain name (or IP)',
-    NGINX_HTTPS_PORT: 'HTTPS port',
-    NGINX_HTTP_PORT: 'HTTP port (redirects to HTTPS)',
     SSL_CERT_FILE: 'Certificate file',
     SSL_KEY_FILE: 'Certificate key file',
     ADMIN_EMAIL: 'Always-admin email (optional)',
@@ -84,8 +87,11 @@ const FIELD_LABELS = {
     LDAP_SEARCH_FILTER: 'LDAP search filter'
 };
 const MASKED_KEYS = new Set(['mongoPass', 'LDAP_BIND_PASSWORD']);
-const HIDDEN_KEYS = new Set(['sessionSecret', 'MONGO_IMAGE']);
+// TLS_MODE is rendered as its own radio fieldset (like mongoMode/certMode
+// below), not through the generic per-field loop.
+const HIDDEN_KEYS = new Set(['sessionSecret', 'MONGO_IMAGE', 'TLS_MODE']);
 const MONGO_EXTERNAL_ONLY_KEYS = new Set(['mongoHost', 'mongoUser', 'mongoPass']);
+const MONGO_INTERNAL_ONLY_KEYS = new Set(['MONGO_HOST_DIR']);
 const REQUIRED_KEYS = new Set(['WEB_FQDN']);
 
 function parseExample(text) {
@@ -114,43 +120,35 @@ function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-const NGINX_PORT_KEYS = new Set(['NGINX_HTTP_PORT', 'NGINX_HTTPS_PORT']);
-
-// Only offered when running against a scratch clone distinct from FINAL_DIR
-// (IS_SCRATCH) — that's the only case where "delete the source afterward"
-// makes sense; a checkout already at its final home has nowhere else to go.
-// See relocateFullCheckout/trimToMinimalFootprint in ./lib/footprint.
-function renderFootprintFieldset(footprint) {
+// Only relevant when running against a scratch clone distinct from FINAL_DIR
+// (IS_SCRATCH) — that's the only case where there's a source checkout to
+// trim away in the first place; a checkout already at its final home has
+// nowhere else to go. No longer a user choice — every scratch install ends
+// up Docker only, minimal footprint. See trimToMinimalFootprint in
+// ./lib/footprint.
+function renderFootprintFieldset() {
     if (!IS_SCRATCH) {
         return `
     <fieldset>
       <legend>Installation footprint</legend>
-      <p class="help">This checkout is already the install location, so the full source stays here — a
-      "Docker only, minimal footprint" install is only offered the first time, via the curl install command
-      (see the README).</p>
+      <p class="help">This checkout is already the install location, so the full source stays here.</p>
     </fieldset>`;
     }
     return `
     <fieldset>
       <legend>Installation footprint</legend>
-      <div class="radio-row">
-        <label><input type="radio" name="footprint" value="minimal" ${footprint !== 'full' ? 'checked' : ''} /> Docker only, minimal footprint (recommended) — builds the image, then deletes the source, leaving just what's needed to run and update the stack at <code>${escapeHtml(FINAL_DIR)}</code></label>
-        <label><input type="radio" name="footprint" value="full" ${footprint === 'full' ? 'checked' : ''} /> Full checkout — keeps the source at <code>${escapeHtml(FINAL_DIR)}</code></label>
-      </div>
-      <p class="help">Either way, <code>update.sh</code> in the final directory is the one command to update later.</p>
+      <p class="help">Docker only, minimal footprint — builds the image, then deletes the source, leaving
+      just what's needed to run and update the stack at <code>${escapeHtml(FINAL_DIR)}</code>.
+      <code>update.sh</code> in that directory is the one command to update later.</p>
     </fieldset>`;
 }
 
-function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggestions, footprint) {
-    // NGINX_HTTP_PORT/NGINX_HTTPS_PORT are rendered separately below (not
-    // in this generic loop) — when a host nginx is running they're
-    // auto-picked and hidden behind an "advanced" toggle instead of shown
-    // as plain fields, which the generic per-field loop below has no
-    // concept of.
-    const rows = fields.filter(f => !HIDDEN_KEYS.has(f.key) && !NGINX_PORT_KEYS.has(f.key)).map(f => {
+function renderForm(fields, values, mongoMode, certMode, tlsMode, portalInfo) {
+    const rows = fields.filter(f => !HIDDEN_KEYS.has(f.key)).map(f => {
         const value = values[f.key] !== undefined ? values[f.key] : f.default;
         const isMongoOnly = MONGO_EXTERNAL_ONLY_KEYS.has(f.key);
-        const disabled = isMongoOnly && mongoMode !== 'external';
+        const isMongoInternalOnly = MONGO_INTERNAL_ONLY_KEYS.has(f.key);
+        const disabled = (isMongoOnly && mongoMode !== 'external') || (isMongoInternalOnly && mongoMode !== 'internal');
         const isCertField = f.key === 'SSL_CERT_FILE' || f.key === 'SSL_KEY_FILE';
         const certDisabled = isCertField && certMode !== 'own';
         const inputType = MASKED_KEYS.has(f.key) ? 'password' : 'text';
@@ -168,67 +166,43 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
         ? `<p class="help warn">This CPU needs an older MongoDB image (${LEGACY_ARM_MONGO_IMAGE}) — set automatically.</p>`
         : '';
 
-    // The bundled Docker nginx's own ports — hidden behind an "advanced"
-    // toggle and auto-picked (see computePortSuggestions) whenever a host
-    // nginx is running, since that's the thing actually fronting 80/443 for
-    // the domain in that case; shown normally otherwise.
-    const dockerPortsHtml = `
+    // How this app gets its HTTPS certificate, via the shared Traefik proxy
+    // every Waypoints app joins (see ensureTraefikStack/resolveTlsMode in
+    // ./lib/bringUp) — mirrors the mongoMode/certMode radio-row shape below.
+    const tlsModeHtml = `
     <fieldset>
-      <legend>Docker nginx ports</legend>
-      ${nginxInfo.running ? `
-      <p class="help">Picked automatically (free ports on this host) since the existing nginx above will front
-      this app on the standard 80/443 instead. Only change these if you know what you're doing — they still
-      need to not collide with the host nginx's own ports or anything else already listening here.</p>
-      <label class="checkbox-label"><input type="checkbox" id="advanced-ports-toggle" /> Advanced: customize these ports myself</label>
-      ` : ''}
-      <div id="docker-ports-fields" style="${nginxInfo.running ? 'display:none' : ''}">
-        <div class="field">
-          <label for="NGINX_HTTP_PORT">HTTP port (redirects to HTTPS)</label>
-          <input type="text" id="NGINX_HTTP_PORT" name="NGINX_HTTP_PORT" value="${escapeHtml(portSuggestions.http)}" autocomplete="off" data-port-check="1" />
-          <p class="help port-status" id="port-status-NGINX_HTTP_PORT" style="display:none"></p>
-        </div>
-        <div class="field">
-          <label for="NGINX_HTTPS_PORT">HTTPS port</label>
-          <input type="text" id="NGINX_HTTPS_PORT" name="NGINX_HTTPS_PORT" value="${escapeHtml(portSuggestions.https)}" autocomplete="off" data-port-check="1" />
-          <p class="help port-status" id="port-status-NGINX_HTTPS_PORT" style="display:none"></p>
-        </div>
+      <legend>TLS certificate mode</legend>
+      <div class="radio-row">
+        <label><input type="radio" name="TLS_MODE" value="auto" ${tlsMode !== 'acme' && tlsMode !== 'selfsigned' ? 'checked' : ''} /> Automatic (recommended — Let's Encrypt if the domain above looks public, self-signed otherwise)</label>
+        <label><input type="radio" name="TLS_MODE" value="acme" ${tlsMode === 'acme' ? 'checked' : ''} /> Always use Let's Encrypt</label>
+        <label><input type="radio" name="TLS_MODE" value="selfsigned" ${tlsMode === 'selfsigned' ? 'checked' : ''} /> Always use a self-signed certificate</label>
       </div>
     </fieldset>`;
 
-    // Only offered when there's actually something to offer: nginx running,
-    // its config layout recognized, and no balancedwaypoints.conf already
-    // there (an existing one is left alone rather than silently overwritten
-    // — see detectHostNginx). Every other case gets an informational note
-    // instead, no checkbox.
-    const canOfferSite = nginxInfo.running && nginxInfo.canWriteSite && !nginxInfo.siteExists;
-    let hostNginxHtml;
-    if (canOfferSite) {
-        hostNginxHtml = `
-    <fieldset>
-      <legend>Existing nginx</legend>
-      <p class="help">nginx is already running on this host. A site can be added for it automatically — it
-      becomes the public TLS terminator on the standard 80/443 for your domain (plus direct LAN-IP access on
-      its own port below), reverse-proxying to the bundled Docker nginx container, which keeps terminating
-      TLS internally too.</p>
-      <label class="checkbox-label"><input type="checkbox" id="add-nginx-site-toggle" name="addNginxSite" value="1" /> Add an nginx site for this host's existing nginx</label>
-      <div class="field" id="host-nginx-ip-port-field" style="display:none">
-        <label for="HOST_NGINX_IP_PORT">Port for direct LAN-IP HTTPS access</label>
-        <p class="help">nginx will also listen here so this app is reachable at
-        <code>https://&lt;lan-ip&gt;:&lt;this port&gt;/</code> directly, without the domain — separate from
-        the Docker nginx ports below.</p>
-        <input type="text" id="HOST_NGINX_IP_PORT" name="HOST_NGINX_IP_PORT" value="${escapeHtml(portSuggestions.ip)}" autocomplete="off" data-port-check="1" />
-        <p class="help port-status" id="port-status-HOST_NGINX_IP_PORT" style="display:none"></p>
-      </div>
-    </fieldset>`;
-    } else if (nginxInfo.running && nginxInfo.siteExists) {
-        hostNginxHtml = `<p class="help">A host nginx site for this app already exists — not modifying it. Edit it directly if it needs to change.</p>`;
-    } else if (nginxInfo.running) {
-        hostNginxHtml = `<p class="help warn">nginx is running on this host, but its config layout (expected sites-available/sites-enabled or conf.d under /etc/nginx) wasn't recognized — skipping the offer to add a site automatically. Add one by hand if needed, and make sure it isn't already bound to the Docker nginx ports below.</p>`;
-    } else if (nginxInfo.installed) {
-        hostNginxHtml = `<p class="help">nginx is installed but not currently running on this host — nothing to wire up.</p>`;
-    } else {
-        hostNginxHtml = '';
-    }
+    // Offers to install the Waypoints Portal (shared login across the
+    // Waypoints family) right after this app's own setup finishes — but
+    // only when one isn't already running on this host (see detectPortal in
+    // ./lib/portal), so two portals never end up installed by accident.
+    // Installed non-interactively (see installPortalNonInteractive) using
+    // just the domain/port collected right here — its own setup wizard
+    // never opens. Either way (already running, or freshly installed here),
+    // checking this also registers this app as an SSO client of the portal
+    // and turns on OIDC login automatically — see registerOidcClient.
+    const portalDefaultFqdn = values.WEB_FQDN || (fields.find(f => f.key === 'WEB_FQDN') || {}).default || 'localhost';
+    const portalHtml = portalInfo.running
+        ? `<label class="checkbox-label"><input type="checkbox" id="installPortal" name="installPortal" value="1" checked /> Link this app's login to the Waypoints Portal already running at <code>${escapeHtml(portalInfo.url)}</code>, for shared login (SSO)</label>`
+        : `<label class="checkbox-label"><input type="checkbox" id="installPortal" name="installPortal" value="1" /> Also install the Waypoints Portal on this host, and link this app's login to it, for shared login (SSO) across your Waypoints apps</label>
+      <div id="portal-install-fields" style="display:none">
+        <div class="field">
+          <label for="PORTAL_WEB_FQDN">Portal domain (or IP)</label>
+          <input type="text" id="PORTAL_WEB_FQDN" name="PORTAL_WEB_FQDN" value="${escapeHtml(portalDefaultFqdn)}" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="PORTAL_PORT">Portal port</label>
+          <input type="text" id="PORTAL_PORT" name="PORTAL_PORT" value="5585" autocomplete="off" data-port-check="1" />
+          <p class="help port-status" id="port-status-PORTAL_PORT" style="display:none"></p>
+        </div>
+      </div>`;
 
     return `<!doctype html>
 <html><head><meta charset="utf-8" /><title>Balanced Waypoints Setup</title>
@@ -260,13 +234,12 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
   <h1>Balanced Waypoints — Setup</h1>
   <p>Fill in the fields below, then submit. This writes <code>.env</code> and brings up the Docker stack.</p>
   <form method="POST" action="/save">
-    ${renderFootprintFieldset(footprint)}
-    ${hostNginxHtml}
+    ${renderFootprintFieldset()}
     <fieldset>
       <legend>MongoDB</legend>
       <div class="radio-row">
-        <label><input type="radio" name="mongoMode" value="internal" ${mongoMode !== 'external' ? 'checked' : ''} /> Internal (bundled MongoDB container, recommended)</label>
-        <label><input type="radio" name="mongoMode" value="external" ${mongoMode === 'external' ? 'checked' : ''} /> External (point at an existing MongoDB server)</label>
+        <label><input type="radio" name="mongoMode" value="external" ${mongoMode === 'external' ? 'checked' : ''} /> External (point at an existing MongoDB server, recommended — share one instance across your Waypoints apps instead of a separate container per app)</label>
+        <label><input type="radio" name="mongoMode" value="internal" ${mongoMode !== 'external' ? 'checked' : ''} /> Internal (bundled MongoDB container, standalone)</label>
       </div>
       ${armNote}
     </fieldset>
@@ -277,7 +250,11 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
         <label><input type="radio" name="certMode" value="own" ${certMode === 'own' ? 'checked' : ''} /> I'll provide my own certificate files</label>
       </div>
     </fieldset>
-    ${dockerPortsHtml}
+    ${tlsModeHtml}
+    ${PORTAL_INTEGRATION_ENABLED ? `<fieldset>
+      <legend>Waypoints Portal</legend>
+      ${portalHtml}
+    </fieldset>` : ''}
     <fieldset><legend>Configuration</legend>${rows}</fieldset>
     <button type="submit">Save &amp; start</button>
   </form>
@@ -363,23 +340,13 @@ function renderForm(fields, values, mongoMode, certMode, nginxInfo, portSuggesti
       checkPort(input); // initial check for the prefilled/suggested value
     });
 
-    // "Add an nginx site" reveals the LAN-IP-access port field it needs —
-    // hidden until then since it's meaningless otherwise.
-    const addNginxSiteToggle = document.getElementById('add-nginx-site-toggle');
-    if (addNginxSiteToggle) {
-      addNginxSiteToggle.addEventListener('change', () => {
-        const field = document.getElementById('host-nginx-ip-port-field');
-        if (field) field.style.display = addNginxSiteToggle.checked ? '' : 'none';
-      });
-    }
-
-    // "Advanced: customize these ports myself" reveals the otherwise-hidden,
-    // auto-picked Docker nginx port fields for manual editing.
-    const advancedPortsToggle = document.getElementById('advanced-ports-toggle');
-    if (advancedPortsToggle) {
-      advancedPortsToggle.addEventListener('change', () => {
-        const fields = document.getElementById('docker-ports-fields');
-        if (fields) fields.style.display = advancedPortsToggle.checked ? '' : 'none';
+    // "Also install the Waypoints Portal" reveals its domain/port fields —
+    // hidden until then since they're meaningless otherwise.
+    const installPortalToggle = document.getElementById('installPortal');
+    if (installPortalToggle) {
+      installPortalToggle.addEventListener('change', () => {
+        const fields = document.getElementById('portal-install-fields');
+        if (fields) fields.style.display = installPortalToggle.checked ? '' : 'none';
       });
     }
   </script>
@@ -431,34 +398,6 @@ function renderDone(caCertPem) {
 </body></html>`;
 }
 
-// Suggests starting values for the Docker nginx's own ports and the host
-// nginx's LAN-IP-access port. Only actually probes for a free port when the
-// relevant field hasn't already been customized away from its .env.example
-// default (or, for the IP port, was never set before) — a re-run of the
-// wizard against an existing .env respects whatever was already chosen
-// rather than picking something new out from under it.
-async function computePortSuggestions(fields, existing, nginxInfo) {
-    const httpDefault = (fields.find(f => f.key === 'NGINX_HTTP_PORT') || {}).default || '80';
-    const httpsDefault = (fields.find(f => f.key === 'NGINX_HTTPS_PORT') || {}).default || String(APP_PORT);
-    const result = {
-        http: existing.NGINX_HTTP_PORT || httpDefault,
-        https: existing.NGINX_HTTPS_PORT || httpsDefault,
-        ip: existing.HOST_NGINX_IP_PORT || '8443'
-    };
-    if (nginxInfo.running) {
-        if (!existing.NGINX_HTTP_PORT || existing.NGINX_HTTP_PORT === httpDefault) {
-            result.http = String(await findOpenPort(8080));
-        }
-        if (!existing.NGINX_HTTPS_PORT || existing.NGINX_HTTPS_PORT === httpsDefault) {
-            result.https = String(await findOpenPort(Number(httpsDefault) || APP_PORT));
-        }
-    }
-    if (!existing.HOST_NGINX_IP_PORT) {
-        result.ip = String(await findOpenPort(8443));
-    }
-    return result;
-}
-
 async function main() {
     const exampleText = fs.readFileSync(EXAMPLE_PATH, 'utf8');
     const fields = parseExample(exampleText);
@@ -473,15 +412,13 @@ async function main() {
     const done = new Promise(resolve => { resolveDone = resolve; });
 
     app.get('/', async (req, res) => {
-        const nginxInfo = detectHostNginx();
-        const portSuggestions = await computePortSuggestions(fields, existing, nginxInfo);
-        const deployState = readDeployState(FINAL_DIR);
+        const portalInfo = PORTAL_INTEGRATION_ENABLED ? await detectPortal() : { running: false };
         res.send(renderForm(
             fields, existing,
-            existing.mongoHost && existing.mongoHost !== 'mongo' ? 'external' : 'internal',
+            existing.mongoHost !== 'mongo' ? 'external' : 'internal',
             existing.SSL_CERT_FILE ? 'own' : 'generate',
-            nginxInfo, portSuggestions,
-            deployState ? deployState.footprint : 'minimal'
+            existing.TLS_MODE || 'auto',
+            portalInfo
         ));
     });
 
@@ -519,16 +456,11 @@ async function main() {
         if (mongoMode === 'internal') values.mongoHost = 'mongo';
         values.sessionSecret = existing.sessionSecret || crypto.randomBytes(64).toString('hex');
         if (mongoNeedsLegacyArmImage()) values.MONGO_IMAGE = LEGACY_ARM_MONGO_IMAGE;
-        // Not part of .env.example/`fields` (only this wizard and a host
-        // nginx site read it, never the app itself) — persisted anyway so a
-        // later re-run of the wizard remembers what was already picked,
-        // same as every other field above.
-        if (body.HOST_NGINX_IP_PORT !== undefined) values.HOST_NGINX_IP_PORT = body.HOST_NGINX_IP_PORT;
 
-        // Forced to 'full' whenever this isn't a scratch clone — there's no
-        // footprint radio rendered in that case (see renderFootprintFieldset),
-        // so any submitted value here would be meaningless.
-        const footprint = IS_SCRATCH ? (body.footprint === 'full' ? 'full' : 'minimal') : 'full';
+        // No longer a user choice — a scratch clone always trims down to the
+        // minimal Docker-only footprint; a checkout already at its final home
+        // (not a scratch clone) has nowhere to trim to, so it just stays put.
+        const footprint = IS_SCRATCH ? 'minimal' : 'full';
 
         fs.mkdirSync(FINAL_DIR, { recursive: true });
 
@@ -545,7 +477,11 @@ async function main() {
         fs.writeFileSync(ENV_PATH, envText);
 
         res.send(renderDone(caCertPem));
-        resolveDone({ mongoMode, values, footprint, addNginxSite: body.addNginxSite === '1' });
+        resolveDone({
+            mongoMode, values, footprint,
+            installPortal: PORTAL_INTEGRATION_ENABLED && body.installPortal === '1',
+            portalWebFqdn: body.PORTAL_WEB_FQDN, portalPort: body.PORTAL_PORT
+        });
     });
 
     const server = app.listen(0, () => {
@@ -559,7 +495,7 @@ async function main() {
         for (const url of urls) console.log(`  ${highlight(url)}`);
     });
 
-    const { mongoMode, values, footprint, addNginxSite } = await done;
+    const { mongoMode, values, footprint, installPortal, portalWebFqdn, portalPort } = await done;
     server.close();
 
     let installedVersion = 'unknown';
@@ -567,22 +503,87 @@ async function main() {
         installedVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
     } catch { /* leave as 'unknown' */ }
 
+    // Resolved once here (not left as the raw "auto"/"acme"/"selfsigned"
+    // TLS_MODE value) since both bringUpDocker's compose-file selection and
+    // the self-signed cert registration below need the concrete answer.
+    const resolvedTlsMode = resolveTlsMode(values.WEB_FQDN || 'localhost', values.TLS_MODE);
+
+    // The external waypoints-proxy network (and the shared Traefik
+    // container itself) have to exist before `docker compose up` runs
+    // against a compose file that references them — see docker-compose.yml.
+    if (!ensureTraefikStack()) {
+        console.error('\nCould not bring up the shared Traefik stack — fix the issue above, then run this app\'s docker compose up manually.');
+    }
+
+    // Only meaningful for "selfsigned" — an "acme" router gets its cert
+    // from Let's Encrypt instead, and never touches the shared self-signed
+    // store. Registers whatever's at SSL_CERT_FILE/SSL_KEY_FILE, whether
+    // that was just generated above or supplied by hand (certMode "own").
+    if (resolvedTlsMode === 'selfsigned' && values.SSL_CERT_FILE && values.SSL_KEY_FILE) {
+        const traefikDir = resolveTraefikDir();
+        if (traefikDir) {
+            const { registerCert } = require(path.join(traefikDir, 'scripts', 'register-cert.js'));
+            registerCert('balancedwaypoints', values.SSL_CERT_FILE, values.SSL_KEY_FILE);
+        }
+    }
+
     if (footprint === 'minimal') {
         trimToMinimalFootprint(ROOT, FINAL_DIR, {
             mongoMode,
-            nginxHttpsPort: values.NGINX_HTTPS_PORT || APP_PORT,
-            nginxHttpPort: values.NGINX_HTTP_PORT || '80',
+            tlsMode: resolvedTlsMode,
             installedVersion
         });
     } else {
-        if (IS_SCRATCH) relocateFullCheckout(ROOT, FINAL_DIR);
+        // Only reachable when !IS_SCRATCH (see the footprint calc in
+        // app.post('/save')) — a checkout already at its final home, so
+        // there's nothing to relocate.
         writeDeployState(FINAL_DIR, { footprint: 'full', mongoMode, installedVersion });
-        bringUpDocker(FINAL_DIR, mongoMode);
-        printAccessUrls(values.WEB_FQDN || 'localhost', values.NGINX_HTTPS_PORT || APP_PORT);
+        bringUpDocker(FINAL_DIR, mongoMode, resolvedTlsMode);
+        printAccessUrls(values.WEB_FQDN || 'localhost');
     }
 
-    if (addNginxSite) {
-        installHostNginxSite(values.WEB_FQDN, values.HOST_NGINX_IP_PORT || '8443', values.NGINX_HTTPS_PORT || APP_PORT, values.SSL_CERT_FILE, values.SSL_KEY_FILE);
+    if (installPortal) {
+        await installPortalNonInteractive({ webFqdn: portalWebFqdn, port: portalPort });
+
+        // Registers this app as an SSO client of the portal and turns on
+        // OIDC login — only possible when the portal's checkout is right
+        // here on this host (see registerOidcClient); otherwise this is a
+        // no-op and OIDC can still be wired up by hand later from the
+        // portal's Admin > SSO clients.
+        const portalEnv = readPortalEnv();
+        if (portalEnv) {
+            const appWebFqdn = values.WEB_FQDN || 'localhost';
+            // Now that this app is only ever reached through Traefik on the
+            // plain domain (no more raw bundled-nginx port to also
+            // register), there's exactly one redirect_uri to match.
+            const redirectUris = [`https://${appWebFqdn}/auth/oidc/callback`];
+            const oidc = registerOidcClient('balancedwaypoints', redirectUris);
+            if (oidc) {
+                const portalWebFqdnActual = portalEnv.WEB_FQDN || 'localhost';
+                let envText = fs.readFileSync(ENV_PATH, 'utf8');
+                const overrides = {
+                    OIDC_ENABLED: 'true',
+                    // The portal's own raw port (5585) is no longer
+                    // published to the host once it's behind Traefik too —
+                    // http://...:5585/oidc would break outright.
+                    OIDC_ISSUER_URL: `https://${portalWebFqdnActual}/oidc`,
+                    OIDC_CLIENT_ID: oidc.clientId,
+                    OIDC_CLIENT_SECRET: oidc.clientSecret,
+                    OIDC_SCOPES: 'openid profile email',
+                };
+                for (const [key, value] of Object.entries(overrides)) {
+                    const re = new RegExp(`^${key}=.*$`, 'm');
+                    envText = re.test(envText) ? envText.replace(re, `${key}=${value}`) : `${envText}\n${key}=${value}\n`;
+                }
+                fs.writeFileSync(ENV_PATH, envText);
+                console.log('\nOIDC login enabled — recreating this app\'s container to pick up the new settings...');
+                if (footprint === 'minimal') {
+                    run('docker', ['compose', 'up', '-d'], { cwd: FINAL_DIR });
+                } else {
+                    bringUpDocker(FINAL_DIR, mongoMode, resolvedTlsMode);
+                }
+            }
+        }
     }
 }
 

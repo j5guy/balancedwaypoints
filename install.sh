@@ -78,6 +78,44 @@ ensure_node() {
   fi
 }
 
+# Docker-only app (no local-service deploy mode) — checked up front, before
+# ever reaching the wizard, so a failed auto-install (e.g. this host's
+# distro/version isn't one get.docker.com recognizes) surfaces immediately
+# instead of after filling out the entire setup form.
+ensure_docker() {
+  if have_cmd docker && docker compose version &>/dev/null; then return; fi
+  echo "Docker (with the compose v2 plugin) not found — installing (requires sudo)..."
+  DISTRO_ID=""
+  if [ -f /etc/os-release ]; then DISTRO_ID="$(. /etc/os-release && echo "$ID")"; fi
+  if [ "$DISTRO_ID" = "rocky" ]; then
+    # get.docker.com resolves Rocky to download.docker.com/linux/rocky/docker-ce.repo, which
+    # Docker only publishes a near-empty stub of (missing docker-ce/docker-ce-cli/
+    # docker-ce-rootless-extras). The rhel path has the full package set and works fine on
+    # Rocky, so set the repo up against that directly instead of using the convenience script.
+    sudo dnf -y -q install dnf-plugins-core
+    sudo rm -f /etc/yum.repos.d/docker-ce.repo /etc/yum.repos.d/docker-ce-staging.repo
+    sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+    sudo dnf -y -q --best install docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-ce-rootless-extras docker-buildx-plugin || true
+  else
+    if ! have_cmd curl; then
+      if have_cmd apt-get; then sudo apt-get update && sudo apt-get install -y curl
+      elif have_cmd dnf; then sudo dnf install -y curl
+      elif have_cmd yum; then sudo yum install -y curl
+      fi
+    fi
+    curl -fsSL https://get.docker.com | sudo sh || true
+  fi
+  if ! have_cmd docker; then
+    echo "Docker auto-install failed — install it manually first (https://docs.docker.com/engine/install/), then re-run this command." >&2
+    exit 1
+  fi
+  sudo systemctl enable --now docker 2>/dev/null || true
+  if ! docker compose version &>/dev/null; then
+    echo "Docker installed, but 'docker compose' (v2 plugin) still isn't available — install it manually, then re-run this command." >&2
+    exit 1
+  fi
+}
+
 FINAL_DIR_ARGS=()
 if [ "$IN_PLACE" -eq 1 ]; then
   echo "== Balanced Waypoints install (existing checkout at $SCRIPT_DIR) =="
@@ -106,6 +144,8 @@ fi
 
 ensure_node
 echo "Node: $(node --version)"
+ensure_docker
+echo "Docker: $(docker --version)"
 
 cd "$WORK_DIR"
 if [ ! -d node_modules ]; then

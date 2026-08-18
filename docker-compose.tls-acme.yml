@@ -1,0 +1,9 @@
+# Optional overlay selected only when TLS_MODE resolves to "acme" (see
+# ensureTraefikStack/resolveTlsMode in scripts/lib/bringUp.js and
+# bringUpDocker's compose-file selection). Adds the ACME cert resolver to
+# the app's HTTPS router — the "le" resolver itself is defined once in the
+# shared traefik/traefik.yml, not here.
+services:
+  app:
+    labels:
+      - traefik.http.routers.balanced.tls.certresolver=le

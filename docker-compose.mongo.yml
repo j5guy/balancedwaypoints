@@ -1,6 +1,6 @@
 # Overlay adding a bundled MongoDB container. Only used when "Internal
 # MongoDB" is chosen in the setup wizard (or manually: docker compose
-# -f docker-compose.yml -f docker-compose.nginx.yml -f docker-compose.mongo.yml up -d --build).
+# -f docker-compose.yml -f docker-compose.mongo.yml up -d --build).
 # mongoHost must be set to "mongo" in .env for the app to reach this.
 services:
   mongo:
@@ -11,12 +11,18 @@ services:
     image: ${MONGO_IMAGE:-mongo:7}
     restart: unless-stopped
     volumes:
-      - mongo-data:/data/db
+      - ${MONGO_HOST_DIR:-mongo-data}:/data/db
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping')\" || mongo --quiet --eval \"db.adminCommand('ping')\""]
       interval: 5s
       timeout: 5s
       retries: 20
+    # docker-compose.yml now declares an explicit top-level networks: block
+    # (default + the external waypoints-proxy) — without this override,
+    # mongo would inherit both and end up reachable on waypoints-proxy too,
+    # which it has no business joining.
+    networks:
+      - default
 
   app:
     depends_on:

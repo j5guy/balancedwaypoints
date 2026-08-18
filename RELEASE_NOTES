@@ -1,3 +1,46 @@
+v0.12.1b
+------
+Fixed installing the Waypoints Portal alongside this app never making the portal reachable by FQDN or
+a dedicated LAN-IP port — it only ever came up on its raw Docker-published port (plain HTTP). The
+portal now also gets a host nginx site of its own (https://<portal-fqdn>/ plus LAN-IP port 8510 by
+default) whenever one's available, added or repaired every time the portal is installed or linked to.
+
+v0.12.0b
+------
+Every Docker-managed volume (logs, and MongoDB's data directory when using the bundled internal
+container) can now be redirected to a host path instead of the managed Docker volume, via new
+LOGS_HOST_DIR/MONGO_HOST_DIR vars in .env — same pattern as the existing BACKUP_HOST_DIR/SSL_CERT_FILE/
+SSL_KEY_FILE. Leave blank to keep using the managed volume (the default — no change needed for existing
+installs). Also fixed: the minimal-footprint install path wasn't honoring BACKUP_HOST_DIR in its
+generated docker-compose.yml — it now does, matching the full-checkout path.
+
+v0.11.1b
+------
+Linking this app's login to the Waypoints Portal (checked during setup) now fully automates SSO — it
+registers this app as an OIDC client of the portal (headless, via the portal's own container) and
+writes the OIDC_* fields into this app's own .env automatically, recreating the container to pick them
+up. Previously this last step needed a manual visit to the portal's Admin > SSO clients.
+
+v0.11.0b
+------
+Setup wizard: no longer offers a "Full checkout" footprint choice (always trims to the minimal
+Docker-only footprint on a scratch install); fixed Docker auto-install failing on Rocky Linux;
+install.sh now checks for Docker up front instead of failing deep into setup; MongoDB now defaults to
+"External" (a shared instance) instead of bundling its own container; "Add an nginx site" is now
+checked by default when a host nginx is detected; the host nginx direct-IP-access port default moved
+from 8443 to 8511 (every Waypoints app now has its own, since a shared host nginx can't have two apps
+on the same port — see PORTS.md in the portal repo); setup now offers to install the Waypoints Portal
+(shared login across the family) non-interactively alongside its own setup, detecting an existing one
+first so two never end up installed on one host
+
+v0.10.6b
+------
+Schedules can now also recur on a specific day of the month, including "the last day of the month"
+
+v0.10.5b
+------
+Schedules can now recur on a specific weekday of the month (e.g. "the 2nd Wednesday" or "the 2nd and last Wednesday"), not just a fixed interval
+
 v0.10.4b
 ------
 Register columns can now be reordered by drag-and-drop, in addition to show/hide — both persist per-user, with a "Reset columns to default" button

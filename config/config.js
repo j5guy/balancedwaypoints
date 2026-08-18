@@ -9,9 +9,9 @@ module.exports = {
     appName: 'Balanced Waypoints',
     webFQDN: process.env.WEB_FQDN || 'localhost',
     // Not user-configurable (removed from .env.example/the setup wizard) —
-    // whichever nginx fronts this app (bundled or an existing host nginx)
-    // always proxies to this fixed port; NGINX_HTTPS_PORT/HOST_NGINX_IP_PORT
-    // are what a user actually picks a port for.
+    // the shared Traefik reverse proxy (see ../scripts/lib/bringUp.js's
+    // ensureTraefikStack) always routes to this fixed container port; no
+    // per-app port for a user to pick any more.
     webPort: 5570,
     nodeEnv: process.env.NODE_ENV,
 

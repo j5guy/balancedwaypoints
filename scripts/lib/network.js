@@ -21,13 +21,14 @@ function lanAddresses() {
     return addrs;
 }
 
-function printAccessUrls(webFqdn, port) {
-    const urls = new Set();
-    urls.add(`https://${webFqdn}:${port}/`);
-    for (const addr of lanAddresses()) urls.add(`https://${addr}:${port}/`);
-
+// No port suffix any more — every app shares the Traefik proxy's single
+// :443, routed by the Host() header, so only the domain itself resolves to
+// this app. A bare LAN IP no longer reaches a specific app the way a
+// per-app IP:port used to; reach it by its WEB_FQDN (via DNS or a hosts
+// file entry pointing that name at this host) instead.
+function printAccessUrls(webFqdn) {
     console.log('\nBalanced Waypoints should now be reachable at:');
-    for (const url of urls) console.log(`  ${highlight(url)}`);
+    console.log(`  ${highlight(`https://${webFqdn}/`)}`);
 }
 
 module.exports = { lanAddresses, printAccessUrls, highlight };

@@ -1705,9 +1705,24 @@
     document.getElementById('qa-add-btn').addEventListener('click', async () => {
         clearError();
         const date = document.getElementById('qa-date').value;
-        const amountCents = window.BWMoney.toCents(document.getElementById('qa-amount').value || 0);
+        const rawAmount = document.getElementById('qa-amount').value.trim();
         if (!date) return showError(new Error('Date is required'));
-        if (!amountCents) return showError(new Error('Amount is required'));
+        if (!rawAmount) return showError(new Error(ASSET_TYPES.includes(accountType) ? 'Estimated value is required' : 'Amount is required'));
+
+        // On a Home/Vehicle account, what's typed here is the new estimated
+        // value itself, not a change to apply — "$16,999" replaces the
+        // previous estimate rather than adding to it. The underlying
+        // transaction still has to carry a signed delta (that's what every
+        // balance calculation in the app sums), so it's derived here:
+        // exactly enough change from the current balance to land on the
+        // value actually typed. A $0 delta (re-confirming the same
+        // estimate) is allowed for an asset entry, unlike a real
+        // transaction where that would just be a no-op.
+        const isAsset = ASSET_TYPES.includes(accountType);
+        const amountCents = isAsset
+            ? window.BWMoney.toCents(rawAmount) - currentBalanceCents
+            : window.BWMoney.toCents(rawAmount);
+        if (!isAsset && !amountCents) return showError(new Error('Amount is required'));
 
         try {
             const payeeId = await resolvePayee(document.getElementById('qa-payee').value.trim());

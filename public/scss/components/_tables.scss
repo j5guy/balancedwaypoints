@@ -78,6 +78,60 @@ table.register-table {
         overflow: hidden;
         text-overflow: ellipsis;
     }
+
+    // A Home/Vehicle account's register (see public/js/register.js's
+    // ASSET_TYPES) hides 4 of the 8 toggleable columns at once (Payee/
+    // Category/Tags/Cleared — see the hide-col rules below), which broke
+    // fixed layout's width math badly enough to make Amount/Balance's
+    // headers overlap and squeeze the Amount input/Add button down to an
+    // unusable sliver: table-layout:fixed reserves each column's width from
+    // the <colgroup> alone (accounts/show.ejs) regardless of how many
+    // columns actually render, and with that many simultaneously zeroed out
+    // plus the one deliberately-unset "Notes" column meant to absorb
+    // whatever's left, the leftover-width distribution came out wrong.
+    // Auto layout sidesteps all of that by sizing every visible column from
+    // its actual content instead of the colgroup's fixed math — hidden
+    // columns (still display:none below) simply don't reserve any space at
+    // all, no zeroing-out arithmetic required.
+    // Auto layout still sizes each column from its content's own intrinsic/
+    // preferred width, not from any percentage/max-width alone — a native
+    // <input type="date"> in particular renders wide regardless of the
+    // width:100% every other input gets (see components/_forms.scss), since
+    // a date picker needs room for mm/dd/yyyy plus the calendar icon, and
+    // that intrinsic size is what auto-layout's column math actually reads,
+    // not the rendered CSS width. Capping the input alone wasn't a strong
+    // enough signal — every visible column gets an explicit `width` here
+    // instead (not just min-width), including Date, so there's no leftover
+    // ambiguity for the browser to resolve unpredictably: Date/Amount/
+    // Balance get a firm, small pixel width, and Notes gets the lion's
+    // share via a percentage.
+    &.asset-register {
+        table-layout: auto;
+
+        // Balance is hidden entirely here (see public/js/register.js's
+        // ASSET_HIDDEN_COLUMNS) — Amount already carries the new value
+        // itself on an asset register, so Balance would just repeat it.
+        th[data-col='date'], td[data-col='date'] {
+            width: 130px;
+            max-width: 130px;
+        }
+
+        th[data-col='amount'], td[data-col='amount'] {
+            width: 140px;
+            max-width: 140px;
+        }
+
+        td.wrap, th[data-col='notes'] {
+            width: 40%;
+        }
+
+        input[type='date'] {
+            width: 100%;
+            max-width: 100%;
+            padding-left: 4px;
+            padding-right: 4px;
+        }
+    }
 }
 
 // The register's Edit/Delete buttons are icon-only (✎ / 🗑) to leave the

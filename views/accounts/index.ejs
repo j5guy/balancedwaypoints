@@ -59,9 +59,9 @@
                 <p class="form-hint">Purely organizational — groups accounts into collapsible sections on this page below.</p>
             </div>
             <div class="form-group">
-                <label for="acct-linked-account">Linked account (optional)</label>
-                <select id="acct-linked-account"><option value="">— not linked —</option></select>
-                <p class="form-hint">E.g. link a Home account to the Loan account financing it — shows combined equity (value minus loan) here and on its register page.</p>
+                <label>Linked accounts (optional)</label>
+                <div id="acct-linked-accounts" style="max-height:140px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:8px;"></div>
+                <p class="form-hint">E.g. link a Home account to both the mortgage and a HELOC financing it — shows combined equity (value minus every linked loan) on this page.</p>
             </div>
         </div>
         <div class="form-row" id="acct-address-group" hidden>
@@ -81,6 +81,29 @@
                 <label for="acct-zip">ZIP</label>
                 <input type="text" id="acct-zip" maxlength="10" placeholder="94103">
                 <p class="form-hint">Used to link straight to this property's Zillow search from its register page.</p>
+            </div>
+        </div>
+        <div class="form-row" id="acct-vehicle-group" hidden>
+            <div class="form-group">
+                <label for="acct-vehicle-year">Year</label>
+                <input type="text" id="acct-vehicle-year" maxlength="4" placeholder="2022">
+            </div>
+            <div class="form-group">
+                <label for="acct-vehicle-make">Make</label>
+                <input type="text" id="acct-vehicle-make" placeholder="Toyota">
+            </div>
+            <div class="form-group">
+                <label for="acct-vehicle-model">Model</label>
+                <input type="text" id="acct-vehicle-model" placeholder="Camry">
+            </div>
+            <div class="form-group">
+                <label for="acct-vehicle-trim">Trim (optional)</label>
+                <input type="text" id="acct-vehicle-trim" placeholder="XLE">
+            </div>
+            <div class="form-group">
+                <label for="acct-vehicle-vin">VIN (optional)</label>
+                <input type="text" id="acct-vehicle-vin" maxlength="17" placeholder="1HGCM82633A123456" style="text-transform:uppercase;">
+                <p class="form-hint">Used to link straight to this vehicle's KBB value estimate from its register page — VIN is the most precise if you have it, otherwise year/make/model is used.</p>
             </div>
         </div>
         <div class="form-row">

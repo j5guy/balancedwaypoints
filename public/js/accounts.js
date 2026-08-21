@@ -45,12 +45,16 @@
     }
 
     // The pairing is stored one-directionally (see models/account.js's
-    // linkedAccount) but shown from either side — a Loan account itself
-    // doesn't set linkedAccount, but should still show its paired Home
-    // account and the combined equity, so this checks both directions.
-    function findLinkedPartner(account) {
-        if (account.linkedAccount) return currentAccounts.find(a => a.id === account.linkedAccount);
-        return currentAccounts.find(a => a.linkedAccount === account.id);
+    // linkedAccounts) but shown from either side — a Loan account itself
+    // doesn't set linkedAccounts, but should still show up as a partner on
+    // its paired Home account's row (and vice versa), so this checks both
+    // directions and de-dupes. A Home with both a mortgage and a HELOC
+    // lists both here, combined equity = its own balance plus every
+    // partner's.
+    function findLinkedPartners(account) {
+        const own = (account.linkedAccounts || []).map(id => currentAccounts.find(a => a.id === id)).filter(Boolean);
+        const reverse = currentAccounts.filter(a => (a.linkedAccounts || []).includes(account.id));
+        return [...new Map([...own, ...reverse].map(a => [a.id, a])).values()];
     }
 
     function accountRow(account) {
@@ -59,9 +63,9 @@
         const syncBadge = account.simplefinAccountId
             ? ' <span class="badge" title="Synced via SimpleFIN — new transactions import automatically">🔄</span>'
             : '';
-        const partner = findLinkedPartner(account);
-        const linkNote = partner
-            ? `<div class="muted" style="font-size:0.8rem;">🔗 ${partner.name} — equity ${window.BWMoney.formatCents(account.balanceCents + partner.balanceCents)}</div>`
+        const partners = findLinkedPartners(account);
+        const linkNote = partners.length
+            ? `<div class="muted" style="font-size:0.8rem;">🔗 ${partners.map(p => p.name).join(', ')} — equity ${window.BWMoney.formatCents(account.balanceCents + partners.reduce((sum, p) => sum + p.balanceCents, 0))}</div>`
             : '';
         tr.innerHTML = `
             <td><a href="/accounts/${account.id}" class="link-plain">${account.name}${account.closed ? ' (closed)' : ''}</a>${syncBadge}${linkNote}</td>
@@ -271,18 +275,34 @@
 
     // Excludes the account being edited (if any) — an account can't be
     // linked to itself, same rule the server enforces (see
-    // controllers/accountsController.js's resolveLinkedAccountId).
-    function populateLinkedAccountSelect(excludeId) {
-        const select = document.getElementById('acct-linked-account');
-        select.innerHTML = '<option value="">— not linked —</option>' +
-            currentAccounts.filter(a => a.id !== excludeId).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    // controllers/accountsController.js's resolveLinkedAccountIds).
+    // Checkboxes rather than a select — a Home might reasonably link to
+    // both a mortgage and a HELOC, so this needs to support picking more
+    // than one.
+    function populateLinkedAccountsCheckboxes(excludeId, checkedIds) {
+        const container = document.getElementById('acct-linked-accounts');
+        const others = currentAccounts.filter(a => a.id !== excludeId);
+        if (others.length === 0) {
+            container.innerHTML = '<p class="muted" style="margin:0;">No other accounts to link yet.</p>';
+            return;
+        }
+        const checked = new Set(checkedIds || []);
+        container.innerHTML = others.map(a => `
+            <label class="checkbox-row" style="font-weight:normal;">
+                <input type="checkbox" class="linked-account-checkbox" value="${a.id}" ${checked.has(a.id) ? 'checked' : ''}>
+                ${a.name}
+            </label>
+        `).join('');
     }
 
-    // Address/City/State only mean anything for a Home account (see
-    // register.js's Zillow deep-link) — shown only when that type is
-    // selected, toggled live as the Type select changes.
+    // Address/City/State/ZIP only mean anything for a Home account, and
+    // Year/Make/Model/Trim/VIN only for a Vehicle one (see register.js's
+    // KBB/Zillow deep-links) — each group shown only when its matching type
+    // is selected, toggled live as the Type select changes.
     function syncAddressFieldsVisibility() {
-        document.getElementById('acct-address-group').hidden = document.getElementById('acct-type').value !== 'home';
+        const type = document.getElementById('acct-type').value;
+        document.getElementById('acct-address-group').hidden = type !== 'home';
+        document.getElementById('acct-vehicle-group').hidden = type !== 'vehicle';
     }
     document.getElementById('acct-type').addEventListener('change', syncAddressFieldsVisibility);
 
@@ -299,12 +319,16 @@
         document.getElementById('acct-forecast-threshold').value = account.forecastThresholdCents != null ? (account.forecastThresholdCents / 100).toFixed(2) : '';
         document.getElementById('acct-forecast-color').value = account.forecastThresholdColor || '#B5433A';
         document.getElementById('acct-group').value = account.group || '';
-        populateLinkedAccountSelect(account.id);
-        document.getElementById('acct-linked-account').value = account.linkedAccount || '';
+        populateLinkedAccountsCheckboxes(account.id, account.linkedAccounts);
         document.getElementById('acct-address').value = account.address || '';
         document.getElementById('acct-city').value = account.city || '';
         document.getElementById('acct-state').value = account.state || '';
         document.getElementById('acct-zip').value = account.zip || '';
+        document.getElementById('acct-vehicle-year').value = account.vehicleYear || '';
+        document.getElementById('acct-vehicle-make').value = account.vehicleMake || '';
+        document.getElementById('acct-vehicle-model').value = account.vehicleModel || '';
+        document.getElementById('acct-vehicle-trim').value = account.vehicleTrim || '';
+        document.getElementById('acct-vehicle-vin').value = account.vehicleVin || '';
         syncAddressFieldsVisibility();
         form.hidden = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -323,12 +347,16 @@
         document.getElementById('acct-forecast-threshold').value = '';
         document.getElementById('acct-forecast-color').value = '#B5433A';
         document.getElementById('acct-group').value = '';
-        populateLinkedAccountSelect(null);
-        document.getElementById('acct-linked-account').value = '';
+        populateLinkedAccountsCheckboxes(null, []);
         document.getElementById('acct-address').value = '';
         document.getElementById('acct-city').value = '';
         document.getElementById('acct-state').value = '';
         document.getElementById('acct-zip').value = '';
+        document.getElementById('acct-vehicle-year').value = '';
+        document.getElementById('acct-vehicle-make').value = '';
+        document.getElementById('acct-vehicle-model').value = '';
+        document.getElementById('acct-vehicle-trim').value = '';
+        document.getElementById('acct-vehicle-vin').value = '';
         syncAddressFieldsVisibility();
         form.hidden = true;
     }
@@ -358,11 +386,16 @@
             forecastThresholdColor: document.getElementById('acct-forecast-color').value,
             onBudget: document.getElementById('acct-on-budget').checked,
             group: document.getElementById('acct-group').value || null,
-            linkedAccount: document.getElementById('acct-linked-account').value || null,
+            linkedAccounts: [...document.querySelectorAll('.linked-account-checkbox:checked')].map(cb => cb.value),
             address: document.getElementById('acct-address').value.trim(),
             city: document.getElementById('acct-city').value.trim(),
             state: document.getElementById('acct-state').value.trim(),
-            zip: document.getElementById('acct-zip').value.trim()
+            zip: document.getElementById('acct-zip').value.trim(),
+            vehicleYear: document.getElementById('acct-vehicle-year').value.trim(),
+            vehicleMake: document.getElementById('acct-vehicle-make').value.trim(),
+            vehicleModel: document.getElementById('acct-vehicle-model').value.trim(),
+            vehicleTrim: document.getElementById('acct-vehicle-trim').value.trim(),
+            vehicleVin: document.getElementById('acct-vehicle-vin').value.trim()
         };
         if (editingId) body.closed = document.getElementById('acct-closed').checked;
 
@@ -593,10 +626,16 @@
 
     // loadGroups() before load()/openEditFromQueryParam() — both populate
     // #acct-group's selected value, which only sticks once its <option>s
-    // from loadGroups() actually exist.
+    // from loadGroups() actually exist. load() is also awaited (not just
+    // fired) before openEditFromQueryParam() — the deep-link edit flow
+    // (register page's "Account settings" button, ?edit=<id>) calls
+    // startEdit() straight away, which needs currentAccounts already
+    // populated to list every other account in the Linked accounts
+    // checkboxes; without this await it was a race that usually lost,
+    // showing "No other accounts to link yet" even with plenty on hand.
     (async () => {
         await loadGroups();
-        load();
+        await load();
         loadSharedWithMe();
         openEditFromQueryParam();
     })();

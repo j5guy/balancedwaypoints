@@ -50,6 +50,9 @@
     // direct Zillow search link in applyAccessControls below instead of just
     // linking Zillow's homepage.
     let accountAddress = '', accountCity = '', accountState = '', accountZip = '';
+    // Vehicle-only, same idea as the address fields above but for the KBB
+    // deep-link — VIN is the most precise identifier when present.
+    let accountVehicleYear = '', accountVehicleMake = '', accountVehicleModel = '', accountVehicleTrim = '', accountVehicleVin = '';
     // Set from the account itself (see loadReferenceData) rather than a
     // register/user preference — same idea as the Dashboard's per-widget
     // forecast threshold, just one persistent value per account (see
@@ -67,11 +70,14 @@
     // not real bank activity — Payee/Category/Tags/Cleared don't mean
     // anything for "the house is now worth $410k", so they're force-hidden
     // here regardless of the user's own saved column preferences (which
-    // stay untouched — see applyColumnPreferences). What's left (Date,
-    // Notes, Amount, Balance) is exactly what an occasional value-update
-    // entry needs: when, why, the change, and the running total.
+    // stay untouched — see applyColumnPreferences). Balance is hidden too:
+    // since Amount is entered as the new value itself (not a change — see
+    // the qa-add-btn handler), the running Balance column would just be a
+    // duplicate of what's already in Amount on every row. What's left
+    // (Date, Notes, Amount) is exactly what an occasional value-update
+    // entry needs: when, why, and the new value.
     const ASSET_TYPES = ['home', 'vehicle'];
-    const ASSET_HIDDEN_COLUMNS = ['payee', 'category', 'tags', 'cleared'];
+    const ASSET_HIDDEN_COLUMNS = ['payee', 'category', 'tags', 'cleared', 'balance'];
     // Where to suggest checking a current estimate from — shown as a link
     // in the instructions card above the table (see applyAccessControls
     // below and accounts/show.ejs's #asset-instructions-card). A Home
@@ -87,9 +93,32 @@
                 : { label: 'Zillow', url: 'https://www.zillow.com/' };
         }
         if (accountType === 'vehicle') {
-            return { label: 'Autotrader', url: 'https://www.autotrader.com/car-value-appraiser' };
+            // KBB has no public/documented way to deep-link straight to a
+            // specific vehicle's value from a URL — always the same generic
+            // entry point regardless of what Year/Make/Model/Trim/VIN is on
+            // file (see accountVehicle* above). Those fields are still
+            // useful to have on hand — see the instructions card's caveat
+            // below — just not as URL parameters.
+            return { label: 'KBB', url: 'https://www.kbb.com/whats-my-car-worth/' };
         }
         return null;
+    }
+
+    // Zillow's search-query URL trick (assetValueSource above) reliably
+    // lands on the right property. KBB has nothing equivalent, so a Vehicle
+    // account needs an explicit heads-up that the link is just KBB's front
+    // door — the VIN/year/make/model/trim on file (Accounts page) has to be
+    // typed into their own form by hand, there's no auto-fill. Surfacing
+    // whatever's actually on file here (rather than just saying "enter your
+    // VIN") gives something to copy straight into KBB's form instead of
+    // having to go look it up a second time on the Accounts page.
+    function assetInstructionsCaveat() {
+        if (accountType !== 'vehicle') return '';
+        const vehicleDetails = [accountVehicleYear, accountVehicleMake, accountVehicleModel, accountVehicleTrim].filter(Boolean).join(' ');
+        const onFile = accountVehicleVin
+            ? `VIN: ${accountVehicleVin}`
+            : (vehicleDetails || 'your VIN or vehicle details');
+        return `KBB doesn't support linking straight to a specific vehicle — enter ${onFile} on their site yourself.`;
     }
 
     const COLUMN_LABELS = {
@@ -149,6 +178,11 @@
         accountCity = account.city || '';
         accountState = account.state || '';
         accountZip = account.zip || '';
+        accountVehicleYear = account.vehicleYear || '';
+        accountVehicleMake = account.vehicleMake || '';
+        accountVehicleModel = account.vehicleModel || '';
+        accountVehicleTrim = account.vehicleTrim || '';
+        accountVehicleVin = account.vehicleVin || '';
         forecastThresholdCents = account.forecastThresholdCents != null ? account.forecastThresholdCents : null;
         forecastThresholdColor = account.forecastThresholdColor || '#B5433A';
         accounts = accountsRes.accounts;
@@ -199,6 +233,7 @@
         // confusing/irrelevant for what this account actually tracks.
         const isAsset = ASSET_TYPES.includes(accountType);
         document.getElementById('toggle-advanced-form-link').parentElement.style.display = (readonly || isAsset) ? 'none' : '';
+        document.getElementById('qa-full-form-btn').hidden = isAsset;
         document.querySelector('.quick-add-row').style.display = readonly ? 'none' : '';
         document.getElementById('txn-is-transfer').parentElement.style.display = isShared ? 'none' : '';
         // Same reasoning as the "is transfer" checkbox above — #accounts
@@ -223,21 +258,34 @@
         document.getElementById('sync-now-btn').hidden = !simplefinConnectionId || isShared;
 
         // ── Simplified view for Home/Vehicle accounts — Import (CSV/OFX
-        // bank exports don't apply to a house) and the Forecast chart
-        // (projecting a value that only ever moves via occasional manual
-        // updates isn't meaningful) are both hidden; "Balance" is relabeled
-        // since it's really an estimated value; and an instructions card
-        // offers a jumping-off point to look up a current estimate. Column
-        // hiding itself is applyColumnPreferences' job (called again here
-        // since accountType has just become known).
+        // bank exports don't apply to a house) is hidden; "Balance" is
+        // relabeled since it's really an estimated value; and an
+        // instructions card offers a jumping-off point to look up a current
+        // estimate. The Forecast card is repurposed rather than hidden —
+        // projecting a value that only moves via occasional manual updates
+        // isn't meaningful, but the actual value-over-time history is (see
+        // loadForecastChart's isAsset branch below). Column hiding itself is
+        // applyColumnPreferences' job (called again here since accountType
+        // has just become known).
         document.getElementById('import-link').hidden = isAsset;
-        document.getElementById('register-forecast-card').hidden = isAsset;
+        document.querySelector('#register-forecast-card h3').textContent = isAsset ? 'Value History' : 'Forecast';
         document.getElementById('account-balance-label').textContent = isAsset ? 'Estimated value' : 'Balance';
+        // Amount means "the new estimated value" here, not a change to
+        // apply — see the qa-add-btn handler, which derives the actual
+        // signed transaction delta from this. Relabeled to "Value" in the
+        // header for the same reason (Balance is hidden entirely on an
+        // asset register — see ASSET_HIDDEN_COLUMNS — since it'd just
+        // duplicate this column on every row).
+        document.querySelector('th[data-col="amount"]').textContent = isAsset ? 'Value' : 'Amount';
+        const qaAmount = document.getElementById('qa-amount');
+        qaAmount.placeholder = isAsset ? '17,882.00' : '-45.00';
+        qaAmount.title = isAsset ? 'The new estimated value — not a change amount' : '';
         const instructionsCard = document.getElementById('asset-instructions-card');
         const source = assetValueSource();
         if (isAsset && source) {
             document.getElementById('asset-instructions-link').href = source.url;
             document.getElementById('asset-instructions-link').textContent = source.label;
+            document.getElementById('asset-instructions-caveat').textContent = assetInstructionsCaveat();
             instructionsCard.hidden = false;
         } else {
             instructionsCard.hidden = true;
@@ -571,6 +619,12 @@
     function applyColumnPreferences() {
         const table = document.querySelector('.register-table');
         const isAsset = ASSET_TYPES.includes(accountType);
+        // Switches the table off fixed layout for an asset register (see
+        // public/scss/components/_tables.scss's .asset-register) — fixed
+        // layout's column-width math broke down once 4 of 8 toggleable
+        // columns were hidden at once, overlapping headers and squeezing
+        // the Amount input/Add button into an unusable sliver.
+        table.classList.toggle('asset-register', isAsset);
         Object.keys(COLUMN_LABELS).forEach((key) => {
             const forceHidden = isAsset && ASSET_HIDDEN_COLUMNS.includes(key);
             // Notes is the only column with no fixed width in the colgroup
@@ -597,7 +651,16 @@
     // preferences until "Save settings" is actually clicked — same
     // stage-then-save convention the rest of this panel already follows.
     function renderColumnToggles(order, columns) {
-        document.getElementById('column-toggle-list').innerHTML = order.map((key) => `
+        // Payee/Category/Tags/Cleared are force-hidden on a Home/Vehicle
+        // account regardless of this checkbox (see applyColumnPreferences),
+        // and Notes is force-shown the same way — offering toggles for any
+        // of them here would just be lying about what checking/unchecking
+        // actually does. Trimmed down to the ones that genuinely still
+        // respond to this preference on an asset account: Date, Amount,
+        // Balance.
+        const isAsset = ASSET_TYPES.includes(accountType);
+        const shown = isAsset ? order.filter((key) => !ASSET_HIDDEN_COLUMNS.includes(key) && key !== 'notes') : order;
+        document.getElementById('column-toggle-list').innerHTML = shown.map((key) => `
             <label class="checkbox-row col-toggle-row" draggable="true" data-drag-id="${key}" style="width:auto;">
                 <span class="drag-handle" title="Drag to reorder">⠿</span>
                 <input type="checkbox" class="col-toggle-checkbox" data-col-key="${key}" ${columns[key] ? 'checked' : ''}>
@@ -668,6 +731,10 @@
         document.getElementById('pref-limit-history').checked = preferences.registerHistory.enabled;
         document.getElementById('pref-history-amount').value = preferences.registerHistory.amount;
         document.getElementById('pref-history-unit').value = preferences.registerHistory.unit;
+        // Scheduled transactions (bills, autopay, etc.) don't apply to a
+        // Home/Vehicle account, so the "show upcoming" section has nothing
+        // to offer there — see ASSET_TYPES above.
+        document.getElementById('upcoming-schedule-fields').hidden = ASSET_TYPES.includes(accountType);
         panel.hidden = false;
     });
     document.getElementById('cancel-settings-btn').addEventListener('click', () => {
@@ -1093,7 +1160,11 @@
         }
 
         // "Today" sits at the same junction where the solid past line
-        // meets the dashed projected one.
+        // meets the dashed projected one — meaningless (and skipped below)
+        // when there's no projected segment at all, e.g. a Home/Vehicle
+        // account's pure value-history chart (loadForecastChart's isAsset
+        // branch), which never has a `projected` row to begin with.
+        const hasProjection = firstProjected !== -1;
         const todayX = xAt(pastEnd);
 
         // The first/last labels sit right at the chart's own edges — anchor
@@ -1121,10 +1192,10 @@
                 ${gridLines.join('')}
                 ${dangerHeight > 0 ? `<rect class="forecast-danger-zone" x="${padLeft}" y="${thresholdY}" width="${chartW}" height="${dangerHeight}" style="fill:${thresholdColor};fill-opacity:0.2;"></rect>` : ''}
                 ${dangerHeight > 0 ? `<line class="forecast-threshold-line" x1="${padLeft}" y1="${thresholdY}" x2="${width - padRight}" y2="${thresholdY}" style="stroke:${thresholdColor};stroke-opacity:0.7;"></line>` : ''}
-                <line class="forecast-today-line" x1="${todayX}" y1="${padTop}" x2="${todayX}" y2="${dangerBottom}"></line>
-                <text class="trend-axis-label" x="${todayX}" y="${padTop - 4}" text-anchor="middle">Today</text>
+                ${hasProjection ? `<line class="forecast-today-line" x1="${todayX}" y1="${padTop}" x2="${todayX}" y2="${dangerBottom}"></line>` : ''}
+                ${hasProjection ? `<text class="trend-axis-label" x="${todayX}" y="${padTop - 4}" text-anchor="middle">Today</text>` : ''}
                 <polyline class="forecast-line" points="${pastCoords.join(' ')}"></polyline>
-                <polyline class="forecast-line forecast-line-projected" points="${futureCoords.join(' ')}"></polyline>
+                ${hasProjection ? `<polyline class="forecast-line forecast-line-projected" points="${futureCoords.join(' ')}"></polyline>` : ''}
                 ${markers}
                 ${xLabels}
             </svg>
@@ -1149,16 +1220,32 @@
         if (!forecastExpanded) return;
         const chartEl = document.getElementById('register-forecast-chart');
         try {
-            const hist = preferences.registerHistory || {};
-            const upcoming = preferences.upcomingSchedules || {};
-            const params = new URLSearchParams({
-                account: accountId,
-                pastAmount: hist.amount || 3,
-                pastUnit: hist.unit || 'months',
-                futureAmount: upcoming.amount || 14,
-                futureUnit: upcoming.unit || 'days'
-            });
-            const { rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`);
+            let rows;
+            if (ASSET_TYPES.includes(accountType)) {
+                // A Home/Vehicle account has nothing to project — it only
+                // ever moves via a manual value entry (see the quick-add
+                // handler above), never a schedule or a forecast horizon.
+                // What's actually useful here is the history of estimates
+                // already sitting in currentTransactions/currentBalanceById
+                // (populated by loadTransactions, no separate fetch needed)
+                // — reusing the same SVG renderer below with no `projected`
+                // rows at all, which it already handles as a plain past-only
+                // line (see buildRegisterForecastSvg's pastEnd/futureCoords).
+                rows = [...currentTransactions]
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(t => ({ date: t.date, balanceCents: currentBalanceById.get(t.id) }));
+            } else {
+                const hist = preferences.registerHistory || {};
+                const upcoming = preferences.upcomingSchedules || {};
+                const params = new URLSearchParams({
+                    account: accountId,
+                    pastAmount: hist.amount || 3,
+                    pastUnit: hist.unit || 'months',
+                    futureAmount: upcoming.amount || 14,
+                    futureUnit: upcoming.unit || 'days'
+                });
+                ({ rows } = await window.BWApi.apiFetch(`/api/reports/forecast?${params.toString()}`));
+            }
             const effectiveThresholdCents = SUPPRESS_WARNING_TYPES.includes(accountType) ? null : forecastThresholdCents;
             const { html, columns, bounds } = buildRegisterForecastSvg(rows, effectiveThresholdCents, forecastThresholdColor);
             chartEl.innerHTML = html;
@@ -1666,9 +1753,24 @@
     document.getElementById('qa-add-btn').addEventListener('click', async () => {
         clearError();
         const date = document.getElementById('qa-date').value;
-        const amountCents = window.BWMoney.toCents(document.getElementById('qa-amount').value || 0);
+        const rawAmount = document.getElementById('qa-amount').value.trim();
         if (!date) return showError(new Error('Date is required'));
-        if (!amountCents) return showError(new Error('Amount is required'));
+        if (!rawAmount) return showError(new Error(ASSET_TYPES.includes(accountType) ? 'Estimated value is required' : 'Amount is required'));
+
+        // On a Home/Vehicle account, what's typed here is the new estimated
+        // value itself, not a change to apply — "$16,999" replaces the
+        // previous estimate rather than adding to it. The underlying
+        // transaction still has to carry a signed delta (that's what every
+        // balance calculation in the app sums), so it's derived here:
+        // exactly enough change from the current balance to land on the
+        // value actually typed. A $0 delta (re-confirming the same
+        // estimate) is allowed for an asset entry, unlike a real
+        // transaction where that would just be a no-op.
+        const isAsset = ASSET_TYPES.includes(accountType);
+        const amountCents = isAsset
+            ? window.BWMoney.toCents(rawAmount) - currentBalanceCents
+            : window.BWMoney.toCents(rawAmount);
+        if (!isAsset && !amountCents) return showError(new Error('Amount is required'));
 
         try {
             const payeeId = await resolvePayee(document.getElementById('qa-payee').value.trim());

@@ -278,6 +278,14 @@
             currentAccounts.filter(a => a.id !== excludeId).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
+    // Address/City/State only mean anything for a Home account (see
+    // register.js's Zillow deep-link) — shown only when that type is
+    // selected, toggled live as the Type select changes.
+    function syncAddressFieldsVisibility() {
+        document.getElementById('acct-address-group').hidden = document.getElementById('acct-type').value !== 'home';
+    }
+    document.getElementById('acct-type').addEventListener('change', syncAddressFieldsVisibility);
+
     function startEdit(account) {
         editingId = account.id;
         document.getElementById('account-form-title').textContent = `Edit ${account.name}`;
@@ -293,6 +301,11 @@
         document.getElementById('acct-group').value = account.group || '';
         populateLinkedAccountSelect(account.id);
         document.getElementById('acct-linked-account').value = account.linkedAccount || '';
+        document.getElementById('acct-address').value = account.address || '';
+        document.getElementById('acct-city').value = account.city || '';
+        document.getElementById('acct-state').value = account.state || '';
+        document.getElementById('acct-zip').value = account.zip || '';
+        syncAddressFieldsVisibility();
         form.hidden = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -312,6 +325,11 @@
         document.getElementById('acct-group').value = '';
         populateLinkedAccountSelect(null);
         document.getElementById('acct-linked-account').value = '';
+        document.getElementById('acct-address').value = '';
+        document.getElementById('acct-city').value = '';
+        document.getElementById('acct-state').value = '';
+        document.getElementById('acct-zip').value = '';
+        syncAddressFieldsVisibility();
         form.hidden = true;
     }
 
@@ -340,7 +358,11 @@
             forecastThresholdColor: document.getElementById('acct-forecast-color').value,
             onBudget: document.getElementById('acct-on-budget').checked,
             group: document.getElementById('acct-group').value || null,
-            linkedAccount: document.getElementById('acct-linked-account').value || null
+            linkedAccount: document.getElementById('acct-linked-account').value || null,
+            address: document.getElementById('acct-address').value.trim(),
+            city: document.getElementById('acct-city').value.trim(),
+            state: document.getElementById('acct-state').value.trim(),
+            zip: document.getElementById('acct-zip').value.trim()
         };
         if (editingId) body.closed = document.getElementById('acct-closed').checked;
 

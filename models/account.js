@@ -40,6 +40,14 @@ const accountSchema = new mongoose.Schema({
     // envelope budgeting or the Net Worth report, which already sum every
     // account's own balance regardless of any pairing.
     linkedAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
+    // Only meaningful for a "home" account — lets the register build a
+    // direct Zillow search link for this specific property (see
+    // public/js/register.js) instead of just Zillow's homepage. Harmless,
+    // unused fields on every other account type.
+    address: { type: String, trim: true, default: '' },
+    city: { type: String, trim: true, default: '' },
+    state: { type: String, trim: true, default: '' },
+    zip: { type: String, trim: true, default: '' },
     // Optional bank sync link (see models/simplefinConnection.js and
     // services/simplefin/) — both null for a normal manually-managed
     // account, the default and by far the common case. When set, the

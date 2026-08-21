@@ -616,7 +616,16 @@
     // preferences until "Save settings" is actually clicked — same
     // stage-then-save convention the rest of this panel already follows.
     function renderColumnToggles(order, columns) {
-        document.getElementById('column-toggle-list').innerHTML = order.map((key) => `
+        // Payee/Category/Tags/Cleared are force-hidden on a Home/Vehicle
+        // account regardless of this checkbox (see applyColumnPreferences),
+        // and Notes is force-shown the same way — offering toggles for any
+        // of them here would just be lying about what checking/unchecking
+        // actually does. Trimmed down to the ones that genuinely still
+        // respond to this preference on an asset account: Date, Amount,
+        // Balance.
+        const isAsset = ASSET_TYPES.includes(accountType);
+        const shown = isAsset ? order.filter((key) => !ASSET_HIDDEN_COLUMNS.includes(key) && key !== 'notes') : order;
+        document.getElementById('column-toggle-list').innerHTML = shown.map((key) => `
             <label class="checkbox-row col-toggle-row" draggable="true" data-drag-id="${key}" style="width:auto;">
                 <span class="drag-handle" title="Drag to reorder">⠿</span>
                 <input type="checkbox" class="col-toggle-checkbox" data-col-key="${key}" ${columns[key] ? 'checked' : ''}>
@@ -687,6 +696,10 @@
         document.getElementById('pref-limit-history').checked = preferences.registerHistory.enabled;
         document.getElementById('pref-history-amount').value = preferences.registerHistory.amount;
         document.getElementById('pref-history-unit').value = preferences.registerHistory.unit;
+        // Scheduled transactions (bills, autopay, etc.) don't apply to a
+        // Home/Vehicle account, so the "show upcoming" section has nothing
+        // to offer there — see ASSET_TYPES above.
+        document.getElementById('upcoming-schedule-fields').hidden = ASSET_TYPES.includes(accountType);
         panel.hidden = false;
     });
     document.getElementById('cancel-settings-btn').addEventListener('click', () => {

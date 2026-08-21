@@ -65,22 +65,24 @@
             <div class="form-row" id="column-toggle-list"></div>
             <button type="button" class="btn btn-secondary btn-sm" id="reset-columns-btn" style="margin-top:8px;">Reset columns to default</button>
         </div>
-        <div class="checkbox-row form-group">
-            <input type="checkbox" id="pref-show-upcoming">
-            <label for="pref-show-upcoming">Show upcoming scheduled transactions in this register</label>
-        </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="pref-upcoming-amount">Show upcoming within</label>
-                <input type="number" id="pref-upcoming-amount" min="1" style="max-width:100px;">
+        <div id="upcoming-schedule-fields">
+            <div class="checkbox-row form-group">
+                <input type="checkbox" id="pref-show-upcoming">
+                <label for="pref-show-upcoming">Show upcoming scheduled transactions in this register</label>
             </div>
-            <div class="form-group">
-                <label for="pref-upcoming-unit">&nbsp;</label>
-                <select id="pref-upcoming-unit">
-                    <option value="days">Day(s)</option>
-                    <option value="months">Month(s)</option>
-                    <option value="years">Year(s)</option>
-                </select>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pref-upcoming-amount">Show upcoming within</label>
+                    <input type="number" id="pref-upcoming-amount" min="1" style="max-width:100px;">
+                </div>
+                <div class="form-group">
+                    <label for="pref-upcoming-unit">&nbsp;</label>
+                    <select id="pref-upcoming-unit">
+                        <option value="days">Day(s)</option>
+                        <option value="months">Month(s)</option>
+                        <option value="years">Year(s)</option>
+                    </select>
+                </div>
             </div>
         </div>
         <div class="checkbox-row form-group">

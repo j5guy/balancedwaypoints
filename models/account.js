@@ -48,6 +48,15 @@ const accountSchema = new mongoose.Schema({
     city: { type: String, trim: true, default: '' },
     state: { type: String, trim: true, default: '' },
     zip: { type: String, trim: true, default: '' },
+    // Only meaningful for a "vehicle" account — lets the register build a
+    // more precise appraisal-site link (see public/js/register.js) than a
+    // generic "look it up yourself" page. Harmless, unused fields on every
+    // other account type.
+    vehicleYear: { type: String, trim: true, default: '' },
+    vehicleMake: { type: String, trim: true, default: '' },
+    vehicleModel: { type: String, trim: true, default: '' },
+    vehicleTrim: { type: String, trim: true, default: '' },
+    vehicleVin: { type: String, trim: true, uppercase: true, default: '' },
     // Optional bank sync link (see models/simplefinConnection.js and
     // services/simplefin/) — both null for a normal manually-managed
     // account, the default and by far the common case. When set, the

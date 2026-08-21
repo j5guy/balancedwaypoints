@@ -50,6 +50,9 @@
     // direct Zillow search link in applyAccessControls below instead of just
     // linking Zillow's homepage.
     let accountAddress = '', accountCity = '', accountState = '', accountZip = '';
+    // Vehicle-only, same idea as the address fields above but for the KBB
+    // deep-link — VIN is the most precise identifier when present.
+    let accountVehicleYear = '', accountVehicleMake = '', accountVehicleModel = '', accountVehicleTrim = '', accountVehicleVin = '';
     // Set from the account itself (see loadReferenceData) rather than a
     // register/user preference — same idea as the Dashboard's per-widget
     // forecast threshold, just one persistent value per account (see
@@ -87,7 +90,18 @@
                 : { label: 'Zillow', url: 'https://www.zillow.com/' };
         }
         if (accountType === 'vehicle') {
-            return { label: 'Autotrader', url: 'https://www.autotrader.com/car-value-appraiser' };
+            // VIN is the most precise identifier when present — falls back
+            // to year/make/model/trim, then to KBB's generic entry point if
+            // none of that's been filled in yet.
+            if (accountVehicleVin) {
+                return { label: 'KBB', url: `https://www.kbb.com/whats-my-car-worth/?vin=${encodeURIComponent(accountVehicleVin)}` };
+            }
+            if (accountVehicleYear && accountVehicleMake && accountVehicleModel) {
+                const slug = (s) => encodeURIComponent(s.trim().toLowerCase().replace(/\s+/g, '-'));
+                const path = [accountVehicleMake, accountVehicleModel, accountVehicleYear, accountVehicleTrim].filter(Boolean).map(slug).join('/');
+                return { label: 'KBB', url: `https://www.kbb.com/${path}/` };
+            }
+            return { label: 'KBB', url: 'https://www.kbb.com/whats-my-car-worth/' };
         }
         return null;
     }
@@ -149,6 +163,11 @@
         accountCity = account.city || '';
         accountState = account.state || '';
         accountZip = account.zip || '';
+        accountVehicleYear = account.vehicleYear || '';
+        accountVehicleMake = account.vehicleMake || '';
+        accountVehicleModel = account.vehicleModel || '';
+        accountVehicleTrim = account.vehicleTrim || '';
+        accountVehicleVin = account.vehicleVin || '';
         forecastThresholdCents = account.forecastThresholdCents != null ? account.forecastThresholdCents : null;
         forecastThresholdColor = account.forecastThresholdColor || '#B5433A';
         accounts = accountsRes.accounts;

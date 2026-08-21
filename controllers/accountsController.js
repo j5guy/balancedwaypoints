@@ -46,6 +46,11 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         city: account.city || '',
         state: account.state || '',
         zip: account.zip || '',
+        vehicleYear: account.vehicleYear || '',
+        vehicleMake: account.vehicleMake || '',
+        vehicleModel: account.vehicleModel || '',
+        vehicleTrim: account.vehicleTrim || '',
+        vehicleVin: account.vehicleVin || '',
         balanceCents: balanceCents != null ? balanceCents : undefined,
         // 'owner' unless this came through the shared-with-me path — lets
         // the register (public/js/register.js) know whether to show write
@@ -107,7 +112,10 @@ async function get(req, res) {
 }
 
 async function create(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group, linkedAccount, address, city, state, zip } = req.body || {};
+    const {
+        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group, linkedAccount,
+        address, city, state, zip, vehicleYear, vehicleMake, vehicleModel, vehicleTrim, vehicleVin
+    } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
@@ -133,7 +141,12 @@ async function create(req, res) {
         address: address || '',
         city: city || '',
         state: state || '',
-        zip: zip || ''
+        zip: zip || '',
+        vehicleYear: vehicleYear || '',
+        vehicleMake: vehicleMake || '',
+        vehicleModel: vehicleModel || '',
+        vehicleTrim: vehicleTrim || '',
+        vehicleVin: vehicleVin || ''
     });
     res.status(201).json(serialize({ account, balanceCents: account.startingBalanceCents }));
 }
@@ -143,7 +156,10 @@ async function create(req, res) {
 // forceRemove below, deliberately keep the plain req.session.userId owner
 // check rather than resolveAccountAccess.
 async function update(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group, linkedAccount, address, city, state, zip } = req.body || {};
+    const {
+        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group, linkedAccount,
+        address, city, state, zip, vehicleYear, vehicleMake, vehicleModel, vehicleTrim, vehicleVin
+    } = req.body || {};
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
     let groupId, linkedAccountId;
@@ -170,6 +186,11 @@ async function update(req, res) {
     if (city !== undefined) data.city = city;
     if (state !== undefined) data.state = state;
     if (zip !== undefined) data.zip = zip;
+    if (vehicleYear !== undefined) data.vehicleYear = vehicleYear;
+    if (vehicleMake !== undefined) data.vehicleMake = vehicleMake;
+    if (vehicleModel !== undefined) data.vehicleModel = vehicleModel;
+    if (vehicleTrim !== undefined) data.vehicleTrim = vehicleTrim;
+    if (vehicleVin !== undefined) data.vehicleVin = vehicleVin;
 
     const account = await accounts.update(req.params.id, data, req.session.userId);
     if (!account) return res.status(404).json({ error: 'Not found' });

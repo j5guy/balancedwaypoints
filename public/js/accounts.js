@@ -278,11 +278,14 @@
             currentAccounts.filter(a => a.id !== excludeId).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
 
-    // Address/City/State only mean anything for a Home account (see
-    // register.js's Zillow deep-link) — shown only when that type is
-    // selected, toggled live as the Type select changes.
+    // Address/City/State/ZIP only mean anything for a Home account, and
+    // Year/Make/Model/Trim/VIN only for a Vehicle one (see register.js's
+    // KBB/Zillow deep-links) — each group shown only when its matching type
+    // is selected, toggled live as the Type select changes.
     function syncAddressFieldsVisibility() {
-        document.getElementById('acct-address-group').hidden = document.getElementById('acct-type').value !== 'home';
+        const type = document.getElementById('acct-type').value;
+        document.getElementById('acct-address-group').hidden = type !== 'home';
+        document.getElementById('acct-vehicle-group').hidden = type !== 'vehicle';
     }
     document.getElementById('acct-type').addEventListener('change', syncAddressFieldsVisibility);
 
@@ -305,6 +308,11 @@
         document.getElementById('acct-city').value = account.city || '';
         document.getElementById('acct-state').value = account.state || '';
         document.getElementById('acct-zip').value = account.zip || '';
+        document.getElementById('acct-vehicle-year').value = account.vehicleYear || '';
+        document.getElementById('acct-vehicle-make').value = account.vehicleMake || '';
+        document.getElementById('acct-vehicle-model').value = account.vehicleModel || '';
+        document.getElementById('acct-vehicle-trim').value = account.vehicleTrim || '';
+        document.getElementById('acct-vehicle-vin').value = account.vehicleVin || '';
         syncAddressFieldsVisibility();
         form.hidden = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -329,6 +337,11 @@
         document.getElementById('acct-city').value = '';
         document.getElementById('acct-state').value = '';
         document.getElementById('acct-zip').value = '';
+        document.getElementById('acct-vehicle-year').value = '';
+        document.getElementById('acct-vehicle-make').value = '';
+        document.getElementById('acct-vehicle-model').value = '';
+        document.getElementById('acct-vehicle-trim').value = '';
+        document.getElementById('acct-vehicle-vin').value = '';
         syncAddressFieldsVisibility();
         form.hidden = true;
     }
@@ -362,7 +375,12 @@
             address: document.getElementById('acct-address').value.trim(),
             city: document.getElementById('acct-city').value.trim(),
             state: document.getElementById('acct-state').value.trim(),
-            zip: document.getElementById('acct-zip').value.trim()
+            zip: document.getElementById('acct-zip').value.trim(),
+            vehicleYear: document.getElementById('acct-vehicle-year').value.trim(),
+            vehicleMake: document.getElementById('acct-vehicle-make').value.trim(),
+            vehicleModel: document.getElementById('acct-vehicle-model').value.trim(),
+            vehicleTrim: document.getElementById('acct-vehicle-trim').value.trim(),
+            vehicleVin: document.getElementById('acct-vehicle-vin').value.trim()
         };
         if (editingId) body.closed = document.getElementById('acct-closed').checked;
 

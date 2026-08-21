@@ -218,6 +218,7 @@
         // confusing/irrelevant for what this account actually tracks.
         const isAsset = ASSET_TYPES.includes(accountType);
         document.getElementById('toggle-advanced-form-link').parentElement.style.display = (readonly || isAsset) ? 'none' : '';
+        document.getElementById('qa-full-form-btn').hidden = isAsset;
         document.querySelector('.quick-add-row').style.display = readonly ? 'none' : '';
         document.getElementById('txn-is-transfer').parentElement.style.display = isShared ? 'none' : '';
         // Same reasoning as the "is transfer" checkbox above — #accounts

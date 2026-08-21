@@ -99,6 +99,25 @@ table.register-table {
         td.wrap, th[data-col='notes'] {
             min-width: 220px;
         }
+
+        td[data-col='amount'], th[data-col='amount'],
+        td[data-col='balance'], th[data-col='balance'] {
+            min-width: 100px;
+        }
+
+        // Auto layout sizes each column from its content's own intrinsic/
+        // preferred width — a native <input type="date"> renders wide
+        // regardless of the width:100% every other input gets (see
+        // components/_forms.scss), since a date picker needs room for
+        // mm/dd/yyyy plus the calendar icon. That skewed the whole row's
+        // distribution: Date ballooned while Notes/Amount, whose inputs
+        // have a much smaller natural footprint, got squeezed down to
+        // almost nothing. Capping just the date input's own rendered width
+        // directly fixes the column it was driving, freeing that space for
+        // the min-widths above to actually take effect.
+        input[type='date'] {
+            max-width: 130px;
+        }
     }
 }
 

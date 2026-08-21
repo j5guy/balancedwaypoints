@@ -46,6 +46,11 @@ const findById = (id, ownerId) => Transaction.findOne({ _id: id, owner: ownerId 
 // be used until access — and the real owner — is known).
 const findByIdRaw = (id) => Transaction.findById(id).populate(populateOpts).exec();
 const findByImportedIds = (importedIds, ownerId) => Transaction.find({ owner: ownerId, importedId: { $in: importedIds } }).exec();
+// For services/simplefin/syncService.js's first-sync starting-balance
+// reconciliation — needs to know whether an account had any activity at all
+// before this sync's own imports land, so it can't just check the post-
+// import count.
+const existsForAccount = (accountId, ownerId) => Transaction.exists({ owner: ownerId, account: accountId });
 
 const create = (data) => Transaction.create(data);
 const update = (id, data, ownerId) => Transaction.findOneAndUpdate({ _id: id, owner: ownerId }, data, { new: true, runValidators: true }).populate(populateOpts).exec();
@@ -136,6 +141,6 @@ const sumForCategoryMonth = async (categoryId, month, ownerId) => {
 };
 
 module.exports = {
-    list, findById, findByIdRaw, findByImportedIds, create, update, remove,
+    list, findById, findByIdRaw, findByImportedIds, existsForAccount, create, update, remove,
     createTransfer, removeTransferPair, createAutopayOccurrence, reorder, sumForAccount, sumForCategoryMonth
 };

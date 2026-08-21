@@ -70,11 +70,32 @@ async function syncConnection(connection) {
                 continue;
             }
 
+            // Only the backfill window is capped (INITIAL_BACKFILL_DAYS
+            // above) — the account's own ledger balance is startingBalanceCents
+            // plus every imported transaction, with nothing to represent
+            // whatever happened before that window. For a brand-new account
+            // (no prior transactions, still at the default $0 starting
+            // balance — the common case when "link" created it fresh, see
+            // controllers/simplefinController.js) that leaves the register
+            // short by the account's entire pre-backfill history, even
+            // though the bank-reported balance above it looks right.
+            // Reconciled below once this sync's rows are known: starting
+            // balance := bank's current balance minus the transactions just
+            // imported, so the two agree immediately instead of drifting by
+            // whatever activity fell outside the window. Skipped for an
+            // account with any history already (linking an existing,
+            // already-in-use account to bank sync for the first time) or a
+            // starting balance the user already set on purpose — either way
+            // this isn't ours to overwrite.
+            const eligibleForReconcile = localAccount.startingBalanceCents === 0
+                && !(await transactionsDb.existsForAccount(localAccount._id, ownerId));
+
             const { rows, errors } = parseRows(remote, localAccount._id);
             warnings.push(...errors.map(e => `"${localAccount.name}": ${e}`));
 
             const { newRows } = await partitionNewRows(rows, transactionsDb, ownerId);
             let sortOrder = Date.now();
+            let importedCentsSum = 0;
             for (const row of newRows) {
                 try {
                     const suggestion = await applyRulesResolved(activeRules, { payee: row.payeeName, notes: row.notes, amountCents: row.amountCents }, ownerId);
@@ -92,6 +113,7 @@ async function syncConnection(connection) {
                         sortOrder: sortOrder--
                     });
                     created++;
+                    importedCentsSum += row.amountCents;
                 } catch (err) {
                     logger.error(`SimpleFIN sync: failed to create transaction for "${localAccount.name}" (${row.importedId}): ${err.message}`);
                     warnings.push(`"${localAccount.name}": couldn't save a transaction dated ${row.date.slice(0, 10)} — ${err.message}`);
@@ -99,10 +121,14 @@ async function syncConnection(connection) {
             }
 
             if (remote.balance != null) {
-                await accountsDb.update(localAccount._id, {
+                const accountUpdate = {
                     simplefinBalanceCents: Math.round(parseFloat(remote.balance) * 100),
                     simplefinBalanceDate: remote['balance-date'] ? new Date(remote['balance-date'] * 1000) : new Date()
-                }, ownerId);
+                };
+                if (eligibleForReconcile) {
+                    accountUpdate.startingBalanceCents = accountUpdate.simplefinBalanceCents - importedCentsSum;
+                }
+                await accountsDb.update(localAccount._id, accountUpdate, ownerId);
             }
         }
 

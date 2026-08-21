@@ -136,6 +136,26 @@
     }
 }
 
+// The menu's one non-navigating item (Sync All) — a <button>, not an <a>,
+// reusing .nav-link's layout/typography but with the hover fill turned off.
+// A solid highlight reads fine on a link that takes you somewhere; on an
+// action button sitting in a list of links it made the text hard to read
+// against the fill color instead of clearly indicating "you can click this".
+.nav-link-btn {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+
+    &:hover {
+        background: none;
+        text-decoration: underline;
+    }
+}
+
 .btn-nav-logout {
     background: transparent;
     border: none;

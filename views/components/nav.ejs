@@ -28,7 +28,7 @@
                 bank sync at all, so this stays out of the menu for them
                 rather than always showing an action that'd just 404-ish
                 no-op. See controllers/simplefinController.js's syncAll. %>
-            <button type="button" id="nav-sync-all-btn" class="nav-link" style="text-align:left;background:none;border:none;cursor:pointer;font:inherit;width:100%;" hidden>🔄 Sync All</button>
+            <button type="button" id="nav-sync-all-btn" class="nav-link nav-link-btn" hidden>🔄 Sync All</button>
             <a href="/account" class="nav-link<%= locals.path && locals.path.startsWith('/account') ? ' active' : '' %>">My Account</a>
             <% if (locals.isAdmin) { %>
                 <a href="/admin" class="nav-link<%= locals.path && locals.path.startsWith('/admin') ? ' active' : '' %>">Admin</a>

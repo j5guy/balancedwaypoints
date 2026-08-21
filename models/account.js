@@ -30,16 +30,18 @@ const accountSchema = new mongoose.Schema({
     // is a fully-supported "ungrouped" state, never fed into balance math or
     // envelope budgeting.
     group: { type: mongoose.Schema.Types.ObjectId, ref: 'AccountGroup', default: null },
-    // Purely organizational pairing — e.g. a "home" (or "vehicle") asset
-    // account pointed at the "loan" account financing it, so the Accounts
-    // page and register can show combined equity (asset balance + loan's
-    // own negative balance) alongside the two accounts. One-directional in
-    // storage (only the asset side typically sets this), but shown from
-    // either account's page — see public/js/accounts.js and register.js,
-    // which both scan for a partner in either direction. Never fed into
-    // envelope budgeting or the Net Worth report, which already sum every
-    // account's own balance regardless of any pairing.
-    linkedAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
+    // Purely organizational pairing — e.g. a "home" asset account pointed
+    // at both the first mortgage AND a HELOC/second mortgage financing it,
+    // so the Accounts page can show combined equity (asset balance + every
+    // linked loan's own negative balance) alongside the accounts. A plain
+    // array rather than a set of named slots (mortgage/HELOC/etc.) since
+    // there's no fixed number or kind of account someone might want to pair
+    // with an asset. One-directional in storage (only the asset side
+    // typically sets this), but shown from either side — see
+    // public/js/accounts.js, which scans for partners in both directions.
+    // Never fed into envelope budgeting or the Net Worth report, which
+    // already sum every account's own balance regardless of any pairing.
+    linkedAccounts: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Account' }], default: [] },
     // Only meaningful for a "home" account — lets the register build a
     // direct Zillow search link for this specific property (see
     // public/js/register.js) instead of just Zillow's homepage. Harmless,

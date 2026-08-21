@@ -93,20 +93,32 @@
                 : { label: 'Zillow', url: 'https://www.zillow.com/' };
         }
         if (accountType === 'vehicle') {
-            // VIN is the most precise identifier when present — falls back
-            // to year/make/model/trim, then to KBB's generic entry point if
-            // none of that's been filled in yet.
-            if (accountVehicleVin) {
-                return { label: 'KBB', url: `https://www.kbb.com/whats-my-car-worth/?vin=${encodeURIComponent(accountVehicleVin)}` };
-            }
-            if (accountVehicleYear && accountVehicleMake && accountVehicleModel) {
-                const slug = (s) => encodeURIComponent(s.trim().toLowerCase().replace(/\s+/g, '-'));
-                const path = [accountVehicleMake, accountVehicleModel, accountVehicleYear, accountVehicleTrim].filter(Boolean).map(slug).join('/');
-                return { label: 'KBB', url: `https://www.kbb.com/${path}/` };
-            }
+            // KBB has no public/documented way to deep-link straight to a
+            // specific vehicle's value from a URL — always the same generic
+            // entry point regardless of what Year/Make/Model/Trim/VIN is on
+            // file (see accountVehicle* above). Those fields are still
+            // useful to have on hand — see the instructions card's caveat
+            // below — just not as URL parameters.
             return { label: 'KBB', url: 'https://www.kbb.com/whats-my-car-worth/' };
         }
         return null;
+    }
+
+    // Zillow's search-query URL trick (assetValueSource above) reliably
+    // lands on the right property. KBB has nothing equivalent, so a Vehicle
+    // account needs an explicit heads-up that the link is just KBB's front
+    // door — the VIN/year/make/model/trim on file (Accounts page) has to be
+    // typed into their own form by hand, there's no auto-fill. Surfacing
+    // whatever's actually on file here (rather than just saying "enter your
+    // VIN") gives something to copy straight into KBB's form instead of
+    // having to go look it up a second time on the Accounts page.
+    function assetInstructionsCaveat() {
+        if (accountType !== 'vehicle') return '';
+        const vehicleDetails = [accountVehicleYear, accountVehicleMake, accountVehicleModel, accountVehicleTrim].filter(Boolean).join(' ');
+        const onFile = accountVehicleVin
+            ? `VIN: ${accountVehicleVin}`
+            : (vehicleDetails || 'your VIN or vehicle details');
+        return `KBB doesn't support linking straight to a specific vehicle — enter ${onFile} on their site yourself.`;
     }
 
     const COLUMN_LABELS = {
@@ -273,6 +285,7 @@
         if (isAsset && source) {
             document.getElementById('asset-instructions-link').href = source.url;
             document.getElementById('asset-instructions-link').textContent = source.label;
+            document.getElementById('asset-instructions-caveat').textContent = assetInstructionsCaveat();
             instructionsCard.hidden = false;
         } else {
             instructionsCard.hidden = true;

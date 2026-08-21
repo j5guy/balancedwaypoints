@@ -15,17 +15,24 @@ async function resolveGroupId(group, ownerId) {
     return found._id;
 }
 
-// Same shape as resolveGroupId above — null clears the pairing, any other
-// value must resolve to another account this owner actually has.
-// `excludeId` (only set on update, never create) blocks pointing an account
-// at itself.
-async function resolveLinkedAccountId(linkedAccount, ownerId, excludeId) {
-    if (linkedAccount === undefined) return undefined;
-    if (linkedAccount === null || linkedAccount === '') return null;
-    if (excludeId && String(linkedAccount) === String(excludeId)) throw new Error("An account can't be linked to itself");
-    const found = await accounts.findById(linkedAccount, ownerId);
-    if (!found) throw new Error('Invalid linked account');
-    return found._id;
+// Same idea as resolveGroupId above but for a list — an empty array clears
+// every pairing, any other value must be an array of ids this owner
+// actually has accounts for. `excludeId` (only set on update, never create)
+// blocks pointing an account at itself. Dedupes silently rather than
+// erroring — the client always sends whatever's checked, and a double-
+// submit or a stale checkbox state shouldn't be a hard failure.
+async function resolveLinkedAccountIds(linkedAccounts, ownerId, excludeId) {
+    if (linkedAccounts === undefined) return undefined;
+    if (!Array.isArray(linkedAccounts)) throw new Error('linkedAccounts must be an array');
+    const uniqueIds = [...new Set(linkedAccounts.filter(Boolean).map(String))];
+    if (excludeId && uniqueIds.includes(String(excludeId))) throw new Error("An account can't be linked to itself");
+    const resolved = [];
+    for (const id of uniqueIds) {
+        const found = await accounts.findById(id, ownerId);
+        if (!found) throw new Error('Invalid linked account');
+        resolved.push(found._id);
+    }
+    return resolved;
 }
 
 function serialize({ account, balanceCents, role, ownerName, ownerId, shareId }) {
@@ -41,7 +48,7 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         notes: account.notes,
         sortOrder: account.sortOrder,
         group: account.group || undefined,
-        linkedAccount: account.linkedAccount || undefined,
+        linkedAccounts: account.linkedAccounts || [],
         address: account.address || '',
         city: account.city || '',
         state: account.state || '',
@@ -113,16 +120,16 @@ async function get(req, res) {
 
 async function create(req, res) {
     const {
-        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group, linkedAccount,
+        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group, linkedAccounts,
         address, city, state, zip, vehicleYear, vehicleMake, vehicleModel, vehicleTrim, vehicleVin
     } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
-    let groupId, linkedAccountId;
+    let groupId, linkedAccountIds;
     try {
         groupId = await resolveGroupId(group, req.session.userId);
-        linkedAccountId = await resolveLinkedAccountId(linkedAccount, req.session.userId);
+        linkedAccountIds = await resolveLinkedAccountIds(linkedAccounts, req.session.userId);
     } catch (err) {
         return res.status(400).json({ error: err.message });
     }
@@ -137,7 +144,7 @@ async function create(req, res) {
         forecastThresholdColor: forecastThresholdColor || '#B5433A',
         notes: notes || '',
         group: groupId || null,
-        linkedAccount: linkedAccountId || null,
+        linkedAccounts: linkedAccountIds || [],
         address: address || '',
         city: city || '',
         state: state || '',
@@ -157,15 +164,15 @@ async function create(req, res) {
 // check rather than resolveAccountAccess.
 async function update(req, res) {
     const {
-        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group, linkedAccount,
+        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group, linkedAccounts,
         address, city, state, zip, vehicleYear, vehicleMake, vehicleModel, vehicleTrim, vehicleVin
     } = req.body || {};
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
-    let groupId, linkedAccountId;
+    let groupId, linkedAccountIds;
     try {
         groupId = await resolveGroupId(group, req.session.userId);
-        linkedAccountId = await resolveLinkedAccountId(linkedAccount, req.session.userId, req.params.id);
+        linkedAccountIds = await resolveLinkedAccountIds(linkedAccounts, req.session.userId, req.params.id);
     } catch (err) {
         return res.status(400).json({ error: err.message });
     }
@@ -181,7 +188,7 @@ async function update(req, res) {
     if (notes !== undefined) data.notes = notes;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;
     if (groupId !== undefined) data.group = groupId;
-    if (linkedAccountId !== undefined) data.linkedAccount = linkedAccountId;
+    if (linkedAccountIds !== undefined) data.linkedAccounts = linkedAccountIds;
     if (address !== undefined) data.address = address;
     if (city !== undefined) data.city = city;
     if (state !== undefined) data.state = state;

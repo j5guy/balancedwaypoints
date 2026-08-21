@@ -46,6 +46,10 @@
     // to yourself (see services/authz/actingOwner.js's resolveActingOwner).
     let accountRole = 'owner';
     let accountType = 'checking';
+    // Only set (and only meaningful) for a "home" account — used to build a
+    // direct Zillow search link in applyAccessControls below instead of just
+    // linking Zillow's homepage.
+    let accountAddress = '', accountCity = '', accountState = '', accountZip = '';
     // Set from the account itself (see loadReferenceData) rather than a
     // register/user preference — same idea as the Dashboard's per-widget
     // forecast threshold, just one persistent value per account (see
@@ -68,13 +72,25 @@
     // entry needs: when, why, the change, and the running total.
     const ASSET_TYPES = ['home', 'vehicle'];
     const ASSET_HIDDEN_COLUMNS = ['payee', 'category', 'tags', 'cleared'];
-    // Where to suggest checking a current estimate from, keyed by type —
-    // shown as a link in the instructions card above the table (see
-    // applyAccessControls below and accounts/show.ejs's #asset-instructions-card).
-    const ASSET_VALUE_SOURCES = {
-        home: { label: 'Zillow', url: 'https://www.zillow.com/' },
-        vehicle: { label: 'Autotrader', url: 'https://www.autotrader.com/car-value-appraiser' }
-    };
+    // Where to suggest checking a current estimate from — shown as a link
+    // in the instructions card above the table (see applyAccessControls
+    // below and accounts/show.ejs's #asset-instructions-card). A Home
+    // account with any address info set (models/account.js) gets a direct
+    // Zillow search link for that specific property, built the same way
+    // typing the address into Zillow's own search box would; otherwise
+    // (no address yet, or a Vehicle account) falls back to a generic page.
+    function assetValueSource() {
+        if (accountType === 'home') {
+            const query = [accountAddress, accountCity, accountState, accountZip].filter(Boolean).join(', ');
+            return query
+                ? { label: 'Zillow', url: `https://www.zillow.com/homes/${encodeURIComponent(query)}_rb/` }
+                : { label: 'Zillow', url: 'https://www.zillow.com/' };
+        }
+        if (accountType === 'vehicle') {
+            return { label: 'Autotrader', url: 'https://www.autotrader.com/car-value-appraiser' };
+        }
+        return null;
+    }
 
     const COLUMN_LABELS = {
         date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
@@ -129,6 +145,10 @@
         ]);
         accountRole = account.role;
         accountType = account.type;
+        accountAddress = account.address || '';
+        accountCity = account.city || '';
+        accountState = account.state || '';
+        accountZip = account.zip || '';
         forecastThresholdCents = account.forecastThresholdCents != null ? account.forecastThresholdCents : null;
         forecastThresholdColor = account.forecastThresholdColor || '#B5433A';
         accounts = accountsRes.accounts;
@@ -172,7 +192,13 @@
     function applyAccessControls() {
         const readonly = accountRole === 'readonly';
         const isShared = accountRole !== 'owner';
-        document.getElementById('toggle-advanced-form-link').parentElement.style.display = readonly ? 'none' : '';
+        // Home/Vehicle accounts (see ASSET_TYPES above) don't do transfers
+        // or splits — there's only ever one "account" involved in a value
+        // update — so the full form's whole reason to exist doesn't apply;
+        // hiding the entry point avoids offering a form that's just
+        // confusing/irrelevant for what this account actually tracks.
+        const isAsset = ASSET_TYPES.includes(accountType);
+        document.getElementById('toggle-advanced-form-link').parentElement.style.display = (readonly || isAsset) ? 'none' : '';
         document.querySelector('.quick-add-row').style.display = readonly ? 'none' : '';
         document.getElementById('txn-is-transfer').parentElement.style.display = isShared ? 'none' : '';
         // Same reasoning as the "is transfer" checkbox above — #accounts
@@ -196,20 +222,19 @@
         // register's own write controls.
         document.getElementById('sync-now-btn').hidden = !simplefinConnectionId || isShared;
 
-        // ── Simplified view for Home/Vehicle accounts (see ASSET_TYPES
-        // above) — Import (CSV/OFX bank exports don't apply to a house) and
-        // the Forecast chart (projecting a value that only ever moves via
-        // occasional manual updates isn't meaningful) are both hidden;
-        // "Balance" is relabeled since it's really an estimated value; and
-        // an instructions card offers a jumping-off point to look up a
-        // current estimate. Column hiding itself is applyColumnPreferences'
-        // job (called again here since accountType has just become known).
-        const isAsset = ASSET_TYPES.includes(accountType);
+        // ── Simplified view for Home/Vehicle accounts — Import (CSV/OFX
+        // bank exports don't apply to a house) and the Forecast chart
+        // (projecting a value that only ever moves via occasional manual
+        // updates isn't meaningful) are both hidden; "Balance" is relabeled
+        // since it's really an estimated value; and an instructions card
+        // offers a jumping-off point to look up a current estimate. Column
+        // hiding itself is applyColumnPreferences' job (called again here
+        // since accountType has just become known).
         document.getElementById('import-link').hidden = isAsset;
         document.getElementById('register-forecast-card').hidden = isAsset;
         document.getElementById('account-balance-label').textContent = isAsset ? 'Estimated value' : 'Balance';
         const instructionsCard = document.getElementById('asset-instructions-card');
-        const source = ASSET_VALUE_SOURCES[accountType];
+        const source = assetValueSource();
         if (isAsset && source) {
             document.getElementById('asset-instructions-link').href = source.url;
             document.getElementById('asset-instructions-link').textContent = source.label;
@@ -548,7 +573,16 @@
         const isAsset = ASSET_TYPES.includes(accountType);
         Object.keys(COLUMN_LABELS).forEach((key) => {
             const forceHidden = isAsset && ASSET_HIDDEN_COLUMNS.includes(key);
-            table.classList.toggle(`hide-col-${key}`, forceHidden || !preferences.registerColumns[key]);
+            // Notes is the only column with no fixed width in the colgroup
+            // (accounts/show.ejs) — it's the flexible one table-layout:fixed
+            // relies on to take up whatever space the fixed-width columns
+            // don't. Force it visible on an asset account regardless of the
+            // user's own saved preference (they may have hidden it globally
+            // on an unrelated account): losing it here doesn't just remove
+            // the one place to note *why* a value changed, it also breaks
+            // the whole row layout with no flexible column left at all.
+            const forceVisible = isAsset && key === 'notes';
+            table.classList.toggle(`hide-col-${key}`, !forceVisible && (forceHidden || !preferences.registerColumns[key]));
         });
         const order = normalizedColumnOrder();
         applyColumnOrder(table.querySelector('colgroup'), order);

@@ -133,21 +133,55 @@
 
             const options = ['<option value="">Create new account: "' + remote.name + '"</option>', '<option value="__custom__">Create new account with a custom name…</option>']
                 .concat(localAccounts.map((a) => `<option value="${a.id}">${a.name}</option>`));
+            // Same Type/On budget choices as creating an account from scratch
+            // on the Accounts page (views/accounts/index.ejs) — shown only
+            // while a *new* account is what's about to be created, hidden
+            // the moment an existing account is picked instead (its own
+            // type/on-budget are already set and untouched by linking).
             tr.innerHTML = `
                 <td>${orgLabel}</td>
                 <td class="money">${balance}</td>
                 <td>
-                    <select data-target>${options.join('')}</select>
-                    <input type="text" data-custom-name placeholder="Account name" style="margin-top:4px;" hidden>
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                        <select data-target style="width:100%;">${options.join('')}</select>
+                        <input type="text" data-custom-name placeholder="Account name" style="width:100%;" hidden>
+                        <select data-new-type style="width:100%;">
+                            <optgroup label="Accounts">
+                                <option value="checking">Checking</option>
+                                <option value="savings">Savings</option>
+                                <option value="credit">Credit card</option>
+                                <option value="cash">Cash</option>
+                                <option value="loan">Loan</option>
+                            </optgroup>
+                            <optgroup label="Assets">
+                                <option value="investment">Investment</option>
+                                <option value="home">Home</option>
+                                <option value="vehicle">Vehicle</option>
+                            </optgroup>
+                            <option value="other">Other</option>
+                        </select>
+                        <label class="checkbox-row" style="font-size:0.85rem;">
+                            <input type="checkbox" data-new-on-budget checked>
+                            On budget
+                        </label>
+                    </div>
                 </td>
                 <td><button type="button" class="btn btn-primary btn-sm" data-link>Link</button></td>
             `;
             const targetSelect = tr.querySelector('[data-target]');
             const customNameInput = tr.querySelector('[data-custom-name]');
-            targetSelect.addEventListener('change', () => {
-                customNameInput.hidden = targetSelect.value !== '__custom__';
-                if (!customNameInput.hidden) customNameInput.focus();
-            });
+            const newTypeSelect = tr.querySelector('[data-new-type]');
+            const newOnBudgetCheckbox = tr.querySelector('[data-new-on-budget]');
+            const newAccountFields = [newTypeSelect, newOnBudgetCheckbox.closest('label')];
+            function syncFieldVisibility() {
+                const isCustom = targetSelect.value === '__custom__';
+                const isNew = !targetSelect.value || isCustom;
+                customNameInput.hidden = !isCustom;
+                if (isCustom) customNameInput.focus();
+                newAccountFields.forEach((el) => { el.hidden = !isNew; });
+            }
+            targetSelect.addEventListener('change', syncFieldVisibility);
+            syncFieldVisibility();
             tr.querySelector('[data-link]').addEventListener('click', async () => {
                 const accountId = targetSelect.value;
                 const isCustom = accountId === '__custom__';
@@ -158,7 +192,14 @@
                         method: 'POST',
                         body: (accountId && !isCustom)
                             ? { simplefinAccountId: remote.id, accountId }
-                            : { simplefinAccountId: remote.id, newAccount: { name: isCustom ? customName : remote.name, type: 'checking' } }
+                            : {
+                                simplefinAccountId: remote.id,
+                                newAccount: {
+                                    name: isCustom ? customName : remote.name,
+                                    type: newTypeSelect.value,
+                                    onBudget: newOnBudgetCheckbox.checked
+                                }
+                            }
                     });
                     showSuccess(`Linked "${isCustom ? customName : remote.name}".`);
                     const { connections } = await window.BWApi.apiFetch('/api/simplefin/connections');

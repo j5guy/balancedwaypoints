@@ -5,7 +5,7 @@
         <h1 id="account-name">Register</h1>
         <div style="display:flex;align-items:center;gap:12px;">
             <div class="stat-card" style="padding:10px 18px;">
-                <div class="stat-label">Balance</div>
+                <div class="stat-label" id="account-balance-label">Balance</div>
                 <div class="stat-value money" id="account-balance">—</div>
             </div>
             <button type="button" class="btn btn-secondary btn-sm" id="sync-now-btn" title="Pull new transactions from the bank now" hidden>🔄 Sync Now</button>
@@ -16,6 +16,15 @@
         </div>
     </div>
     <div id="register-error" class="form-error" hidden></div>
+
+    <div class="card" id="asset-instructions-card" hidden>
+        <p class="muted">
+            This account tracks an estimated value rather than real transactions. When you have a fresh
+            estimate, add an entry below for the change (positive or negative) with a note — that becomes
+            your value history. Check <a id="asset-instructions-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+            for a current estimate.
+        </p>
+    </div>
 
     <div class="card" id="register-forecast-card">
         <div class="register-forecast-header">

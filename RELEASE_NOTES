@@ -1,3 +1,17 @@
+v0.15.0b
+------
+New account types, Home and Vehicle, for tracking things that add to your net worth instead of subtract
+from it — grouped under a new "Assets" section in the account type picker, alongside a new "Accounts"
+group for the existing types. Any account can now optionally be linked to another one (e.g. a Home
+account linked to the Loan account financing it); linked accounts show a combined equity figure
+(value minus loan) next to each other on the Accounts page. A Home/Vehicle account's register is
+simplified accordingly — Payee/Category/Tags/Cleared columns, Import, and the Forecast chart are all
+hidden, since the account is just tracking an occasional estimated-value update (as a signed amount
+with a note) rather than real transactions; a short instructions card links out to Zillow or Autotrader
+for a current estimate. Net worth's own math is unchanged — it already summed every account regardless
+of type, so a Home/Vehicle account now finally has a natural way to represent the asset side that was
+previously missing whenever a loan account (a mortgage, auto loan, etc.) had nothing offsetting it.
+
 v0.14.0b
 ------
 Fixed a SimpleFIN sync bug that could import zero transactions every single sync for certain accounts

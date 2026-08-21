@@ -59,6 +59,22 @@
     // suppressed regardless of whether a threshold is configured, same as
     // if none were set at all.
     const SUPPRESS_WARNING_TYPES = ['credit', 'loan', 'other'];
+    // Home/Vehicle accounts (models/account.js) track an estimated value,
+    // not real bank activity — Payee/Category/Tags/Cleared don't mean
+    // anything for "the house is now worth $410k", so they're force-hidden
+    // here regardless of the user's own saved column preferences (which
+    // stay untouched — see applyColumnPreferences). What's left (Date,
+    // Notes, Amount, Balance) is exactly what an occasional value-update
+    // entry needs: when, why, the change, and the running total.
+    const ASSET_TYPES = ['home', 'vehicle'];
+    const ASSET_HIDDEN_COLUMNS = ['payee', 'category', 'tags', 'cleared'];
+    // Where to suggest checking a current estimate from, keyed by type —
+    // shown as a link in the instructions card above the table (see
+    // applyAccessControls below and accounts/show.ejs's #asset-instructions-card).
+    const ASSET_VALUE_SOURCES = {
+        home: { label: 'Zillow', url: 'https://www.zillow.com/' },
+        vehicle: { label: 'Autotrader', url: 'https://www.autotrader.com/car-value-appraiser' }
+    };
 
     const COLUMN_LABELS = {
         date: 'Date', payee: 'Payee', category: 'Category', notes: 'Notes',
@@ -179,6 +195,29 @@
         // transactions the same way a collaborator can't via a shared
         // register's own write controls.
         document.getElementById('sync-now-btn').hidden = !simplefinConnectionId || isShared;
+
+        // ── Simplified view for Home/Vehicle accounts (see ASSET_TYPES
+        // above) — Import (CSV/OFX bank exports don't apply to a house) and
+        // the Forecast chart (projecting a value that only ever moves via
+        // occasional manual updates isn't meaningful) are both hidden;
+        // "Balance" is relabeled since it's really an estimated value; and
+        // an instructions card offers a jumping-off point to look up a
+        // current estimate. Column hiding itself is applyColumnPreferences'
+        // job (called again here since accountType has just become known).
+        const isAsset = ASSET_TYPES.includes(accountType);
+        document.getElementById('import-link').hidden = isAsset;
+        document.getElementById('register-forecast-card').hidden = isAsset;
+        document.getElementById('account-balance-label').textContent = isAsset ? 'Estimated value' : 'Balance';
+        const instructionsCard = document.getElementById('asset-instructions-card');
+        const source = ASSET_VALUE_SOURCES[accountType];
+        if (isAsset && source) {
+            document.getElementById('asset-instructions-link').href = source.url;
+            document.getElementById('asset-instructions-link').textContent = source.label;
+            instructionsCard.hidden = false;
+        } else {
+            instructionsCard.hidden = true;
+        }
+        applyColumnPreferences();
     }
 
     // Resolves a typed category name to an id, creating the category (in the
@@ -506,8 +545,10 @@
 
     function applyColumnPreferences() {
         const table = document.querySelector('.register-table');
+        const isAsset = ASSET_TYPES.includes(accountType);
         Object.keys(COLUMN_LABELS).forEach((key) => {
-            table.classList.toggle(`hide-col-${key}`, !preferences.registerColumns[key]);
+            const forceHidden = isAsset && ASSET_HIDDEN_COLUMNS.includes(key);
+            table.classList.toggle(`hide-col-${key}`, forceHidden || !preferences.registerColumns[key]);
         });
         const order = normalizedColumnOrder();
         applyColumnOrder(table.querySelector('colgroup'), order);

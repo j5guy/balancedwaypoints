@@ -96,7 +96,7 @@ async function remoteAccountsFor(req, res) {
 }
 
 // Body: { simplefinAccountId, accountId } to link an existing Account, or
-// { simplefinAccountId, newAccount: { name, type } } to create one.
+// { simplefinAccountId, newAccount: { name, type, onBudget } } to create one.
 async function link(req, res) {
     const connection = await connectionsDb.findById(req.params.id, req.session.userId);
     if (!connection) return res.status(404).json({ error: 'Not found' });
@@ -114,6 +114,7 @@ async function link(req, res) {
             owner: req.session.userId,
             name,
             type: newAccount.type || 'checking',
+            onBudget: newAccount.onBudget !== false,
             startingBalanceCents: 0
         });
         targetAccountId = created._id;

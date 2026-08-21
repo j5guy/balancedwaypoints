@@ -590,6 +590,12 @@
     function applyColumnPreferences() {
         const table = document.querySelector('.register-table');
         const isAsset = ASSET_TYPES.includes(accountType);
+        // Switches the table off fixed layout for an asset register (see
+        // public/scss/components/_tables.scss's .asset-register) — fixed
+        // layout's column-width math broke down once 4 of 8 toggleable
+        // columns were hidden at once, overlapping headers and squeezing
+        // the Amount input/Add button into an unusable sliver.
+        table.classList.toggle('asset-register', isAsset);
         Object.keys(COLUMN_LABELS).forEach((key) => {
             const forceHidden = isAsset && ASSET_HIDDEN_COLUMNS.includes(key);
             // Notes is the only column with no fixed width in the colgroup

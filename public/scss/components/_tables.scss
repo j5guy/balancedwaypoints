@@ -78,6 +78,28 @@ table.register-table {
         overflow: hidden;
         text-overflow: ellipsis;
     }
+
+    // A Home/Vehicle account's register (see public/js/register.js's
+    // ASSET_TYPES) hides 4 of the 8 toggleable columns at once (Payee/
+    // Category/Tags/Cleared — see the hide-col rules below), which broke
+    // fixed layout's width math badly enough to make Amount/Balance's
+    // headers overlap and squeeze the Amount input/Add button down to an
+    // unusable sliver: table-layout:fixed reserves each column's width from
+    // the <colgroup> alone (accounts/show.ejs) regardless of how many
+    // columns actually render, and with that many simultaneously zeroed out
+    // plus the one deliberately-unset "Notes" column meant to absorb
+    // whatever's left, the leftover-width distribution came out wrong.
+    // Auto layout sidesteps all of that by sizing every visible column from
+    // its actual content instead of the colgroup's fixed math — hidden
+    // columns (still display:none below) simply don't reserve any space at
+    // all, no zeroing-out arithmetic required.
+    &.asset-register {
+        table-layout: auto;
+
+        td.wrap, th[data-col='notes'] {
+            min-width: 220px;
+        }
+    }
 }
 
 // The register's Edit/Delete buttons are icon-only (✎ / 🗑) to leave the

@@ -626,10 +626,16 @@
 
     // loadGroups() before load()/openEditFromQueryParam() — both populate
     // #acct-group's selected value, which only sticks once its <option>s
-    // from loadGroups() actually exist.
+    // from loadGroups() actually exist. load() is also awaited (not just
+    // fired) before openEditFromQueryParam() — the deep-link edit flow
+    // (register page's "Account settings" button, ?edit=<id>) calls
+    // startEdit() straight away, which needs currentAccounts already
+    // populated to list every other account in the Linked accounts
+    // checkboxes; without this await it was a race that usually lost,
+    // showing "No other accounts to link yet" even with plenty on hand.
     (async () => {
         await loadGroups();
-        load();
+        await load();
         loadSharedWithMe();
         openEditFromQueryParam();
     })();

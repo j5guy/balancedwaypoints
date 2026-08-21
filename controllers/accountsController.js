@@ -15,6 +15,19 @@ async function resolveGroupId(group, ownerId) {
     return found._id;
 }
 
+// Same shape as resolveGroupId above — null clears the pairing, any other
+// value must resolve to another account this owner actually has.
+// `excludeId` (only set on update, never create) blocks pointing an account
+// at itself.
+async function resolveLinkedAccountId(linkedAccount, ownerId, excludeId) {
+    if (linkedAccount === undefined) return undefined;
+    if (linkedAccount === null || linkedAccount === '') return null;
+    if (excludeId && String(linkedAccount) === String(excludeId)) throw new Error("An account can't be linked to itself");
+    const found = await accounts.findById(linkedAccount, ownerId);
+    if (!found) throw new Error('Invalid linked account');
+    return found._id;
+}
+
 function serialize({ account, balanceCents, role, ownerName, ownerId, shareId }) {
     return {
         id: account._id,
@@ -28,6 +41,7 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         notes: account.notes,
         sortOrder: account.sortOrder,
         group: account.group || undefined,
+        linkedAccount: account.linkedAccount || undefined,
         balanceCents: balanceCents != null ? balanceCents : undefined,
         // 'owner' unless this came through the shared-with-me path — lets
         // the register (public/js/register.js) know whether to show write
@@ -89,13 +103,14 @@ async function get(req, res) {
 }
 
 async function create(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group } = req.body || {};
+    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group, linkedAccount } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
-    let groupId;
+    let groupId, linkedAccountId;
     try {
         groupId = await resolveGroupId(group, req.session.userId);
+        linkedAccountId = await resolveLinkedAccountId(linkedAccount, req.session.userId);
     } catch (err) {
         return res.status(400).json({ error: err.message });
     }
@@ -109,7 +124,8 @@ async function create(req, res) {
         forecastThresholdCents: forecastThresholdCents != null && forecastThresholdCents !== '' ? Number(forecastThresholdCents) : null,
         forecastThresholdColor: forecastThresholdColor || '#B5433A',
         notes: notes || '',
-        group: groupId || null
+        group: groupId || null,
+        linkedAccount: linkedAccountId || null
     });
     res.status(201).json(serialize({ account, balanceCents: account.startingBalanceCents }));
 }
@@ -119,12 +135,13 @@ async function create(req, res) {
 // forceRemove below, deliberately keep the plain req.session.userId owner
 // check rather than resolveAccountAccess.
 async function update(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group } = req.body || {};
+    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group, linkedAccount } = req.body || {};
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
 
-    let groupId;
+    let groupId, linkedAccountId;
     try {
         groupId = await resolveGroupId(group, req.session.userId);
+        linkedAccountId = await resolveLinkedAccountId(linkedAccount, req.session.userId, req.params.id);
     } catch (err) {
         return res.status(400).json({ error: err.message });
     }
@@ -140,6 +157,7 @@ async function update(req, res) {
     if (notes !== undefined) data.notes = notes;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;
     if (groupId !== undefined) data.group = groupId;
+    if (linkedAccountId !== undefined) data.linkedAccount = linkedAccountId;
 
     const account = await accounts.update(req.params.id, data, req.session.userId);
     if (!account) return res.status(404).json({ error: 'Not found' });

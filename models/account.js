@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const ACCOUNT_TYPES = ['checking', 'savings', 'credit', 'cash', 'investment', 'loan', 'other'];
+const ACCOUNT_TYPES = ['checking', 'savings', 'credit', 'cash', 'investment', 'loan', 'home', 'vehicle', 'other'];
 
 const accountSchema = new mongoose.Schema({
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -30,6 +30,16 @@ const accountSchema = new mongoose.Schema({
     // is a fully-supported "ungrouped" state, never fed into balance math or
     // envelope budgeting.
     group: { type: mongoose.Schema.Types.ObjectId, ref: 'AccountGroup', default: null },
+    // Purely organizational pairing — e.g. a "home" (or "vehicle") asset
+    // account pointed at the "loan" account financing it, so the Accounts
+    // page and register can show combined equity (asset balance + loan's
+    // own negative balance) alongside the two accounts. One-directional in
+    // storage (only the asset side typically sets this), but shown from
+    // either account's page — see public/js/accounts.js and register.js,
+    // which both scan for a partner in either direction. Never fed into
+    // envelope budgeting or the Net Worth report, which already sum every
+    // account's own balance regardless of any pairing.
+    linkedAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },
     // Optional bank sync link (see models/simplefinConnection.js and
     // services/simplefin/) — both null for a normal manually-managed
     // account, the default and by far the common case. When set, the

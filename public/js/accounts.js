@@ -44,14 +44,27 @@
         errorBox.hidden = false;
     }
 
+    // The pairing is stored one-directionally (see models/account.js's
+    // linkedAccount) but shown from either side — a Loan account itself
+    // doesn't set linkedAccount, but should still show its paired Home
+    // account and the combined equity, so this checks both directions.
+    function findLinkedPartner(account) {
+        if (account.linkedAccount) return currentAccounts.find(a => a.id === account.linkedAccount);
+        return currentAccounts.find(a => a.linkedAccount === account.id);
+    }
+
     function accountRow(account) {
         const tr = document.createElement('tr');
         const balanceClass = account.balanceCents < 0 ? 'money-negative' : 'money-positive';
         const syncBadge = account.simplefinAccountId
             ? ' <span class="badge" title="Synced via SimpleFIN — new transactions import automatically">🔄</span>'
             : '';
+        const partner = findLinkedPartner(account);
+        const linkNote = partner
+            ? `<div class="muted" style="font-size:0.8rem;">🔗 ${partner.name} — equity ${window.BWMoney.formatCents(account.balanceCents + partner.balanceCents)}</div>`
+            : '';
         tr.innerHTML = `
-            <td><a href="/accounts/${account.id}" class="link-plain">${account.name}${account.closed ? ' (closed)' : ''}</a>${syncBadge}</td>
+            <td><a href="/accounts/${account.id}" class="link-plain">${account.name}${account.closed ? ' (closed)' : ''}</a>${syncBadge}${linkNote}</td>
             <td style="text-transform:capitalize;">${account.type}</td>
             <td class="money ${balanceClass}">${window.BWMoney.formatCents(account.balanceCents)}</td>
             <td>${account.onBudget ? 'Yes' : 'No'}</td>
@@ -256,6 +269,15 @@
         }
     }
 
+    // Excludes the account being edited (if any) — an account can't be
+    // linked to itself, same rule the server enforces (see
+    // controllers/accountsController.js's resolveLinkedAccountId).
+    function populateLinkedAccountSelect(excludeId) {
+        const select = document.getElementById('acct-linked-account');
+        select.innerHTML = '<option value="">— not linked —</option>' +
+            currentAccounts.filter(a => a.id !== excludeId).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+
     function startEdit(account) {
         editingId = account.id;
         document.getElementById('account-form-title').textContent = `Edit ${account.name}`;
@@ -269,6 +291,8 @@
         document.getElementById('acct-forecast-threshold').value = account.forecastThresholdCents != null ? (account.forecastThresholdCents / 100).toFixed(2) : '';
         document.getElementById('acct-forecast-color').value = account.forecastThresholdColor || '#B5433A';
         document.getElementById('acct-group').value = account.group || '';
+        populateLinkedAccountSelect(account.id);
+        document.getElementById('acct-linked-account').value = account.linkedAccount || '';
         form.hidden = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -286,6 +310,8 @@
         document.getElementById('acct-forecast-threshold').value = '';
         document.getElementById('acct-forecast-color').value = '#B5433A';
         document.getElementById('acct-group').value = '';
+        populateLinkedAccountSelect(null);
+        document.getElementById('acct-linked-account').value = '';
         form.hidden = true;
     }
 
@@ -313,7 +339,8 @@
             forecastThresholdCents: optionalCents('acct-forecast-threshold'),
             forecastThresholdColor: document.getElementById('acct-forecast-color').value,
             onBudget: document.getElementById('acct-on-budget').checked,
-            group: document.getElementById('acct-group').value || null
+            group: document.getElementById('acct-group').value || null,
+            linkedAccount: document.getElementById('acct-linked-account').value || null
         };
         if (editingId) body.closed = document.getElementById('acct-closed').checked;
 

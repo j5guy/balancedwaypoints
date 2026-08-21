@@ -4,9 +4,9 @@ env:
   NODEJS_NAME: balancedwaypoints
   WEB_NAME: balancedwaypoints
   WEB_DIR: /var/www/html/${{ env.WEB_NAME }}
-  REPO_URL: git@gitea.pinkham.lan:/web/${{ env.WEB_NAME }}.git
+  REPO_URL: git@gitea.pinkham.lan:/allthewaypoints/${{ env.WEB_NAME }}.git
   GITEA_HOST: gitea.pinkham.lan
-  GITEA_REPO: web/balancedwaypoints
+  GITEA_REPO: allthewaypoints/balancedwaypoints
   GITHUB_REPO: github.com/j5guy/balancedwaypoints.git
 
 on:

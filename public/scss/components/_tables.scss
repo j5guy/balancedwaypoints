@@ -108,23 +108,21 @@ table.register-table {
     &.asset-register {
         table-layout: auto;
 
+        // Balance is hidden entirely here (see public/js/register.js's
+        // ASSET_HIDDEN_COLUMNS) — Amount already carries the new value
+        // itself on an asset register, so Balance would just repeat it.
         th[data-col='date'], td[data-col='date'] {
-            width: 100px;
-            max-width: 100px;
+            width: 130px;
+            max-width: 130px;
         }
 
         th[data-col='amount'], td[data-col='amount'] {
-            width: 110px;
-            max-width: 110px;
-        }
-
-        th[data-col='balance'], td[data-col='balance'] {
-            width: 90px;
-            max-width: 90px;
+            width: 140px;
+            max-width: 140px;
         }
 
         td.wrap, th[data-col='notes'] {
-            width: 55%;
+            width: 40%;
         }
 
         input[type='date'] {

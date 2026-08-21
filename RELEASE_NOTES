@@ -8,9 +8,11 @@ balance (bank-reported balance minus the transactions just imported) so the regi
 matches the real balance right away instead of coming up short by whatever activity fell outside the
 90-day backfill window — only applies to a freshly-linked account with no prior history, never one you
 were already using manually. The Bank Sync page's "Manage accounts" list now has an Unlink button on
-each linked account, opening a choice of unlinking only, unlinking and closing the account, or unlinking
-and deleting it. Linking a remote account to a brand-new local account also now offers a custom name
-instead of only the bank's own label.
+each linked account, opening a choice of unlinking only, unlinking and closing the account, or
+unlinking-close-and-permanently-delete in one click (closes and force-deletes automatically if it still
+has transaction history, behind one confirmation warning it removes every transaction and schedule tied
+to the account, not just the account record). Linking a remote account to a brand-new local account also
+now offers a custom name instead of only the bank's own label.
 
 v0.13.0b
 ------

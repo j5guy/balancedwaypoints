@@ -247,19 +247,29 @@
     document.getElementById('sf-unlink-delete-btn').addEventListener('click', async () => {
         if (!pendingUnlink) return;
         const { account } = pendingUnlink;
-        if (!confirm(`Permanently delete "${account.name}"? This cannot be undone.`)) return;
+        if (!confirm(
+            `Permanently delete "${account.name}"? This cannot be undone. If it still has transaction ` +
+            `history, deleting it will close it first and remove EVERY transaction posted to it ` +
+            `(including its half of any transfers) and every schedule tied to it — not just the account.`
+        )) return;
         try {
             await window.BWApi.apiFetch(`/api/accounts/${account.id}/simplefin/unlink`, { method: 'POST' });
-            await window.BWApi.apiFetch(`/api/accounts/${account.id}`, { method: 'DELETE' });
+            try {
+                await window.BWApi.apiFetch(`/api/accounts/${account.id}`, { method: 'DELETE' });
+            } catch (err) {
+                // 409 = still has transactions (services/database/accounts.js's
+                // plain remove() refuses to touch those) — a synced account
+                // almost always does. Escalate to the same close-then-force-
+                // delete path the Accounts page's own modal offers, rather
+                // than making the user go do that separately after already
+                // confirming full deletion above.
+                if (err.status !== 409) throw err;
+                await window.BWApi.apiFetch(`/api/accounts/${account.id}`, { method: 'PUT', body: { closed: true } });
+                await window.BWApi.apiFetch(`/api/accounts/${account.id}/force`, { method: 'DELETE' });
+            }
             await afterUnlink(`Unlinked and deleted "${account.name}".`);
         } catch (err) {
-            // Most likely a 409 — deleting is blocked while the account still
-            // has transactions (services/database/accounts.js's remove()),
-            // which a synced account almost always does. It's already
-            // unlinked at this point either way, so this steers to the
-            // Accounts page's close-then-force-delete flow instead of
-            // silently failing.
-            showUnlinkError(new Error(`${err.message || "Couldn't delete this account"} — it's already unlinked, though. Close it and use Force delete on the Accounts page to remove it along with its history.`));
+            showUnlinkError(err);
         }
     });
 

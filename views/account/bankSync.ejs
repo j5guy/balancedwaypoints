@@ -58,12 +58,12 @@
 <div class="modal-overlay" id="sf-unlink-overlay" hidden>
     <div class="modal-card">
         <h3>Unlink <span id="sf-unlink-account-name"></span></h3>
-        <p class="muted">Its transaction history stays either way — this just stops SimpleFIN from importing new transactions into it.</p>
+        <p class="muted">Unlinking always stops SimpleFIN from importing new transactions into it — what happens to the account itself is up to you below.</p>
         <div id="sf-unlink-error" class="form-error" hidden></div>
         <div class="btn-row" style="flex-direction:column;align-items:stretch;gap:8px;">
-            <button type="button" class="btn btn-secondary" id="sf-unlink-only-btn">Unlink only — keep it as a manual account</button>
-            <button type="button" class="btn btn-secondary" id="sf-unlink-close-btn">Unlink and close the account</button>
-            <button type="button" class="btn btn-danger" id="sf-unlink-delete-btn">Unlink and delete the account</button>
+            <button type="button" class="btn btn-secondary" id="sf-unlink-only-btn">Unlink only — keep it, transaction history stays</button>
+            <button type="button" class="btn btn-secondary" id="sf-unlink-close-btn">Unlink and close the account — history stays</button>
+            <button type="button" class="btn btn-danger" id="sf-unlink-delete-btn">Unlink, close, and permanently delete — removes its transaction history too</button>
         </div>
         <div class="btn-row">
             <button type="button" class="btn btn-secondary" id="sf-unlink-cancel-btn">Cancel</button>

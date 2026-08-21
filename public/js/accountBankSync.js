@@ -39,8 +39,13 @@
 
     function connectionRow(connection) {
         const tr = document.createElement('tr');
+        // One name per line rather than a single comma-joined run — a
+        // connection with several linked accounts (e.g. checking + savings
+        // + a credit card all under one bank login) was unreadable packed
+        // into one line in this column's fixed width.
+        const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const linkedNames = connection.linkedAccounts.length
-            ? connection.linkedAccounts.map((a) => a.name).join(', ')
+            ? connection.linkedAccounts.map((a) => escapeHtml(a.name)).join('<br>')
             : '<span class="muted">none linked</span>';
         // lastSyncError doubles as a non-fatal warnings note on an
         // otherwise-'ok' sync (see services/simplefin/syncService.js) — e.g.

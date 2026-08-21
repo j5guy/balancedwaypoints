@@ -45,6 +45,16 @@
         </div>
         <div class="form-row">
             <div class="form-group">
+                <label for="acct-group">Group</label>
+                <div style="display:flex;gap:6px;">
+                    <select id="acct-group" style="flex:1;"><option value="">— no group —</option></select>
+                    <button type="button" class="btn btn-secondary btn-sm" id="acct-new-group-btn">+ New group</button>
+                </div>
+                <p class="form-hint">Purely organizational — groups accounts into collapsible sections on this page below.</p>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
                 <label for="acct-forecast-threshold">Warning threshold (optional)</label>
                 <input type="number" id="acct-forecast-threshold" step="0.01" placeholder="No warning threshold">
                 <p class="form-hint">The Forecast chart flags the first projected day the balance would drop below this, and colors the area below it. Leave blank to disable. Not shown for credit card, loan, or other-type accounts, where a negative balance is normal.</p>
@@ -61,10 +71,19 @@
     </div>
 
     <div class="table-wrap">
-        <table class="data-table">
+        <table class="data-table" id="accounts-table">
             <thead>
                 <tr><th>Name</th><th>Type</th><th>Balance</th><th>On budget</th><th></th></tr>
             </thead>
+            <tbody>
+                <tr class="filter-row">
+                    <td><input type="text" id="filter-name" placeholder="Filter…"></td>
+                    <td><input type="text" id="filter-type" placeholder="Filter…"></td>
+                    <td><input type="text" id="filter-balance" placeholder="Filter…"></td>
+                    <td><input type="text" id="filter-onbudget" placeholder="Filter…"></td>
+                    <td><button type="button" class="btn btn-secondary btn-sm icon-btn" id="filter-clear-btn" title="Clear filters">✕</button></td>
+                </tr>
+            </tbody>
             <tbody id="accounts-tbody"></tbody>
         </table>
     </div>

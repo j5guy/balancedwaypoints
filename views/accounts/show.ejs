@@ -8,6 +8,7 @@
                 <div class="stat-label">Balance</div>
                 <div class="stat-value money" id="account-balance">—</div>
             </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="sync-now-btn" title="Pull new transactions from the bank now" hidden>🔄 Sync Now</button>
             <a href="/imports?account=<%= accountId %>" class="btn btn-secondary btn-sm" id="import-link" title="Import transactions into this account">⇩ Import</a>
             <a href="/accounts?edit=<%= accountId %>" class="btn btn-secondary btn-sm" id="account-settings-link" title="Edit this account's settings">✎ Account settings</a>
             <button type="button" class="btn btn-secondary btn-sm" id="toggle-mask-btn" title="Hide amounts/balances">🙈 Mask</button>
@@ -257,14 +258,7 @@
                     <td class="muted" style="text-align:center;">+</td>
                     <td data-col="date"><input type="date" id="qa-date"></td>
                     <td data-col="payee"><input type="text" id="qa-payee" list="payee-options" placeholder="Payee"></td>
-                    <td data-col="category">
-                        <div style="display:flex;flex-direction:column;gap:3px;">
-                            <input type="text" id="qa-category" list="category-options" placeholder="Category">
-                            <select id="qa-category-new-group" title="Group for a new category" style="font-size:0.78rem;padding:2px 4px;">
-                                <option value="">new category's group…</option>
-                            </select>
-                        </div>
-                    </td>
+                    <td data-col="category"><input type="text" id="qa-category" list="category-options" placeholder="Category" title="Typing a new name creates it in your first category group — use the full form (⛶) to pick a different group"></td>
                     <td class="wrap" data-col="notes"><input type="text" id="qa-notes" placeholder="Notes"></td>
                     <td data-col="tags"><input type="text" id="qa-tags" placeholder="tag, tag"></td>
                     <td data-col="amount"><input type="number" id="qa-amount" step="0.01" placeholder="-45.00"></td>

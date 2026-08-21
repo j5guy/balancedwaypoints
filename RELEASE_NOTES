@@ -1,3 +1,22 @@
+v0.13.0b
+------
+Accounts can now be organized into custom groups (Accounts page: assign a group when adding/editing an
+account, or create one on the fly with "+ New group"), shown as collapsible sections you can expand or
+minimize — collapse state is remembered per browser. The Accounts table also gained a live filter row
+under its column headers (name, type, balance, on budget), same pattern as the register's own filters.
+Fixed: SimpleFIN bank sync could skip the 90-day backfill for a newly-linked account under a connection
+that had already synced before, silently importing nothing until a transaction happened to post within
+the short 7-day overlap window. Fixed: the account-delete confirmation could stay disabled forever for
+an account named from a bank feed (e.g. a synced account whose name has a non-breaking space) since the
+exact-match check couldn't be satisfied by typing a normal space. Also: the quick-add row's tiny "new
+category group" dropdown is gone — a category typed there that doesn't exist yet is created in your
+first category group automatically; use the full entry form to pick a different one. The bank sync
+page's "linked accounts" column now lists one account per line instead of packing them into a single
+comma-separated run. The top nav is now a hamburger menu (tap the icon next to the theme toggle) on
+every screen size, matching Scored Waypoints' — it also gained a "Sync All" action (shown only once
+you have at least one SimpleFIN bank connection) that syncs every connection in one go, and each
+bank-linked account's register now has its own "Sync Now" button next to Import.
+
 v0.12.1b
 ------
 Fixed installing the Waypoints Portal alongside this app never making the portal reachable by FQDN or

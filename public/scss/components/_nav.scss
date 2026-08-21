@@ -1,14 +1,60 @@
 @use '../abstracts/variables' as *;
 
 .nav {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 16px 24px;
     background: $nav-bg;
     border-bottom: 1px solid $border;
-    flex-wrap: wrap;
     gap: 12px;
+}
+
+// Always-visible right-hand group — the theme toggle stays out of the
+// hamburger dropdown (it's a quick, frequent action, not "navigation") and
+// sits directly on the bar next to the hamburger button itself.
+.nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+// Hamburger toggle — three bars, no icon font/SVG needed. The link list
+// itself (.nav-links) is what actually opens/closes; this just flips the
+// bars into an X while it's open (see public/js/nav.js).
+.nav-menu-toggle {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: $radius-full;
+    cursor: pointer;
+
+    &:hover {
+        background: $bg-hover;
+    }
+}
+
+.nav-menu-toggle-bar {
+    display: block;
+    width: 20px;
+    height: 2px;
+    margin: 0 auto;
+    background: $nav-text;
+    border-radius: 1px;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.nav-menu-toggle[aria-expanded="true"] {
+    .nav-menu-toggle-bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .nav-menu-toggle-bar:nth-child(2) { opacity: 0; }
+    .nav-menu-toggle-bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 }
 
 .nav-brand {
@@ -32,11 +78,44 @@
     border-radius: 6px;
 }
 
+// A dropdown panel under the hamburger button (.nav-menu-toggle above), not
+// an inline row — collapsed by the `hidden` attribute (views/components/
+// nav.ejs) until public/js/nav.js toggles it open.
 .nav-links {
+    position: absolute;
+    top: 100%;
+    right: 24px;
+    z-index: 20;
     display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 220px;
+    margin-top: 8px;
+    padding: 8px;
+    background: $nav-bg;
+    border: 1px solid $border;
+    border-radius: $radius-md;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+
+    &[hidden] {
+        display: none;
+    }
+
+    // Pill-shaped links read fine in a horizontal row but look odd stacked
+    // full-width in a dropdown — left-align and square them off just in
+    // this context, without touching .nav-link/.btn-nav-logout for wherever
+    // else they're reused. (.theme-toggle lives in .nav-actions now, not
+    // in here — see above.)
+    .nav-link, .btn-nav-logout {
+        border-radius: $radius-sm;
+        text-align: left;
+        width: 100%;
+    }
+
+    .inline-form {
+        width: 100%;
+    }
 }
 
 .nav-link {

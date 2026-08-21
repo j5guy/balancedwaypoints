@@ -25,6 +25,11 @@ const accountSchema = new mongoose.Schema({
     closed: { type: Boolean, default: false },
     notes: { type: String, trim: true, default: '' },
     sortOrder: { type: Number, default: 0 },
+    // Purely organizational grouping for the Accounts page's collapsible
+    // sections (see models/accountGroup.js, public/js/accounts.js) — null
+    // is a fully-supported "ungrouped" state, never fed into balance math or
+    // envelope budgeting.
+    group: { type: mongoose.Schema.Types.ObjectId, ref: 'AccountGroup', default: null },
     // Optional bank sync link (see models/simplefinConnection.js and
     // services/simplefin/) — both null for a normal manually-managed
     // account, the default and by far the common case. When set, the
@@ -43,6 +48,7 @@ const accountSchema = new mongoose.Schema({
 
 accountSchema.index({ owner: 1 });
 accountSchema.index({ simplefinConnection: 1 }, { sparse: true });
+accountSchema.index({ owner: 1, group: 1 });
 
 module.exports = mongoose.model('Account', accountSchema);
 module.exports.ACCOUNT_TYPES = ACCOUNT_TYPES;

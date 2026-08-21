@@ -7,6 +7,7 @@ router.use(requireApiAuth);
 
 router.get('/connections', controller.list);
 router.post('/connections', controller.create);
+router.post('/sync-all', controller.syncAll);
 router.delete('/connections/:id', controller.remove);
 
 router.get('/connections/:id/remote-accounts', controller.remoteAccountsFor);

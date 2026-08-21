@@ -5,7 +5,15 @@
             Balanced Waypoints
         </a>
     </div>
-    <div class="nav-links">
+    <div class="nav-actions">
+        <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
+        <button type="button" id="nav-menu-toggle" class="nav-menu-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav-menu">
+            <span class="nav-menu-toggle-bar"></span>
+            <span class="nav-menu-toggle-bar"></span>
+            <span class="nav-menu-toggle-bar"></span>
+        </button>
+    </div>
+    <div class="nav-links" id="nav-menu" hidden>
         <% if (locals.isAuthenticated) { %>
             <a href="/dashboard" class="nav-link<%= locals.path && locals.path.startsWith('/dashboard') ? ' active' : '' %>">Dashboard</a>
             <a href="/budget" class="nav-link<%= locals.path && locals.path.startsWith('/budget') ? ' active' : '' %>">Budget</a>
@@ -15,6 +23,12 @@
             <a href="/schedules" class="nav-link<%= locals.path && locals.path.startsWith('/schedules') ? ' active' : '' %>">Schedules</a>
             <a href="/imports" class="nav-link<%= locals.path && locals.path.startsWith('/imports') ? ' active' : '' %>">Import</a>
             <a href="/reports" class="nav-link<%= locals.path && locals.path.startsWith('/reports') ? ' active' : '' %>">Reports</a>
+            <%# Hidden until public/js/nav.js confirms this user actually has
+                at least one SimpleFIN connection — most installs never touch
+                bank sync at all, so this stays out of the menu for them
+                rather than always showing an action that'd just 404-ish
+                no-op. See controllers/simplefinController.js's syncAll. %>
+            <button type="button" id="nav-sync-all-btn" class="nav-link nav-link-btn" hidden>🔄 Sync All</button>
             <a href="/account" class="nav-link<%= locals.path && locals.path.startsWith('/account') ? ' active' : '' %>">My Account</a>
             <% if (locals.isAdmin) { %>
                 <a href="/admin" class="nav-link<%= locals.path && locals.path.startsWith('/admin') ? ' active' : '' %>">Admin</a>
@@ -26,6 +40,5 @@
             <a href="/auth/login" class="nav-link<%= locals.path === '/auth/login' ? ' active' : '' %>">Log in</a>
             <a href="/auth/signup" class="nav-link btn-nav-create">Get started</a>
         <% } %>
-        <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
     </div>
 </nav>

@@ -4,6 +4,40 @@
     const errorBox = document.getElementById('accounts-error');
     const form = document.getElementById('account-form');
     let editingId = null;
+    let accountGroups = [];
+    let currentAccounts = [];
+
+    // Which groups are collapsed, persisted across visits (localStorage,
+    // not a server preference — purely a per-browser display convenience,
+    // same reasoning as public/js/theme.js's stored choice). The pseudo-
+    // group "ungrouped" (accounts with no group set) can collapse too.
+    const COLLAPSE_KEY = 'bw-account-groups-collapsed';
+    function loadCollapsedSet() {
+        try {
+            return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '[]'));
+        } catch (err) {
+            return new Set();
+        }
+    }
+    let collapsedGroups = loadCollapsedSet();
+    function saveCollapsedSet() {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsedGroups]));
+    }
+
+    // Live column filters — narrows the rendered table with no re-fetch,
+    // same pattern as the register's own filter row (public/js/register.js).
+    let filterState = { name: '', type: '', balance: '', onbudget: '' };
+    function isFiltering() {
+        return Object.values(filterState).some(v => v);
+    }
+    function matchesFilters(account) {
+        const f = filterState;
+        if (f.name && !account.name.toLowerCase().includes(f.name)) return false;
+        if (f.type && !account.type.toLowerCase().includes(f.type)) return false;
+        if (f.balance && !(account.balanceCents / 100).toFixed(2).includes(f.balance)) return false;
+        if (f.onbudget && !(account.onBudget ? 'yes' : 'no').includes(f.onbudget)) return false;
+        return true;
+    }
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -36,6 +70,113 @@
         return tr;
     }
 
+    // One header row per group (plus a trailing "Ungrouped" pseudo-group for
+    // accounts with no group set) — click anywhere on it to expand/collapse.
+    // Skipped entirely (flat list, no headers) when no group exists yet and
+    // nothing is assigned to one, so accounts that never touch this feature
+    // see no change from before it existed.
+    function groupHeaderRow(group, count) {
+        const tr = document.createElement('tr');
+        tr.className = 'account-group-header';
+        const collapsed = collapsedGroups.has(group.id);
+        const isReal = group.id !== 'ungrouped';
+        tr.innerHTML = `
+            <td colspan="5" style="cursor:pointer;background:var(--bg-hover);font-weight:600;">
+                <span data-toggle>${collapsed ? '▸' : '▾'}</span> ${group.name} <span class="muted">(${count})</span>
+                ${isReal ? `
+                    <button type="button" class="icon-btn" data-rename-group title="Rename group" style="border:none;background:none;cursor:pointer;float:right;">✎</button>
+                    <button type="button" class="icon-btn" data-delete-group title="Delete group" style="border:none;background:none;cursor:pointer;float:right;">🗑</button>
+                ` : ''}
+            </td>
+        `;
+        tr.addEventListener('click', (e) => {
+            if (e.target.closest('[data-rename-group],[data-delete-group]')) return;
+            if (collapsedGroups.has(group.id)) collapsedGroups.delete(group.id);
+            else collapsedGroups.add(group.id);
+            saveCollapsedSet();
+            renderAccounts();
+        });
+        if (isReal) {
+            tr.querySelector('[data-rename-group]').addEventListener('click', () => renameGroup(group));
+            tr.querySelector('[data-delete-group]').addEventListener('click', () => deleteGroup(group));
+        }
+        return tr;
+    }
+
+    async function renameGroup(group) {
+        const name = prompt('Rename group:', group.name);
+        if (!name || !name.trim() || name.trim() === group.name) return;
+        try {
+            await window.BWApi.apiFetch(`/api/account-groups/${group.id}`, { method: 'PUT', body: { name: name.trim() } });
+            await loadGroups();
+            renderAccounts();
+        } catch (err) {
+            showError(err);
+        }
+    }
+
+    // No confirmation modal (unlike deleting an account) — deleting a group
+    // just un-groups its accounts server-side (see
+    // services/database/accountGroups.js's remove), nothing is lost.
+    async function deleteGroup(group) {
+        if (!confirm(`Delete the group "${group.name}"? Its accounts stay — they just become ungrouped.`)) return;
+        try {
+            await window.BWApi.apiFetch(`/api/account-groups/${group.id}`, { method: 'DELETE' });
+            collapsedGroups.delete(group.id);
+            saveCollapsedSet();
+            await loadGroups();
+            load();
+        } catch (err) {
+            showError(err);
+        }
+    }
+
+    // Renders currentAccounts (already loaded from the server) into
+    // #accounts-tbody, applying the live column filters and, once at least
+    // one group exists or an account is assigned to one, splitting into
+    // collapsible per-group sections with a trailing "Ungrouped" section.
+    function renderAccounts() {
+        tbody.innerHTML = '';
+        const visible = currentAccounts.filter(matchesFilters);
+
+        if (currentAccounts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No accounts yet — add one above.</td></tr>';
+            return;
+        }
+        if (visible.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No accounts match these filters.</td></tr>';
+            return;
+        }
+
+        const useGroups = accountGroups.length > 0 || currentAccounts.some(a => a.group);
+        if (!useGroups) {
+            visible.sort((a, b) => a.name.localeCompare(b.name)).forEach(a => tbody.appendChild(accountRow(a)));
+            return;
+        }
+
+        const byGroupId = new Map(visible.map(a => [a, a.group || 'ungrouped']));
+        const sections = accountGroups.map(g => ({ group: g, accounts: [] }));
+        const sectionById = new Map(sections.map(s => [s.group.id, s]));
+        const ungrouped = { group: { id: 'ungrouped', name: 'Ungrouped' }, accounts: [] };
+
+        visible.forEach((a) => {
+            const gid = byGroupId.get(a);
+            const section = sectionById.get(gid);
+            (section || ungrouped).accounts.push(a);
+        });
+
+        [...sections, ungrouped].forEach(({ group, accounts }) => {
+            // An empty real group still gets a header (so it doesn't look
+            // like it vanished) unless a filter is what emptied it — the
+            // "Ungrouped" pseudo-group only ever shows when it has rows.
+            if (accounts.length === 0 && (isFiltering() || group.id === 'ungrouped')) return;
+            tbody.appendChild(groupHeaderRow(group, accounts.length));
+            if (!collapsedGroups.has(group.id)) {
+                accounts.sort((a, b) => a.name.localeCompare(b.name)).forEach(a => tbody.appendChild(accountRow(a)));
+            }
+        });
+    }
+
     // Manage > Bank Sync (public/js/accountBankSync.js) is where a sync
     // connection/link first gets set up — this is just the quick "stop
     // syncing this one account" escape hatch from the Accounts table itself.
@@ -52,19 +193,38 @@
     async function load() {
         try {
             const { accounts } = await window.BWApi.apiFetch('/api/accounts');
-            tbody.innerHTML = '';
-            if (accounts.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No accounts yet — add one above.</td></tr>';
-                return;
-            }
-            // Already alphabetical from the server (services/database/accounts.js
-            // sorts by name) — sorted again here defensively in case the list
-            // ever gets assembled/merged client-side some other way.
-            accounts.sort((a, b) => a.name.localeCompare(b.name)).forEach(a => tbody.appendChild(accountRow(a)));
+            currentAccounts = accounts;
+            renderAccounts();
         } catch (err) {
             showError(err);
         }
     }
+
+    async function loadGroups() {
+        try {
+            const { accountGroups: groups } = await window.BWApi.apiFetch('/api/account-groups');
+            accountGroups = groups;
+            const select = document.getElementById('acct-group');
+            const current = select.value;
+            select.innerHTML = '<option value="">— no group —</option>' +
+                accountGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+            select.value = current;
+        } catch (err) {
+            showError(err);
+        }
+    }
+
+    document.getElementById('acct-new-group-btn').addEventListener('click', async () => {
+        const name = prompt('New group name:');
+        if (!name || !name.trim()) return;
+        try {
+            const group = await window.BWApi.apiFetch('/api/account-groups', { method: 'POST', body: { name: name.trim() } });
+            await loadGroups();
+            document.getElementById('acct-group').value = group.id;
+        } catch (err) {
+            showError(err);
+        }
+    });
 
     // ── "Shared with me" — a distinct, non-owned list; no edit/delete/share
     // actions since a collaborator can't manage the account itself.
@@ -108,6 +268,7 @@
         document.getElementById('acct-closed').checked = account.closed;
         document.getElementById('acct-forecast-threshold').value = account.forecastThresholdCents != null ? (account.forecastThresholdCents / 100).toFixed(2) : '';
         document.getElementById('acct-forecast-color').value = account.forecastThresholdColor || '#B5433A';
+        document.getElementById('acct-group').value = account.group || '';
         form.hidden = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -124,6 +285,7 @@
         document.getElementById('acct-closed').checked = false;
         document.getElementById('acct-forecast-threshold').value = '';
         document.getElementById('acct-forecast-color').value = '#B5433A';
+        document.getElementById('acct-group').value = '';
         form.hidden = true;
     }
 
@@ -150,7 +312,8 @@
             startingBalanceCents: window.BWMoney.toCents(document.getElementById('acct-balance').value || 0),
             forecastThresholdCents: optionalCents('acct-forecast-threshold'),
             forecastThresholdColor: document.getElementById('acct-forecast-color').value,
-            onBudget: document.getElementById('acct-on-budget').checked
+            onBudget: document.getElementById('acct-on-budget').checked,
+            group: document.getElementById('acct-group').value || null
         };
         if (editingId) body.closed = document.getElementById('acct-closed').checked;
 
@@ -198,8 +361,21 @@
         overlay.hidden = true;
     }
 
+    // Account names created from a SimpleFIN link come straight from the
+    // bank's own label (see public/js/accountBankSync.js), which can carry
+    // a non-breaking space or other whitespace that's visually identical to
+    // a regular space but fails a strict ===. Collapsing all whitespace
+    // (including NBSP) before comparing means what the user sees is what
+    // gets matched, not the raw bytes underneath.
+    function normalizeForCompare(s) {
+        return String(s || '').replace(/ /g, ' ').trim();
+    }
+    function inputMatchesPendingAccount() {
+        return !!pendingDeleteAccount && normalizeForCompare(confirmInput.value) === normalizeForCompare(pendingDeleteAccount.name);
+    }
+
     confirmInput.addEventListener('input', () => {
-        const matches = !!pendingDeleteAccount && confirmInput.value === pendingDeleteAccount.name;
+        const matches = inputMatchesPendingAccount();
         confirmBtn.disabled = !matches;
         forceBtn.disabled = !matches;
     });
@@ -210,7 +386,7 @@
     });
 
     confirmBtn.addEventListener('click', async () => {
-        if (!pendingDeleteAccount || confirmInput.value !== pendingDeleteAccount.name) return;
+        if (!inputMatchesPendingAccount()) return;
         try {
             await window.BWApi.apiFetch(`/api/accounts/${pendingDeleteAccount.id}`, { method: 'DELETE' });
             closeDeleteModal();
@@ -221,7 +397,7 @@
     });
 
     forceBtn.addEventListener('click', async () => {
-        if (!pendingDeleteAccount || confirmInput.value !== pendingDeleteAccount.name) return;
+        if (!inputMatchesPendingAccount()) return;
         try {
             await window.BWApi.apiFetch(`/api/accounts/${pendingDeleteAccount.id}/force`, { method: 'DELETE' });
             closeDeleteModal();
@@ -349,7 +525,30 @@
         }
     }
 
-    load();
-    loadSharedWithMe();
-    openEditFromQueryParam();
+    // ── Live column filters — narrows #accounts-tbody as you type, no
+    // re-fetch (see matchesFilters/renderAccounts above).
+    const FILTER_FIELDS = ['name', 'type', 'balance', 'onbudget'];
+    FILTER_FIELDS.forEach((field) => {
+        document.getElementById(`filter-${field}`).addEventListener('input', (e) => {
+            filterState[field] = e.target.value.trim().toLowerCase();
+            renderAccounts();
+        });
+    });
+    document.getElementById('filter-clear-btn').addEventListener('click', () => {
+        FILTER_FIELDS.forEach((field) => {
+            filterState[field] = '';
+            document.getElementById(`filter-${field}`).value = '';
+        });
+        renderAccounts();
+    });
+
+    // loadGroups() before load()/openEditFromQueryParam() — both populate
+    // #acct-group's selected value, which only sticks once its <option>s
+    // from loadGroups() actually exist.
+    (async () => {
+        await loadGroups();
+        load();
+        loadSharedWithMe();
+        openEditFromQueryParam();
+    })();
 })();

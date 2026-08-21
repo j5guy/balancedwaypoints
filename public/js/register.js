@@ -8,6 +8,10 @@
     let categories = [];
     let categoryGroups = [];
     let payees = [];
+    // Set from the account itself in loadReferenceData — null unless this
+    // account is linked to a SimpleFIN connection (see models/account.js),
+    // in which case it powers the "Sync Now" button next to Import above.
+    let simplefinConnectionId = null;
     let editingId = null;
     let currentBalanceCents = 0;
     let transactionsById = new Map();
@@ -120,14 +124,14 @@
         currentBalanceCents = account.balanceCents;
         renderAccountBalance();
 
+        simplefinConnectionId = account.simplefinConnection || null;
+
         document.getElementById('category-options').innerHTML = categories.map(c => `<option value="${c.name}">`).join('');
         document.getElementById('bulk-category-select').innerHTML = '<option value="">— choose category —</option>' +
             categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
         const groupOptionsHtml = '<option value="">— pick a group —</option>' +
             categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
         document.getElementById('txn-category-new-group').innerHTML = groupOptionsHtml;
-        document.getElementById('qa-category-new-group').innerHTML = '<option value="">new category group...</option>' +
-            categoryGroups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
         // Transfers are only offered between your own accounts — a shared
         // account's owner may have other accounts we can't see or transfer
         // to/from (no cross-owner transfers at all, per
@@ -170,6 +174,11 @@
         // to whichever owned account sorts first. Owner-only avoids that
         // dead end rather than trying to teach imports about shared access.
         document.getElementById('import-link').style.display = isShared ? 'none' : '';
+        // Same owner-only reasoning as Import above — the SimpleFIN
+        // connection belongs to the account's owner, and syncing writes
+        // transactions the same way a collaborator can't via a shared
+        // register's own write controls.
+        document.getElementById('sync-now-btn').hidden = !simplefinConnectionId || isShared;
     }
 
     // Resolves a typed category name to an id, creating the category (in the
@@ -521,6 +530,30 @@
             </label>
         `).join('');
     }
+
+    // ── Sync Now — pulls new transactions for just this account's own
+    // SimpleFIN connection (see controllers/simplefinController.js's
+    // syncNow), same endpoint the Bank Sync page's own button hits. Hidden
+    // entirely unless this account is actually linked (applyAccessControls
+    // above).
+    document.getElementById('sync-now-btn').addEventListener('click', async () => {
+        if (!simplefinConnectionId) return;
+        const btn = document.getElementById('sync-now-btn');
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '🔄 Syncing…';
+        try {
+            const result = await window.BWApi.apiFetch(`/api/simplefin/connections/${simplefinConnectionId}/sync`, { method: 'POST' });
+            await loadReferenceData();
+            await loadTransactions();
+            alert(`Synced — imported ${result.created} new transaction${result.created === 1 ? '' : 's'}.${result.warnings.length ? '\n\nWarnings:\n' + result.warnings.join('\n') : ''}`);
+        } catch (err) {
+            showError(err);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    });
 
     // ── Mask amounts/balances (privacy toggle) ───────────────────────
     document.getElementById('toggle-mask-btn').addEventListener('click', () => {
@@ -1565,9 +1598,14 @@
         try {
             const payeeId = await resolvePayee(document.getElementById('qa-payee').value.trim());
             const tagIds = await resolveTags(document.getElementById('qa-tags').value);
+            // No group picker on the quick-add row (see views/accounts/show.ejs) —
+            // a category typed here that doesn't exist yet lands in the
+            // first category group (categoryGroups is already sorted by
+            // sortOrder/name, same order as every group dropdown). Picking a
+            // specific group for a new category still needs the full form.
             const categoryId = await resolveCategory(
                 document.getElementById('qa-category').value.trim(),
-                document.getElementById('qa-category-new-group').value
+                categoryGroups.length ? categoryGroups[0].id : null
             );
 
             await window.BWApi.apiFetch('/api/transactions', {
@@ -1586,7 +1624,6 @@
             // as-is so entering several same-day transactions stays fast.
             document.getElementById('qa-payee').value = '';
             document.getElementById('qa-category').value = '';
-            document.getElementById('qa-category-new-group').value = '';
             document.getElementById('qa-notes').value = '';
             document.getElementById('qa-tags').value = '';
             document.getElementById('qa-amount').value = '';

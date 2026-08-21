@@ -45,7 +45,17 @@ async function syncConnection(connection) {
 
     try {
         const accessUrl = decrypt({ iv: connection.accessUrlIv, ciphertext: connection.accessUrlCiphertext });
-        const startDate = connection.lastSyncAt ? daysAgo(SYNC_OVERLAP_DAYS) : daysAgo(INITIAL_BACKFILL_DAYS);
+        // connection.lastSyncAt tracks the connection as a whole, not each
+        // linked account individually — a newly-linked account under a
+        // connection that's already synced before would otherwise only get
+        // the short overlap window on its first sync and silently miss its
+        // backfill. simplefinBalanceDate stays null until an account has
+        // synced at least once, so it doubles as a reliable per-account "has
+        // this ever synced" flag. Widening the whole request's window when
+        // any linked account is on its first sync is harmless for the
+        // already-synced ones — the extra rows just get deduped below.
+        const anyFirstSync = linkedAccounts.some(a => !a.simplefinBalanceDate);
+        const startDate = (connection.lastSyncAt && !anyFirstSync) ? daysAgo(SYNC_OVERLAP_DAYS) : daysAgo(INITIAL_BACKFILL_DAYS);
         const accountIds = linkedAccounts.map(a => a.simplefinAccountId);
         const { accounts: remoteAccounts, errors: topErrors } = await fetchAccounts(accessUrl, { startDate, accountIds });
         warnings.push(...topErrors);

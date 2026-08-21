@@ -146,4 +146,25 @@ async function remove(req, res) {
     res.status(204).end();
 }
 
-module.exports = { list, create, remoteAccountsFor, link, syncNow, remove };
+// The nav's "Sync All" button (see views/components/nav.ejs) — runs every
+// one of this user's connections in one request instead of making the
+// client loop calls to syncNow above. One connection failing doesn't stop
+// the rest; each result is reported individually so the caller can show
+// which (if any) had trouble.
+async function syncAll(req, res) {
+    const connections = await connectionsDb.list(req.session.userId);
+    let created = 0;
+    const warnings = [];
+    for (const connection of connections) {
+        try {
+            const result = await syncConnection(connection);
+            created += result.created;
+            warnings.push(...result.warnings.map(w => `${connection.label}: ${w}`));
+        } catch (err) {
+            warnings.push(`${connection.label}: ${err.message}`);
+        }
+    }
+    res.json({ connectionsSynced: connections.length, created, warnings });
+}
+
+module.exports = { list, create, remoteAccountsFor, link, syncNow, syncAll, remove };

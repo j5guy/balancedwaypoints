@@ -1,7 +1,19 @@
 const accounts = require('../services/database/accounts');
 const accountShares = require('../services/database/accountShares');
+const accountGroups = require('../services/database/accountGroups');
 const { ACCOUNT_TYPES } = require('../models/account');
 const { PERMISSIONS } = require('../models/accountShare');
+
+// null clears the group (a fully-supported "ungrouped" state); any other
+// value must resolve to a group this owner actually has, same ownership
+// check every other owner-scoped lookup in this file already does.
+async function resolveGroupId(group, ownerId) {
+    if (group === undefined) return undefined;
+    if (group === null || group === '') return null;
+    const found = await accountGroups.findById(group, ownerId);
+    if (!found) throw new Error('Invalid account group');
+    return found._id;
+}
 
 function serialize({ account, balanceCents, role, ownerName, ownerId, shareId }) {
     return {
@@ -15,6 +27,7 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         closed: account.closed,
         notes: account.notes,
         sortOrder: account.sortOrder,
+        group: account.group || undefined,
         balanceCents: balanceCents != null ? balanceCents : undefined,
         // 'owner' unless this came through the shared-with-me path — lets
         // the register (public/js/register.js) know whether to show write
@@ -76,9 +89,16 @@ async function get(req, res) {
 }
 
 async function create(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes } = req.body || {};
+    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
+
+    let groupId;
+    try {
+        groupId = await resolveGroupId(group, req.session.userId);
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
 
     const account = await accounts.create({
         owner: req.session.userId,
@@ -88,7 +108,8 @@ async function create(req, res) {
         startingBalanceCents: Number(startingBalanceCents) || 0,
         forecastThresholdCents: forecastThresholdCents != null && forecastThresholdCents !== '' ? Number(forecastThresholdCents) : null,
         forecastThresholdColor: forecastThresholdColor || '#B5433A',
-        notes: notes || ''
+        notes: notes || '',
+        group: groupId || null
     });
     res.status(201).json(serialize({ account, balanceCents: account.startingBalanceCents }));
 }
@@ -98,8 +119,15 @@ async function create(req, res) {
 // forceRemove below, deliberately keep the plain req.session.userId owner
 // check rather than resolveAccountAccess.
 async function update(req, res) {
-    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder } = req.body || {};
+    const { name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group } = req.body || {};
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
+
+    let groupId;
+    try {
+        groupId = await resolveGroupId(group, req.session.userId);
+    } catch (err) {
+        return res.status(400).json({ error: err.message });
+    }
 
     const data = {};
     if (name !== undefined) data.name = String(name).trim();
@@ -111,6 +139,7 @@ async function update(req, res) {
     if (closed !== undefined) data.closed = !!closed;
     if (notes !== undefined) data.notes = notes;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;
+    if (groupId !== undefined) data.group = groupId;
 
     const account = await accounts.update(req.params.id, data, req.session.userId);
     if (!account) return res.status(404).json({ error: 'Not found' });

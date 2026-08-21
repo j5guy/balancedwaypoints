@@ -120,29 +120,47 @@
             const orgLabel = remote.org ? `${remote.org} — ${remote.name}` : remote.name;
 
             if (already) {
-                tr.innerHTML = `<td>${orgLabel}</td><td class="money">${balance}</td><td colspan="2">Linked to <strong>${already.name}</strong></td>`;
+                tr.innerHTML = `
+                    <td>${orgLabel}</td>
+                    <td class="money">${balance}</td>
+                    <td>Linked to <strong>${already.name}</strong></td>
+                    <td><button type="button" class="btn btn-secondary btn-sm" data-unlink>Unlink</button></td>
+                `;
+                tr.querySelector('[data-unlink]').addEventListener('click', () => openUnlinkModal(already, connection, remoteAccounts));
                 linkTbody.appendChild(tr);
                 return;
             }
 
-            const options = ['<option value="">Create new account: "' + remote.name + '"</option>']
+            const options = ['<option value="">Create new account: "' + remote.name + '"</option>', '<option value="__custom__">Create new account with a custom name…</option>']
                 .concat(localAccounts.map((a) => `<option value="${a.id}">${a.name}</option>`));
             tr.innerHTML = `
                 <td>${orgLabel}</td>
                 <td class="money">${balance}</td>
-                <td><select data-target>${options.join('')}</select></td>
+                <td>
+                    <select data-target>${options.join('')}</select>
+                    <input type="text" data-custom-name placeholder="Account name" style="margin-top:4px;" hidden>
+                </td>
                 <td><button type="button" class="btn btn-primary btn-sm" data-link>Link</button></td>
             `;
+            const targetSelect = tr.querySelector('[data-target]');
+            const customNameInput = tr.querySelector('[data-custom-name]');
+            targetSelect.addEventListener('change', () => {
+                customNameInput.hidden = targetSelect.value !== '__custom__';
+                if (!customNameInput.hidden) customNameInput.focus();
+            });
             tr.querySelector('[data-link]').addEventListener('click', async () => {
-                const accountId = tr.querySelector('[data-target]').value;
+                const accountId = targetSelect.value;
+                const isCustom = accountId === '__custom__';
+                const customName = customNameInput.value.trim();
+                if (isCustom && !customName) { customNameInput.focus(); return; }
                 try {
                     await window.BWApi.apiFetch(`/api/simplefin/connections/${connection.id}/link`, {
                         method: 'POST',
-                        body: accountId
+                        body: (accountId && !isCustom)
                             ? { simplefinAccountId: remote.id, accountId }
-                            : { simplefinAccountId: remote.id, newAccount: { name: remote.name, type: 'checking' } }
+                            : { simplefinAccountId: remote.id, newAccount: { name: isCustom ? customName : remote.name, type: 'checking' } }
                     });
-                    showSuccess(`Linked "${remote.name}".`);
+                    showSuccess(`Linked "${isCustom ? customName : remote.name}".`);
                     const { connections } = await window.BWApi.apiFetch('/api/simplefin/connections');
                     const refreshed = connections.find((c) => c.id === connection.id) || connection;
                     loadConnections();
@@ -156,6 +174,94 @@
 
         linkSection.hidden = false;
     }
+
+    // ── Unlink modal — reachable from a linked row above ("Manage
+    // accounts"), a shortcut to the same POST .../simplefin/unlink the
+    // Accounts page's own 🔌 icon uses (see public/js/accounts.js), plus the
+    // option to close or delete the account in the same step instead of a
+    // separate trip to the Accounts page for that.
+    const unlinkOverlay = document.getElementById('sf-unlink-overlay');
+    const unlinkError = document.getElementById('sf-unlink-error');
+    let pendingUnlink = null; // { account: {id, name}, connection, remoteAccounts }
+
+    function showUnlinkError(err) {
+        unlinkError.textContent = (err && err.message) || 'Something went wrong';
+        unlinkError.hidden = false;
+    }
+
+    function openUnlinkModal(account, connection, remoteAccounts) {
+        pendingUnlink = { account, connection, remoteAccounts };
+        document.getElementById('sf-unlink-account-name').textContent = `"${account.name}"`;
+        unlinkError.hidden = true;
+        unlinkOverlay.hidden = false;
+    }
+
+    function closeUnlinkModal() {
+        pendingUnlink = null;
+        unlinkOverlay.hidden = true;
+    }
+
+    // Refreshes both the connections table and the still-open "Manage
+    // accounts" section after an unlink, same as a plain Link/Unlink action
+    // elsewhere on this page — the account no longer shows as linked, so it
+    // reappears as a selectable "Create new account"/existing-account row.
+    async function afterUnlink(message) {
+        const { connection, remoteAccounts } = pendingUnlink;
+        closeUnlinkModal();
+        showSuccess(message);
+        loadConnections();
+        try {
+            const { connections } = await window.BWApi.apiFetch('/api/simplefin/connections');
+            const refreshed = connections.find((c) => c.id === connection.id) || connection;
+            renderLinkSection(refreshed, remoteAccounts);
+        } catch (err) { /* connections table above already refreshed */ }
+    }
+
+    document.getElementById('sf-unlink-cancel-btn').addEventListener('click', closeUnlinkModal);
+    unlinkOverlay.addEventListener('click', (e) => {
+        if (e.target === unlinkOverlay) closeUnlinkModal();
+    });
+
+    document.getElementById('sf-unlink-only-btn').addEventListener('click', async () => {
+        if (!pendingUnlink) return;
+        try {
+            await window.BWApi.apiFetch(`/api/accounts/${pendingUnlink.account.id}/simplefin/unlink`, { method: 'POST' });
+            await afterUnlink(`Unlinked "${pendingUnlink.account.name}" — it's back to manual entry.`);
+        } catch (err) {
+            showUnlinkError(err);
+        }
+    });
+
+    document.getElementById('sf-unlink-close-btn').addEventListener('click', async () => {
+        if (!pendingUnlink) return;
+        const { account } = pendingUnlink;
+        try {
+            await window.BWApi.apiFetch(`/api/accounts/${account.id}/simplefin/unlink`, { method: 'POST' });
+            await window.BWApi.apiFetch(`/api/accounts/${account.id}`, { method: 'PUT', body: { closed: true } });
+            await afterUnlink(`Unlinked and closed "${account.name}".`);
+        } catch (err) {
+            showUnlinkError(err);
+        }
+    });
+
+    document.getElementById('sf-unlink-delete-btn').addEventListener('click', async () => {
+        if (!pendingUnlink) return;
+        const { account } = pendingUnlink;
+        if (!confirm(`Permanently delete "${account.name}"? This cannot be undone.`)) return;
+        try {
+            await window.BWApi.apiFetch(`/api/accounts/${account.id}/simplefin/unlink`, { method: 'POST' });
+            await window.BWApi.apiFetch(`/api/accounts/${account.id}`, { method: 'DELETE' });
+            await afterUnlink(`Unlinked and deleted "${account.name}".`);
+        } catch (err) {
+            // Most likely a 409 — deleting is blocked while the account still
+            // has transactions (services/database/accounts.js's remove()),
+            // which a synced account almost always does. It's already
+            // unlinked at this point either way, so this steers to the
+            // Accounts page's close-then-force-delete flow instead of
+            // silently failing.
+            showUnlinkError(new Error(`${err.message || "Couldn't delete this account"} — it's already unlinked, though. Close it and use Force delete on the Accounts page to remove it along with its history.`));
+        }
+    });
 
     async function openLinkSection(connection) {
         try {

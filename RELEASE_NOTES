@@ -1,3 +1,17 @@
+v0.14.0b
+------
+Fixed a SimpleFIN sync bug that could import zero transactions every single sync for certain accounts
+(brokerage/investment accounts especially): the bridge reports a transaction's `posted` field as 0 for
+anything that hasn't posted yet, which was being treated as a missing/bad date and silently dropped
+instead of imported as pending. Related fix: an account's very first sync now auto-corrects its starting
+balance (bank-reported balance minus the transactions just imported) so the register's running balance
+matches the real balance right away instead of coming up short by whatever activity fell outside the
+90-day backfill window — only applies to a freshly-linked account with no prior history, never one you
+were already using manually. The Bank Sync page's "Manage accounts" list now has an Unlink button on
+each linked account, opening a choice of unlinking only, unlinking and closing the account, or unlinking
+and deleting it. Linking a remote account to a brand-new local account also now offers a custom name
+instead of only the bank's own label.
+
 v0.13.0b
 ------
 Accounts can now be organized into custom groups (Accounts page: assign a group when adding/editing an

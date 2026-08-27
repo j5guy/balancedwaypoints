@@ -1029,6 +1029,13 @@
                 }
             });
             closeOccurrenceModal();
+            // Posting an occurrence creates a real transaction, which
+            // changes the account's stored balance — currentBalanceCents
+            // has to be re-fetched (same as the quick-add handler above)
+            // before loadTransactions() re-derives running balances from
+            // it, or every balance in the register stays off-by-one-
+            // occurrence until the next full page load.
+            await loadReferenceData();
             await loadTransactions();
         } catch (err) {
             showError(err);

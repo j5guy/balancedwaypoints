@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Transaction = require('../../models/transaction');
+const Account = require('../../models/account');
 
 // Single-period income/expense totals, transfers excluded — same rules as
 // incomeVsExpense.js, just collapsed to one total instead of grouped by
@@ -7,7 +8,10 @@ const Transaction = require('../../models/transaction');
 // Budget widgets (and their Grafana equivalents) without a separate query
 // per widget. `accountId` is optional — omitted means "every account" (the
 // dashboard's "All accounts" scope); the widget-instance model that carries
-// this is documented on models/user.js's preferences.dashboard.widgets.
+// this is documented on models/user.js's preferences.dashboard.widgets. When
+// scoped to "every account", off-budget asset/tracking accounts are excluded
+// the same way incomeVsExpense.js excludes them — a specific accountId is
+// left alone since the caller picked that account deliberately.
 async function summary({ from, to, accountId, ownerId }) {
     const dateFilter = {};
     if (from) dateFilter.$gte = new Date(from);
@@ -16,10 +20,19 @@ async function summary({ from, to, accountId, ownerId }) {
     // both owner and accountId arrive here as plain strings (session/query
     // param respectively), so both need an explicit cast or this silently
     // matches nothing.
+    const ownerObjectId = new mongoose.Types.ObjectId(ownerId);
+    let accountFilter = {};
+    if (accountId) {
+        accountFilter = { account: new mongoose.Types.ObjectId(accountId) };
+    } else {
+        const onBudgetAccountIds = (await Account.find({ owner: ownerObjectId, onBudget: true }).select('_id').exec())
+            .map(a => a._id);
+        accountFilter = { account: { $in: onBudgetAccountIds } };
+    }
     const match = {
-        owner: new mongoose.Types.ObjectId(ownerId),
+        owner: ownerObjectId,
         transferAccount: null,
-        ...(accountId ? { account: new mongoose.Types.ObjectId(accountId) } : {}),
+        ...accountFilter,
         ...(Object.keys(dateFilter).length ? { date: dateFilter } : {})
     };
 

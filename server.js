@@ -21,6 +21,7 @@ const themeColorFields = require('./utils/themeColorFields');
 const startScheduler = require('./services/schedules/scheduler');
 const backupScheduler = require('./services/backup/backupScheduler');
 const startSimplefinScheduler = require('./services/simplefin/simplefinScheduler');
+const startLicenseScheduler = require('./services/licensing/scheduler');
 
 // Database
 mongooseConnect();
@@ -36,6 +37,11 @@ backupScheduler.reloadAll().catch((err) => logger.error('Initial backup schedule
 // Optional bank sync (My Account > Bank Sync) — no-op for anyone who hasn't
 // connected a SimpleFIN bridge, see services/simplefin/.
 startSimplefinScheduler();
+
+// Requests a trial (first run) or re-validates the existing key, then
+// re-checks daily — see services/licensing/gate.js. middleware/license.js
+// gates every route (including login/signup) on the result.
+startLicenseScheduler();
 
 // View engine
 app.set('view engine', 'ejs');
@@ -91,9 +97,18 @@ app.use((req, res, next) => {
     next();
 });
 
+// Access gate — before every route below, so an unlicensed/expired install
+// (self-hosted) or an inactive subscription (cloud) redirects instead of
+// exposing app functionality. This is the one file that differs between the
+// self-hosted and cloud-hosted builds — see middleware/accessGate.js.
+const { accessGate } = require('./middleware/accessGate');
+app.use(accessGate);
+
 // Routes
 const { doubleCsrfProtection } = require('./middleware/csrf');
 const { apiBaselineLimiter } = require('./middleware/rateLimit');
+const licensePagesRoutes = require('./routes/licensePages');
+const licenseApiRoutes = require('./routes/api/license');
 const pagesRoutes = require('./routes/pages');
 const authPagesRoutes = require('./routes/authPages');
 const adminPagesRoutes = require('./routes/admin');
@@ -135,7 +150,9 @@ apiRouter.use('/imports', importsApiRoutes);
 apiRouter.use('/reports', reportsApiRoutes);
 apiRouter.use('/admin', adminApiRoutes);
 apiRouter.use('/simplefin', simplefinApiRoutes);
+apiRouter.use('/license', licenseApiRoutes);
 
+app.use('/license', licensePagesRoutes);
 app.use('/', pagesRoutes);
 app.use('/auth', authPagesRoutes);
 app.use('/admin', adminPagesRoutes);

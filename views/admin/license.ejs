@@ -1,0 +1,67 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-admin-license">
+    <div class="page-header">
+        <h1>License</h1>
+    </div>
+
+    <div id="license-error" class="form-error" <%= error ? '' : 'hidden' %>><%= error || '' %></div>
+
+    <div class="card">
+        <h2>Status</h2>
+        <% if (license && license.key) { %>
+            <dl class="detail-list">
+                <dt>State</dt>
+                <dd><%= active ? 'Active' : 'Not active' %></dd>
+
+                <dt>Type</dt>
+                <dd><%= license.type || 'unknown' %></dd>
+
+                <dt>Key</dt>
+                <dd><code><%= license.key.length > 8 ? '…' + license.key.slice(-8) : license.key %></code></dd>
+
+                <% if (license.email) { %>
+                    <dt>Email on file</dt>
+                    <dd><%= license.email %></dd>
+                <% } %>
+
+                <% if (license.expiresAt) { %>
+                    <dt>Expires</dt>
+                    <dd><%= new Date(license.expiresAt).toLocaleDateString() %></dd>
+                <% } %>
+
+                <dt>Last check-in</dt>
+                <dd>
+                    <%= license.lastValidatedAt ? new Date(license.lastValidatedAt).toLocaleString() : 'never' %>
+                    <% if (!license.lastValidationReachable) { %>
+                        <span class="muted">(licensing service unreachable on last attempt — showing last known status)</span>
+                    <% } %>
+                </dd>
+
+                <dt>Instance ID</dt>
+                <dd><code><%= license.instanceId %></code></dd>
+            </dl>
+        <% } else { %>
+            <p class="muted">This install has no license key on record yet.</p>
+        <% } %>
+    </div>
+
+    <div class="card">
+        <h2>Change key</h2>
+        <p class="muted">
+            Activating a new key replaces the one currently on record for this install.
+            A license key is for one self-hosted install at a time — please don't share it across multiple installs.
+        </p>
+        <form id="admin-license-form">
+            <div class="form-group">
+                <label for="admin-license-key">License key</label>
+                <input type="text" id="admin-license-key" name="key" placeholder="AWP-XXXX-XXXX-XXXX-XXXX" required autocomplete="off" autocapitalize="off" spellcheck="false">
+            </div>
+            <button type="submit" class="btn btn-primary" id="admin-license-submit">Activate</button>
+        </form>
+        <p class="form-hint">
+            Don't have a key yet? <a href="/license/checkout">Buy a Lifetime license</a>
+        </p>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/adminLicense.js'] }) %>

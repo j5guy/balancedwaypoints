@@ -1,0 +1,42 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-auth">
+    <div class="auth-card">
+        <h1>License</h1>
+
+        <% if (active) { %>
+            <p class="form-hint">
+                This install is licensed
+                (<%= license.type %><% if (license.type === 'trial' && license.expiresAt) { %>, expires <%= new Date(license.expiresAt).toLocaleDateString() %><% } %>).
+            </p>
+            <a href="/" class="btn btn-primary btn-block">Continue</a>
+        <% } else { %>
+            <p class="form-hint">
+                <% if (license && license.type === 'trial') { %>
+                    Your trial has ended. Enter a license key below to keep using Balanced Waypoints, or purchase a Lifetime license.
+                <% } else { %>
+                    Enter a license key to activate this install.
+                <% } %>
+            </p>
+
+            <div id="license-error" class="form-error" <%= error ? '' : 'hidden' %>><%= error || '' %></div>
+
+            <form id="license-form">
+                <div class="form-group">
+                    <label for="key">License key</label>
+                    <input type="text" id="key" name="key" placeholder="AWP-XXXX-XXXX-XXXX-XXXX" required autocomplete="off" autocapitalize="off" spellcheck="false">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" id="license-submit">Activate</button>
+            </form>
+
+            <p class="form-hint">
+                Don't have a key yet? <a href="/license/checkout">Buy a Lifetime license</a>
+            </p>
+
+            <p class="form-hint muted">
+                A license key is for one self-hosted install at a time — please don't share it across multiple installs.
+            </p>
+        <% } %>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/license.js'] }) %>

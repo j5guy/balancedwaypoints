@@ -24,6 +24,7 @@ async function activate(req, res) {
         const result = await gate.activate(key);
         res.json({ ok: true, license: result });
     } catch (err) {
+        logger.error('License activate failed: ' + err.message + (err.cause ? ` (${err.cause})` : ''));
         res.status(400).json({ error: err.message });
     }
 }

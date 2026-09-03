@@ -43,10 +43,18 @@
 
         container.addEventListener('dragover', (e) => {
             if (!draggedEl) return;
-            const item = itemForEvent(container, e.target);
-            if (!item || item === draggedEl) return;
+            // Always accept the drop while a drag is active — even when the
+            // cursor is over the dragged row itself (its new position after
+            // an earlier insertBefore) or over no row at all. Skipping
+            // preventDefault() in those cases used to leave the browser
+            // thinking the drop target was invalid, silently cancelling the
+            // whole drag with no 'drop' event ever firing — easy to hit on
+            // a short list, where the cursor often lands back on the row
+            // you just moved right before you release the mouse.
             e.preventDefault();
             e.stopPropagation();
+            const item = itemForEvent(container, e.target);
+            if (!item || item === draggedEl) return;
             const rect = item.getBoundingClientRect();
             const after = (e.clientY - rect.top) / rect.height > 0.5;
             container.insertBefore(draggedEl, after ? item.nextSibling : item);

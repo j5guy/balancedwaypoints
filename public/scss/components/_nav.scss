@@ -11,9 +11,11 @@
     gap: 12px;
 }
 
-// Always-visible right-hand group — the theme toggle stays out of the
-// hamburger dropdown (it's a quick, frequent action, not "navigation") and
-// sits directly on the bar next to the hamburger button itself.
+// Holds just the hamburger button itself, between the brand and the link
+// list — the theme toggle lives in .nav-links now (as its last item) so it
+// sits on the right with the rest of the menu instead of floating in its
+// own group in the middle of the bar once .nav-links goes inline above the
+// breakpoint at the bottom of this file.
 .nav-actions {
     display: flex;
     align-items: center;
@@ -197,5 +199,46 @@
 
     &:hover {
         background: $bg-hover;
+    }
+}
+
+// Above this width the hamburger disappears and the link list just shows
+// inline next to the brand instead — same breakpoint/approach as vipers's
+// nav (public/scss/components/_nav.scss there). The `[hidden]` override is
+// needed because this codebase toggles the dropdown via the `hidden`
+// attribute (public/js/nav.js), not a CSS class — without it, whatever
+// open/closed state the menu happened to be in before crossing the
+// breakpoint would carry over instead of the links just always showing.
+@media (min-width: 861px) {
+    .nav-menu-toggle {
+        display: none;
+    }
+
+    .nav-links {
+        position: static;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 0;
+        margin-top: 0;
+        padding: 0;
+        background: none;
+        border: none;
+        box-shadow: none;
+
+        &[hidden] {
+            display: flex;
+        }
+
+        .nav-link, .btn-nav-logout, .nav-link-btn {
+            width: auto;
+            text-align: left;
+        }
+
+        .inline-form {
+            width: auto;
+        }
     }
 }

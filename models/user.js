@@ -230,6 +230,17 @@ const userSchema = new mongoose.Schema({
             amount: { type: Number, default: 3 },
             unit: { type: String, enum: ['days', 'months', 'years'], default: 'months' }
         },
+        // The register page's "Quick account links" card (views/accounts/show.ejs
+        // + public/js/register.js) — per-account, not global: keyed by the
+        // account you're VIEWING (a plain object rather than a typed
+        // sub-schema since Mongoose needs Mixed for arbitrary ObjectId-string
+        // keys), each value an ordered list of OTHER account ids to show as
+        // jump-to links on that account's page. Deliberately not symmetric —
+        // linking from Checking to Savings doesn't also add a link back.
+        // Sanitized in controllers/authController.js's
+        // sanitizeQuickAccountLinks before save (both the keys and the id
+        // lists must be real ObjectId-shaped strings, capped in length).
+        quickAccountLinks: { type: mongoose.Schema.Types.Mixed, default: () => ({}) },
         // Sent by services/jobs/weeklyReportEmailJob.js through this user's
         // own configured SMTP (smtp above) — requires that to be set up, same
         // as per-schedule email alerts (see models/schedule.js's notifyByEmail).

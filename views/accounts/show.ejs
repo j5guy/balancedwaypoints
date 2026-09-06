@@ -26,6 +26,27 @@
         </p>
     </div>
 
+    <div class="card" id="quick-links-card">
+        <div class="register-forecast-header">
+            <h3>Quick account links</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="edit-quick-links-btn">✎ Edit</button>
+        </div>
+        <div id="quick-links-list" class="quick-links-list"></div>
+        <p class="muted" id="quick-links-empty" style="font-size:0.85rem;" hidden>No quick links yet — click Edit to add some.</p>
+    </div>
+
+    <div class="modal-overlay" id="quick-links-overlay" hidden>
+        <div class="modal-card" style="max-width:480px;">
+            <h3>Edit quick account links</h3>
+            <p class="form-hint">Pick which other accounts show up as quick links on this account's page.</p>
+            <div id="quick-links-picker" class="quick-links-picker"></div>
+            <div class="btn-row">
+                <button type="button" class="btn btn-primary" id="save-quick-links-btn">Save</button>
+                <button type="button" class="btn btn-secondary" id="cancel-quick-links-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div class="card" id="register-forecast-card">
         <div class="register-forecast-header">
             <h3>Forecast</h3>

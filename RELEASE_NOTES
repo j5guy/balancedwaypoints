@@ -1,3 +1,9 @@
+v0.16.1b
+------
+Fixed the new hamburger menu (v0.16.0b): on a wide-enough window the theme toggle was floating on its own
+in the middle of the nav bar, separated from the other links, instead of sitting with them on the right.
+It's now the last item in the link row (after "My Account"/"Get started"), same as everywhere else.
+
 v0.16.0b
 ------
 Each account's register page now has a "Quick account links" card above the Forecast chart — pill-shaped

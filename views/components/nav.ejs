@@ -6,7 +6,6 @@
         </a>
     </div>
     <div class="nav-actions">
-        <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
         <button type="button" id="nav-menu-toggle" class="nav-menu-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav-menu">
             <span class="nav-menu-toggle-bar"></span>
             <span class="nav-menu-toggle-bar"></span>
@@ -40,5 +39,6 @@
             <a href="/auth/login" class="nav-link<%= locals.path === '/auth/login' ? ' active' : '' %>">Log in</a>
             <a href="/auth/signup" class="nav-link btn-nav-create">Get started</a>
         <% } %>
+        <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
     </div>
 </nav>

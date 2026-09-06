@@ -1,3 +1,15 @@
+v0.16.0b
+------
+Each account's register page now has a "Quick account links" card above the Forecast chart — pill-shaped
+links to other accounts you pick yourself, for jumping straight from e.g. Checking to Savings without a
+detour through the Accounts list. Click "Edit" on the card to check off which of your other accounts show
+up here; the list is per-account (Checking and Savings can each point at a different set) and per-user,
+so it follows you across devices the same way the register's other display preferences do.
+
+The hamburger menu now only appears on narrower screens — on a wide enough window the nav links show
+inline next to the brand instead, so there's one less click to get around on desktop. Below that width,
+navigation still collapses into the hamburger dropdown exactly as before.
+
 v0.15.0b
 ------
 New account types, Home and Vehicle, for tracking things that add to your net worth instead of

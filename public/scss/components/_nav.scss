@@ -199,3 +199,44 @@
         background: $bg-hover;
     }
 }
+
+// Above this width the hamburger disappears and the link list just shows
+// inline next to the brand instead — same breakpoint/approach as vipers's
+// nav (public/scss/components/_nav.scss there). The `[hidden]` override is
+// needed because this codebase toggles the dropdown via the `hidden`
+// attribute (public/js/nav.js), not a CSS class — without it, whatever
+// open/closed state the menu happened to be in before crossing the
+// breakpoint would carry over instead of the links just always showing.
+@media (min-width: 861px) {
+    .nav-menu-toggle {
+        display: none;
+    }
+
+    .nav-links {
+        position: static;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 0;
+        margin-top: 0;
+        padding: 0;
+        background: none;
+        border: none;
+        box-shadow: none;
+
+        &[hidden] {
+            display: flex;
+        }
+
+        .nav-link, .btn-nav-logout, .nav-link-btn {
+            width: auto;
+            text-align: left;
+        }
+
+        .inline-form {
+            width: auto;
+        }
+    }
+}

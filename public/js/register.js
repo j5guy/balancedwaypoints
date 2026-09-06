@@ -133,7 +133,8 @@
         registerColumnOrder: DEFAULT_COLUMN_ORDER.slice(),
         upcomingSchedules: { enabled: false, amount: 14, unit: 'days' },
         registerHistory: { enabled: false, amount: 3, unit: 'months' },
-        badgeColors: { scheduled: null, due: null, autopay: null }
+        badgeColors: { scheduled: null, due: null, autopay: null },
+        quickAccountLinks: {}
     };
 
     function showError(err) {
@@ -212,6 +213,7 @@
             .filter(a => a.id !== accountId)
             .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
         document.getElementById('payee-options').innerHTML = payees.map(p => `<option value="${p.name}">`).join('');
+        renderQuickLinks();
         applyAccessControls();
     }
 
@@ -774,6 +776,55 @@
             applyColumnPreferences();
             document.getElementById('settings-panel').hidden = true;
             await loadTransactions();
+        } catch (err) {
+            showError(err);
+        }
+    });
+
+    // ── Quick account links card ──────────────────────────────────────
+    // Per-account (see models/user.js's preferences.quickAccountLinks) list
+    // of other accounts to jump straight to from this one's register page —
+    // e.g. Checking → its linked Savings and Credit Card. Only offers your
+    // own accounts (the `accounts` array from loadReferenceData), same
+    // owner-only scope as the transfer picker above.
+    function renderQuickLinks() {
+        const links = (preferences.quickAccountLinks && preferences.quickAccountLinks[accountId]) || [];
+        const list = document.getElementById('quick-links-list');
+        const byId = new Map(accounts.map(a => [a.id, a]));
+        const html = links
+            .map(id => byId.get(id))
+            .filter(Boolean)
+            .map(a => `<a href="/accounts/${a.id}">${a.name}</a>`)
+            .join('');
+        list.innerHTML = html;
+        document.getElementById('quick-links-empty').hidden = !!html;
+    }
+
+    document.getElementById('edit-quick-links-btn').addEventListener('click', () => {
+        const links = new Set((preferences.quickAccountLinks && preferences.quickAccountLinks[accountId]) || []);
+        const picker = document.getElementById('quick-links-picker');
+        picker.innerHTML = accounts
+            .filter(a => a.id !== accountId)
+            .map(a => `
+                <div class="checkbox-row">
+                    <input type="checkbox" id="quick-link-${a.id}" data-account-id="${a.id}" ${links.has(a.id) ? 'checked' : ''}>
+                    <label for="quick-link-${a.id}">${a.name}</label>
+                </div>
+            `).join('') || '<p class="muted">No other accounts to link to yet.</p>';
+        document.getElementById('quick-links-overlay').hidden = false;
+    });
+    document.getElementById('cancel-quick-links-btn').addEventListener('click', () => {
+        document.getElementById('quick-links-overlay').hidden = true;
+    });
+    document.getElementById('save-quick-links-btn').addEventListener('click', async () => {
+        const selected = [...document.querySelectorAll('#quick-links-picker input:checked')].map(cb => cb.dataset.accountId);
+        try {
+            preferences = await window.BWApi.apiFetch('/api/auth/preferences', {
+                method: 'PUT',
+                body: { quickAccountLinks: { [accountId]: selected } }
+            });
+            renderQuickLinks();
+            document.getElementById('quick-links-overlay').hidden = true;
         } catch (err) {
             showError(err);
         }

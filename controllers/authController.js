@@ -301,6 +301,7 @@ async function getPreferences(req, res) {
         weeklyReportEmail: user.preferences.weeklyReportEmail,
         dashboard: user.preferences.dashboard,
         badgeColors: user.preferences.badgeColors,
+        quickAccountLinks: user.preferences.quickAccountLinks,
         notifyEmail: user.notifyEmail,
         themeColors: user.themeColors
     });
@@ -430,6 +431,27 @@ function sanitizeDashboardWidgets(input) {
     return widgets;
 }
 
+// preferences.quickAccountLinks (models/user.js) is { [accountId]: [otherAccountId, ...] }
+// keyed dynamically by whatever accounts exist, so — unlike the fixed-key
+// sub-objects above — this can't be validated with a whitelist of known
+// keys. Instead it just enforces the shape: every key and every id in every
+// list must look like a real ObjectId, lists are deduped and capped (a
+// quick-links card isn't meant to become a second full accounts list), and
+// an account can't link to itself. Malformed individual entries are
+// dropped rather than rejecting the whole payload, same "best-effort clean,
+// don't all-or-nothing reject" stance as sanitizeDashboardWidgets.
+const MAX_QUICK_LINKS_PER_ACCOUNT = 20;
+function sanitizeQuickAccountLinks(input) {
+    const result = {};
+    if (!input || typeof input !== 'object') return result;
+    for (const [accountId, links] of Object.entries(input)) {
+        if (!OBJECT_ID_RE.test(accountId) || !Array.isArray(links)) continue;
+        const cleaned = [...new Set(links.filter(id => typeof id === 'string' && OBJECT_ID_RE.test(id) && id !== accountId))];
+        result[accountId] = cleaned.slice(0, MAX_QUICK_LINKS_PER_ACCOUNT);
+    }
+    return result;
+}
+
 function sanitizeDashboard(input, existing) {
     const widgets = Array.isArray(input.widgets)
         ? sanitizeDashboardWidgets(input.widgets)
@@ -445,7 +467,7 @@ async function updatePreferences(req, res) {
     const user = await usersDb.findById(req.session.userId);
     if (!user) return res.status(404).json({ error: 'Not found' });
 
-    const { homeDashboard, registerSort, registerMask, registerColumns, registerColumnOrder, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, badgeColors, notifyEmail, themeColors } = req.body || {};
+    const { homeDashboard, registerSort, registerMask, registerColumns, registerColumnOrder, upcomingSchedules, registerHistory, weeklyReportEmail, dashboard, badgeColors, notifyEmail, themeColors, quickAccountLinks } = req.body || {};
     if (['budget', 'accounts', 'dashboard'].includes(homeDashboard)) user.preferences.homeDashboard = homeDashboard;
     if (['newest', 'oldest', 'manual'].includes(registerSort)) user.preferences.registerSort = registerSort;
     if (registerMask) Object.assign(user.preferences.registerMask, registerMask);
@@ -456,6 +478,11 @@ async function updatePreferences(req, res) {
     if (weeklyReportEmail !== undefined) user.preferences.weeklyReportEmail = !!weeklyReportEmail;
     if (dashboard) user.preferences.dashboard = sanitizeDashboard(dashboard, user.preferences.dashboard);
     if (badgeColors) user.preferences.badgeColors = sanitizeBadgeColors(badgeColors, user.preferences.badgeColors);
+    // Merged key-by-key (not replaced wholesale) — a save from one
+    // account's page only ever sends that one account's key, and a
+    // wholesale replace would silently wipe every other account's saved
+    // quick links.
+    if (quickAccountLinks) Object.assign(user.preferences.quickAccountLinks, sanitizeQuickAccountLinks(quickAccountLinks));
     // notifyEmail lives directly on the user doc (see models/user.js), not
     // under preferences, but is accepted here too so the My Account page's
     // notification-settings card can save it independent of the SMTP
@@ -491,6 +518,7 @@ async function updatePreferences(req, res) {
             weeklyReportEmail: user.preferences.weeklyReportEmail,
             dashboard: user.preferences.dashboard,
             badgeColors: user.preferences.badgeColors,
+            quickAccountLinks: user.preferences.quickAccountLinks,
             notifyEmail: user.notifyEmail,
             themeColors: user.themeColors
         });

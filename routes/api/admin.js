@@ -24,6 +24,13 @@ router.get('/settings/backup', adminController.getBackupSettings);
 router.put('/settings/backup', adminController.updateBackupSettings);
 router.post('/settings/backup/check', adminController.checkBackupDestination);
 
+router.get('/settings/logging', adminController.getLoggingSettings);
+router.put('/settings/logging', adminController.updateLoggingSettings);
+
+router.get('/settings/metrics', adminController.getMetricsSettings);
+router.put('/settings/metrics', adminController.updateMetricsSettings);
+router.put('/settings/metrics/pushgateway', adminController.updatePushgatewaySettings);
+
 router.get('/backup/runs', adminController.listBackupRuns);
 router.get('/backup/files', adminController.listBackupFiles);
 router.get('/backup/files/:name/download', adminController.downloadBackupFile);

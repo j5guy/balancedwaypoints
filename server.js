@@ -22,6 +22,17 @@ const startScheduler = require('./services/schedules/scheduler');
 const backupScheduler = require('./services/backup/backupScheduler');
 const startSimplefinScheduler = require('./services/simplefin/simplefinScheduler');
 const startLicenseScheduler = require('./services/licensing/scheduler');
+const logExportSettingsStore = require('./services/settings/store');
+const metricsMiddleware = require('./middleware/metrics');
+const metricsRoute = require('./routes/metrics');
+const exportTransports = require('./services/logging/exportTransports');
+const pushgatewayService = require('./services/metrics/pushgateway');
+
+// Independent of Mongo being up — logging/metrics export should keep working
+// (or fail loudly on its own) even when the database connection hasn't
+// resolved yet, unlike the schedulers below.
+exportTransports.configure(logExportSettingsStore.get());
+pushgatewayService.start(logExportSettingsStore.get());
 
 // Database
 mongooseConnect();
@@ -72,6 +83,11 @@ app.use(helmetMiddleware);
 
 // Static assets
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Unconditionally mounted — see routes/metrics.js for how exposure itself
+// is gated by settings, independent of anything above.
+app.use(metricsMiddleware);
+app.use('/metrics', metricsRoute);
 
 // Body parsing & method override
 app.use(express.urlencoded({ extended: true }));

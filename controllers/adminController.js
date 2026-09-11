@@ -7,6 +7,12 @@ const backupService = require('../services/backup/backupService');
 const backupScheduler = require('../services/backup/backupScheduler');
 const { resolveLdapConfig, testBind } = require('../config/ldapAuth');
 const { resolveOidcConfig } = require('../config/oidcAuth');
+const logExportSettingsStore = require('../services/settings/store');
+const exportTransports = require('../services/logging/exportTransports');
+const pushgatewayService = require('../services/metrics/pushgateway');
+
+const LOGGING_DESTINATIONS = ['none', 'syslog', 'http'];
+const SYSLOG_PROTOCOLS = ['udp4', 'tcp4', 'tls4'];
 
 function serializeUser(user) {
     return {
@@ -302,11 +308,71 @@ async function restoreFromFile(req, res) {
     }
 }
 
+// ── Log export & metrics (Admin > Log Export & Metrics) — see
+// services/settings/store.js/services/logging/exportTransports.js/
+// services/metrics/pushgateway.js. Unlike LDAP/OIDC/backup settings above,
+// this one small JSON-file-backed store is dedicated to just these two
+// features (see services/settings/store.js for why), not settingsDb/Mongo.
+function getLoggingSettings(req, res) {
+    res.json(logExportSettingsStore.get().logging);
+}
+
+function updateLoggingSettings(req, res) {
+    const destination = (req.body || {}).destination;
+    if (!LOGGING_DESTINATIONS.includes(destination)) {
+        return res.status(400).json({ error: 'Invalid logging destination' });
+    }
+
+    const patch = { logging: { destination } };
+    if (destination === 'syslog') {
+        const protocol = (req.body || {}).syslogProtocol;
+        if (!SYSLOG_PROTOCOLS.includes(protocol)) {
+            return res.status(400).json({ error: 'Invalid syslog protocol' });
+        }
+        patch.logging.syslog = {
+            host: String((req.body || {}).syslogHost || '').trim() || null,
+            port: parseInt((req.body || {}).syslogPort, 10) || 514,
+            protocol
+        };
+    } else if (destination === 'http') {
+        patch.logging.http = {
+            url: String((req.body || {}).httpUrl || '').trim() || null,
+            authHeader: String((req.body || {}).httpAuthHeader || '').trim() || null
+        };
+    }
+
+    const next = logExportSettingsStore.save(patch);
+    exportTransports.configure(next);
+    res.json(next.logging);
+}
+
+function getMetricsSettings(req, res) {
+    res.json(logExportSettingsStore.get().metrics);
+}
+
+function updateMetricsSettings(req, res) {
+    const enabled = !!(req.body || {}).enabled;
+    const token = String((req.body || {}).token || '').trim() || null;
+    const next = logExportSettingsStore.save({ metrics: { enabled, token } });
+    res.json(next.metrics);
+}
+
+function updatePushgatewaySettings(req, res) {
+    const enabled = !!(req.body || {}).enabled;
+    const url = String((req.body || {}).url || '').trim() || null;
+    const intervalSeconds = parseInt((req.body || {}).intervalSeconds, 10) || 60;
+    const next = logExportSettingsStore.save({ metrics: { pushgateway: { enabled, url, intervalSeconds } } });
+    pushgatewayService.start(next);
+    res.json(next.metrics);
+}
+
 module.exports = {
     listUsers, updateUser, setAdmin, removeUser,
     getLdapSettings, updateLdapSettings, resetLdapSettings, testLdapSettings,
     getOidcSettings, updateOidcSettings, resetOidcSettings,
     getBackupSettings, updateBackupSettings, checkBackupDestination,
     runBackupNow, listBackupRuns, listBackupFiles, downloadBackupFile, deleteBackupFile,
-    restoreFromUpload, restoreFromFile
+    restoreFromUpload, restoreFromFile,
+    getLoggingSettings, updateLoggingSettings,
+    getMetricsSettings, updateMetricsSettings, updatePushgatewaySettings
 };

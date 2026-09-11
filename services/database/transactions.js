@@ -52,7 +52,41 @@ const findByImportedIds = (importedIds, ownerId) => Transaction.find({ owner: ow
 // import count.
 const existsForAccount = (accountId, ownerId) => Transaction.exists({ owner: ownerId, account: accountId });
 
-const create = (data) => Transaction.create(data);
+// When the caller doesn't supply an explicit sortOrder (the CSV/OFX import
+// and SimpleFIN sync paths do, to preserve each row's original order — see
+// the comment on SORTS above), a new/posted transaction needs to land among
+// its account's existing rows by DATE rather than falling back to the
+// schema's Date.now() default (models/transaction.js). Date.now() is always
+// greater than any sortOrder a manual drag-and-drop reorder() assigns (small
+// integers), so without this a backdated add or scheduled post would always
+// jump to the very top of a manually-ordered register (SORTS.manual sorts
+// sortOrder FIRST) regardless of its actual date — this only matters under
+// 'manual' sort, since 'newest'/'oldest' already sort by date first.
+const manualSortOrderFor = async (accountId, ownerId, date) => {
+    const newTime = new Date(date).getTime();
+    const siblings = await Transaction.find({ owner: ownerId, account: accountId })
+        .select('sortOrder date')
+        .sort({ sortOrder: -1, date: -1, createdAt: -1 })
+        .lean();
+    if (siblings.length === 0) return Date.now();
+
+    let insertAt = siblings.findIndex((s) => new Date(s.date).getTime() <= newTime);
+    if (insertAt === -1) insertAt = siblings.length;
+    const above = insertAt > 0 ? siblings[insertAt - 1] : null;
+    const below = insertAt < siblings.length ? siblings[insertAt] : null;
+
+    if (above && below) return (above.sortOrder + below.sortOrder) / 2;
+    if (below) return below.sortOrder + 1;
+    if (above) return above.sortOrder - 1;
+    return Date.now();
+};
+
+const create = async (data) => {
+    const sortOrder = data.sortOrder !== undefined
+        ? data.sortOrder
+        : await manualSortOrderFor(data.account, data.owner, data.date);
+    return Transaction.create({ ...data, sortOrder });
+};
 const update = (id, data, ownerId) => Transaction.findOneAndUpdate({ _id: id, owner: ownerId }, data, { new: true, runValidators: true }).populate(populateOpts).exec();
 const remove = (id, ownerId) => Transaction.findOneAndDelete({ _id: id, owner: ownerId }).exec();
 
@@ -67,9 +101,13 @@ const remove = (id, ownerId) => Transaction.findOneAndDelete({ _id: id, owner: o
 // external institution whose posting you're waiting to reconcile against.
 const createTransfer = async ({ owner, fromAccount, toAccount, date, amountCents, notes, schedule = null, scheduleOccurrenceDate = null }) => {
     const transferId = new mongoose.Types.ObjectId();
+    const [outSortOrder, inSortOrder] = await Promise.all([
+        manualSortOrderFor(fromAccount, owner, date),
+        manualSortOrderFor(toAccount, owner, date)
+    ]);
     const [outgoing, incoming] = await Transaction.create([
-        { owner, account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared' },
-        { owner, account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared' }
+        { owner, account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', sortOrder: outSortOrder },
+        { owner, account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', sortOrder: inSortOrder }
     ]);
     return { outgoing, incoming };
 };
@@ -89,9 +127,13 @@ const removeTransferPair = async (transferId, ownerId) => Transaction.deleteMany
 // distinguish a transfer pair from an autopay pair).
 const createAutopayOccurrence = async ({ owner, account, autopayFromAccount, date, amountCents, payee, category, splits, notes, schedule = null, scheduleOccurrenceDate = null }) => {
     const transferId = new mongoose.Types.ObjectId();
+    const [draftSortOrder, billSortOrder] = await Promise.all([
+        manualSortOrderFor(autopayFromAccount, owner, date),
+        manualSortOrderFor(account, owner, date)
+    ]);
     const [draft, bill] = await Transaction.create([
-        { owner, account: autopayFromAccount, transferAccount: account, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', autopay: true },
-        { owner, account, transferAccount: autopayFromAccount, date, amountCents, payee, category, splits, transferId, notes, schedule, scheduleOccurrenceDate, autopay: true }
+        { owner, account: autopayFromAccount, transferAccount: account, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', autopay: true, sortOrder: draftSortOrder },
+        { owner, account, transferAccount: autopayFromAccount, date, amountCents, payee, category, splits, transferId, notes, schedule, scheduleOccurrenceDate, autopay: true, sortOrder: billSortOrder }
     ]);
     return { draft, bill };
 };

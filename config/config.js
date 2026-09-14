@@ -19,6 +19,15 @@ module.exports = {
     // ever flips a boolean on that one account.
     adminEmail: (process.env.ADMIN_EMAIL || '').toLowerCase().trim() || null,
 
+    // Turns this instance into a public demo box: adds a /demo link that
+    // generates a throwaway account with its own private starter dataset
+    // (see services/demo/seedDemoUserData.js), and wipes the ENTIRE DATABASE
+    // every night at 03:00 (services/demo/scheduler.js) — also once on
+    // every process boot, not just nightly. Leave false for a real
+    // self-hosted or cloud instance; there is no partial/safe way to run
+    // this against data you want to keep.
+    demoMode: process.env.DEMO_MODE === 'true',
+
     // All amounts are stored as integer cents internally — this is the only
     // symbol/format applied on top for display.
     currencySymbol: process.env.CURRENCY_SYMBOL || '$',

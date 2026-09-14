@@ -45,6 +45,14 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    // Only ever true for an account created through /demo — marks it as
+    // fair game for the nightly demo reset (services/demo/reset.js). Never
+    // gates permissions itself; a demo account is an ordinary user in every
+    // other respect.
+    isDemo: {
+        type: Boolean,
+        default: false
+    },
     // 'ldap'/'oidc' accounts have no passwordHash — they authenticate against
     // the directory/IdP every time (see config/ldapAuth.js, config/oidcAuth.js)
     // and are auto-provisioned on first successful login.

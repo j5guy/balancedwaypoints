@@ -527,5 +527,9 @@ async function updatePreferences(req, res) {
 
 module.exports = {
     signup, login, loginLdap, ldapStatus, oidcStart, oidcCallback, oidcStatus,
-    logout, me, getPreferences, updatePreferences
+    logout, me, getPreferences, updatePreferences,
+    // Exported for controllers/demoController.js, which needs to log a
+    // freshly-created demo user straight in without going through signup's
+    // validation (a demo account has no user-supplied email/password).
+    establishSession
 };

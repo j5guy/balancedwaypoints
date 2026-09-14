@@ -12,7 +12,7 @@ const crypto = require('crypto');
 global.appRoot = path.resolve(__dirname);
 
 const app = express();
-const { webFQDN, webPort, appName } = require('./config/config');
+const { webFQDN, webPort, appName, demoMode } = require('./config/config');
 const logger = require('./utils/logger');
 const mongooseConnect = require('./config/mongoose');
 const sessionConfig = require('./middleware/session');
@@ -53,6 +53,14 @@ startSimplefinScheduler();
 // re-checks daily — see services/licensing/gate.js. middleware/license.js
 // gates every route (including login/signup) on the result.
 startLicenseScheduler();
+
+// Demo mode: wipes the entire database nightly and reseeds a persistent
+// admin login — see services/demo/scheduler.js. Never on for a real
+// self-hosted or cloud instance.
+if (demoMode) {
+    const startDemoScheduler = require('./services/demo/scheduler');
+    startDemoScheduler();
+}
 
 // View engine
 app.set('view engine', 'ejs');
@@ -110,6 +118,7 @@ app.use((req, res, next) => {
     res.locals.isAdmin = !!req.session.isAdmin;
     res.locals.themeColors = req.session.themeColors || null;
     res.locals.themeColorFields = themeColorFields;
+    res.locals.demoMode = demoMode;
     next();
 });
 
@@ -172,6 +181,7 @@ app.use('/license', licensePagesRoutes);
 app.use('/', pagesRoutes);
 app.use('/auth', authPagesRoutes);
 app.use('/admin', adminPagesRoutes);
+if (demoMode) app.use('/demo', require('./routes/demo'));
 app.use('/api', apiRouter);
 
 // 404

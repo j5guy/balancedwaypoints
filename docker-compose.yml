@@ -1,37 +1,141 @@
+# Standalone by design, matching loadoutwaypoints's deploy shape — no
+# Traefik, no shared waypoints-proxy network, no setup wizard, no .env file
+# needed or used — every setting lives right here. Builds locally by
+# default; see docker-compose.pull.yml to pull the published image instead
+# (what dist-example/docker-compose.yml, the file end users actually
+# download, already does).
+#
+# Publishes straight to host port 5570 over plain HTTP by default. TLS is
+# entirely optional and self-contained: Admin > Settings lets you upload a
+# cert/key pair and this process terminates HTTPS itself on that same port —
+# no reverse proxy required. Whether you'd rather put your own reverse proxy
+# (Traefik, Caddy, nginx, whatever you already run) in front instead is
+# entirely up to you; nothing here assumes either way — just set
+# WEB_PROTOCOL to "https" below once one of those is actually true, so
+# links this app generates itself (e.g. in emails) use the right scheme.
+#
+# The session secret is baked into the image at build time and the initial
+# admin account is bootstrapped on first boot from ADMIN_EMAIL/ADMIN_PASSWORD
+# below — both persisted in the secrets-data volume — nothing to invent by
+# hand for a basic run beyond those two values (or just sign up normally at
+# /auth/signup; the first account created is always made admin regardless).
 services:
   app:
     build: .
+    container_name: balancedwaypoints-app
     restart: unless-stopped
-    env_file:
-      - .env
-    expose:
-      - "5570"
+    environment:
+      PORT: "5570"
+      # Cosmetic only — purely what gets printed in the startup log line and
+      # `docker compose logs app`, never used for binding/routing (the
+      # server always listens on every interface). A container can't detect
+      # its own host's LAN IP from inside Docker's default bridge network —
+      # any address it reads about itself is the internal Docker bridge IP,
+      # not something reachable from another device — so this has to be set
+      # by hand. Leave as localhost if you'll only ever open this on the
+      # machine running Docker; set it to this host's LAN IP or hostname
+      # (e.g. 192.168.1.50) if you want that printed line to be a URL other
+      # devices on your network can actually use.
+      WEB_FQDN: localhost
+      # "http" (default) or "https" — set to "https" once you've either
+      # enabled self-service TLS from Admin > Settings or put your own
+      # TLS-terminating reverse proxy in front of this app. Purely cosmetic
+      # (which scheme links in emails use) — never affects whether the
+      # server itself listens on HTTP or HTTPS; that's controlled from
+      # Admin > Settings.
+      WEB_PROTOCOL: http
+
+      # Email for the initial admin account. The very first person to sign
+      # up at /auth/signup always becomes admin regardless of this setting.
+      # Set this AND ADMIN_PASSWORD below if you'd rather have an admin
+      # account ready to go before anyone signs up — leave either blank and
+      # nothing is bootstrapped, no default/weak password is ever created.
+      ADMIN_EMAIL: ""
+      ADMIN_PASSWORD: ""
+
+      # Turns this instance into a public demo box: adds a /demo link that
+      # generates a throwaway account with its own private starter dataset
+      # (see services/demo/seedDemoUserData.js), and wipes the ENTIRE
+      # DATABASE every night at 03:00 (services/demo/scheduler.js) — also
+      # once on every process boot, not just nightly. Leave "false" for a
+      # real self-hosted or cloud instance; there is no partial/safe way to
+      # run this against data you want to keep.
+      DEMO_MODE: "false"
+
+      # All amounts are stored as integer cents internally — this is the
+      # only symbol/format applied on top for display.
+      CURRENCY_SYMBOL: "$$"
+
+      # Lets people log in against an external directory (Active Directory,
+      # OpenLDAP) alongside local accounts. Leave blank to skip entirely;
+      # can also be set up later, or changed, from Admin > LDAP without a
+      # redeploy (settings saved there take priority over these values).
+      LDAP_ENABLED: "false"
+      LDAP_URL: ""
+      LDAP_BIND_DN: ""
+      LDAP_BIND_PASSWORD: ""
+      LDAP_SEARCH_BASE: ""
+      # Must contain the literal {{username}} placeholder, e.g.
+      # (sAMAccountName={{username}}) for Active Directory, (uid={{username}}) for OpenLDAP.
+      LDAP_SEARCH_FILTER: ""
+
+      mongoHost: mongo
+      mongoPort: "27017"
+      mongoDBName: balancedwaypoints
+      mongoUser: ""
+      mongoPass: ""
+      # Set this instead of the mongoHost/mongoPort/mongoUser/mongoPass
+      # block above to point at an external MongoDB (e.g. a mongodb+srv://
+      # Atlas connection string) — used as-is when present.
+      MONGO_URI: ""
+
+      # Base URL of the central waypoints-licensing service and the shared
+      # secret it expects (sent as the x-license-secret header on every
+      # request — see services/licensing/client.js). Leave both blank only
+      # if you're not licensing this instance against that service at all.
+      LICENSE_SERVER_URL: ""
+      LICENSE_API_SECRET: ""
+      # Public key (JWK, single-line JSON) for verifying a hand-issued
+      # offline license. Leave blank to skip offline-activation support.
+      LICENSE_OFFLINE_PUBLIC_KEY_JWK: ""
+    ports:
+      - "5570:5570"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - uploads-data:/app/public/uploads
+      - ${LOGS_HOST_DIR:-logs-data}:/app/logs
+      # Point this at a NAS/network location instead of the default named
+      # volume by setting BACKUP_HOST_DIR to a host path — see Admin >
+      # Backups' destination field, which is relative to this mount.
+      - ${BACKUP_HOST_DIR:-backups-data}:/app/backups
+      # Holds the image-baked session secret, the TLS cert/key if you enable
+      # self-service HTTPS, and nothing else.
+      - secrets-data:/app/.secrets
     networks:
       - default
-      - waypoints-proxy
+
+  mongo:
+    image: ${MONGO_IMAGE:-mongo:7}
+    container_name: balancedwaypoints-mongo
+    restart: unless-stopped
     volumes:
-      - ${LOGS_HOST_DIR:-logs-data}:/app/logs
-      - ${BACKUP_HOST_DIR:-backups-data}:/app/backups
-    labels:
-      - traefik.enable=true
-      - traefik.http.services.balanced.loadbalancer.server.port=5570
-      # HTTPS router — this is the one actually serving traffic.
-      - traefik.http.routers.balanced.rule=Host(`${WEB_FQDN}`)
-      - traefik.http.routers.balanced.entrypoints=websecure
-      - traefik.http.routers.balanced.tls=true
-      # Plain-HTTP router exists only to redirect to HTTPS — the app is
-      # never reached over plain HTTP (see docker-compose.tls-acme.yml for
-      # the ACME cert resolver, added on top of this when TLS_MODE=acme).
-      - traefik.http.routers.balanced-http.rule=Host(`${WEB_FQDN}`)
-      - traefik.http.routers.balanced-http.entrypoints=web
-      - traefik.http.routers.balanced-http.middlewares=balanced-https-redirect
-      - traefik.http.middlewares.balanced-https-redirect.redirectscheme.scheme=https
+      - ${MONGO_HOST_DIR:-mongo-data}:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping')\" || mongo --quiet --eval \"db.adminCommand('ping')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - default
 
 volumes:
+  mongo-data:
+  uploads-data:
   logs-data:
   backups-data:
+  secrets-data:
 
 networks:
   default:
-  waypoints-proxy:
-    external: true

@@ -2,7 +2,44 @@
 <%- include('../components/nav') %>
 <main class="page page-admin-settings">
     <div class="page-header">
-        <h1>Log Export &amp; Metrics</h1>
+        <h1>Settings</h1>
+    </div>
+
+    <% if (error) { %>
+        <div class="form-error"><%= error %></div>
+    <% } %>
+
+    <div class="card">
+        <h3>TLS / HTTPS</h3>
+        <p class="muted">
+            Plain HTTP by default. Upload a certificate and private key to have this app terminate HTTPS
+            itself, on the same port — no reverse proxy required. You can also just put your own reverse
+            proxy (Traefik, Caddy, nginx, whatever you already run) in front instead and leave this off.
+        </p>
+        <% if (tlsEnabled && certInfo) { %>
+            <p><strong>State:</strong> Enabled — <%= certInfo.subject %>, valid
+                <%= new Date(certInfo.validFrom).toLocaleDateString() %>–<%= new Date(certInfo.validTo).toLocaleDateString() %></p>
+            <form action="/admin/settings/tls/disable" method="POST" style="margin-bottom:1.5rem;">
+                <button type="submit" class="btn btn-secondary">Disable TLS</button>
+            </form>
+        <% } else { %>
+            <p><strong>State:</strong> Off — served over plain HTTP.</p>
+        <% } %>
+        <form action="/admin/settings/tls" method="POST" enctype="multipart/form-data">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="settings-cert">Certificate (.pem)</label>
+                    <input type="file" id="settings-cert" name="cert" accept=".pem,.crt,application/x-pem-file,text/plain" required>
+                </div>
+                <div class="form-group">
+                    <label for="settings-key">Private key (.pem)</label>
+                    <input type="file" id="settings-key" name="key" accept=".pem,.key,application/x-pem-file,text/plain" required>
+                </div>
+            </div>
+            <div class="btn-row">
+                <button type="submit" class="btn btn-primary"><%= tlsEnabled ? 'Replace certificate' : 'Enable TLS' %></button>
+            </div>
+        </form>
     </div>
 
     <div class="card">

@@ -1,9 +1,9 @@
-// Runtime-editable settings for the logs/metrics export feature, persisted
-// as a small JSON file under global.appRoot/.data — balanced has no other
-// local-file settings convention to match (its LDAP/OIDC/backup admin
-// settings all live in Mongo via services/database/settings.js), and a
-// plain JSON file keeps this readable even if Mongo is briefly unavailable,
-// same rationale as loadout's equivalent store.
+// Runtime-editable settings for TLS and the logs/metrics export feature,
+// persisted as a small JSON file under global.appRoot/.data — balanced's
+// LDAP/backup admin settings live in Mongo via services/database/settings.js
+// instead, but a plain JSON file keeps this readable even if Mongo is
+// briefly unavailable (or, for tls.enabled, not up yet at boot — see
+// server.js's startServer), same rationale as loadout's equivalent store.
 const fs = require('fs');
 const path = require('path');
 
@@ -11,6 +11,12 @@ const DATA_DIR = path.join(global.appRoot, '.data');
 const SETTINGS_PATH = path.join(DATA_DIR, 'logExportSettings.json');
 
 const DEFAULTS = {
+    // Whether this instance is currently self-terminating HTTPS (see
+    // services/settings/tlsCerts.js for the actual cert/key storage — this
+    // is just the on/off flag, same split as loadout's equivalent).
+    tls: {
+        enabled: false
+    },
     logging: {
         destination: 'none', // 'none' | 'syslog' | 'http'
         syslog: { host: null, port: 514, protocol: 'udp4' }, // winston-syslog: udp4|tcp4|tls4

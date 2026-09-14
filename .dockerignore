@@ -4,7 +4,6 @@ npm-debug.log
 .gitea
 .env
 .env.*
-!.env.example
 logs
 public/uploads
 public/css/main.css

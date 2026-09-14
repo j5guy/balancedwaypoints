@@ -2,7 +2,7 @@
 // no mongodump/mongorestore binary required, since this app's Docker image
 // deliberately stays minimal (see Dockerfile) and some deployments run on
 // ARM hardware where installing MongoDB's tooling package is its own
-// headache (see docker-compose.mongo.yml's MONGO_IMAGE note). A dump is
+// headache (see docker-compose.yml's MONGO_IMAGE note). A dump is
 // just every relevant document, EJSON-encoded (so ObjectId/Date/etc.
 // round-trip exactly) and gzipped into one file.
 //

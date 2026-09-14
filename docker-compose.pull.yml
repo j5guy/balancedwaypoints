@@ -1,9 +1,15 @@
-# Overlay for pulling a pre-built image instead of building from source —
-# manual only (docker compose -f docker-compose.yml -f docker-compose.pull.yml
-# pull, then ... up -d); the guided setup wizard always builds locally.
+# Overlay for pulling the published image instead of building from source:
+#   docker compose -f docker-compose.yml -f docker-compose.pull.yml up -d
 #
-# No default here — this project doesn't publish a pre-built image itself.
-# Set BALANCEDWAYPOINTS_IMAGE in .env to wherever you build/push your own.
+# Only useful if you already have this repo checked out and want to test
+# against the published image instead of building locally. A real
+# self-hosted user never sees this file — they get dist-example/docker-compose.yml
+# instead, which has the pulled image baked in directly with no source
+# checkout at all.
 services:
   app:
-    image: ${BALANCEDWAYPOINTS_IMAGE}
+    image: ${BALANCEDWAYPOINTS_IMAGE:-ghcr.io/j5guy/balancedwaypoints:latest}
+    # Without this, `up -d` only pulls when nothing with this tag exists
+    # locally yet — a second `up -d` reuses whatever was already pulled even
+    # after a newer image lands on the registry under the same tag.
+    pull_policy: always

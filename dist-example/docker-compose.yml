@@ -1,0 +1,85 @@
+# Standalone by design — no Traefik, no shared waypoints-proxy network, no
+# setup wizard. No .env file needed or used — every setting lives right
+# here. Pulls the published image rather than building locally.
+#
+# Publishes straight to host port 5570 over plain HTTP by default. TLS is
+# entirely optional and self-contained: Admin > Settings lets you upload a
+# cert/key pair and this process terminates HTTPS itself on that same port —
+# no reverse proxy required.
+#
+# The session secret is baked into the image at build time and the initial
+# admin account is bootstrapped on first boot from ADMIN_EMAIL/ADMIN_PASSWORD
+# below — both persisted in the secrets-data volume — nothing to invent by
+# hand for a basic run beyond those two values (or just sign up normally at
+# /auth/signup; the first account created is always made admin regardless).
+services:
+  app:
+    image: ghcr.io/j5guy/balancedwaypoints:latest
+    container_name: balancedwaypoints-app
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      PORT: "5570"
+      WEB_FQDN: localhost
+      WEB_PROTOCOL: http
+
+      ADMIN_EMAIL: ""
+      ADMIN_PASSWORD: ""
+
+      DEMO_MODE: "false"
+
+      CURRENCY_SYMBOL: "$$"
+
+      LDAP_ENABLED: "false"
+      LDAP_URL: ""
+      LDAP_BIND_DN: ""
+      LDAP_BIND_PASSWORD: ""
+      LDAP_SEARCH_BASE: ""
+      LDAP_SEARCH_FILTER: ""
+
+      mongoHost: mongo
+      mongoPort: "27017"
+      mongoDBName: balancedwaypoints
+      mongoUser: ""
+      mongoPass: ""
+      MONGO_URI: ""
+
+      LICENSE_SERVER_URL: ""
+      LICENSE_API_SECRET: ""
+      LICENSE_OFFLINE_PUBLIC_KEY_JWK: ""
+    ports:
+      - "5570:5570"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - uploads-data:/app/public/uploads
+      - logs-data:/app/logs
+      - backups-data:/app/backups
+      - secrets-data:/app/.secrets
+    networks:
+      - default
+
+  mongo:
+    image: mongo:7
+    container_name: balancedwaypoints-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping')\" || mongo --quiet --eval \"db.adminCommand('ping')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - default
+
+volumes:
+  mongo-data:
+  uploads-data:
+  logs-data:
+  backups-data:
+  secrets-data:
+
+networks:
+  default:

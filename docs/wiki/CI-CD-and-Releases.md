@@ -49,11 +49,13 @@ version bump if you want a human-readable summary of what changed.
 ## No Docker image is built or published by this pipeline
 
 Unlike some self-hosted projects, this pipeline deploys straight to a systemd-managed Node.js
-process on the runner host — it never builds or pushes a Docker image anywhere.
-`docker-compose.pull.yml` and `BALANCEDWAYPOINTS_IMAGE` (see
-[Installation Guide](Installation-Guide.md#pulling-a-pre-built-image-instead-of-building)) exist
-for anyone who wants to build and publish their *own* image to a registry they control and pull it
-manually — there's no automated build/push for it here.
+process on the runner host — it never builds or pushes a Docker image anywhere. As of the move to a
+standalone Docker Compose deploy (see [Installation Guide](Installation-Guide.md)),
+`dist-example/docker-compose.yml` and `docker-compose.pull.yml` reference
+`ghcr.io/j5guy/balancedwaypoints:latest`, which this pipeline does **not** currently publish — that
+image needs a separate publish step (e.g. a `docker buildx build --push` added to `prod.yml`) before
+those two files work as written; until then, self-hosters should use `docker-compose.yml`'s default
+`build: .` (build from source) instead of pulling.
 
 ## Infrastructure this repo doesn't provision
 

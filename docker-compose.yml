@@ -89,12 +89,10 @@ services:
       # Atlas connection string) — used as-is when present.
       MONGO_URI: ""
 
-      # Base URL of the central waypoints-licensing service and the shared
-      # secret it expects (sent as the x-license-secret header on every
-      # request — see services/licensing/client.js). Leave both blank only
-      # if you're not licensing this instance against that service at all.
+      # Leave blank to use the default (https://licensing.allthewaypoints.com).
+      # Only set this to a comma-separated list if you need failover mirrors
+      # of that SAME service.
       LICENSE_SERVER_URL: ""
-      LICENSE_API_SECRET: ""
       # Public key (JWK, single-line JSON) for verifying a hand-issued
       # offline license. Leave blank to skip offline-activation support.
       LICENSE_OFFLINE_PUBLIC_KEY_JWK: ""

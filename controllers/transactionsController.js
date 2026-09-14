@@ -1,4 +1,5 @@
 const transactions = require('../services/database/transactions');
+const accounts = require('../services/database/accounts');
 const rulesDb = require('../services/database/rules');
 const accountShares = require('../services/database/accountShares');
 const { applyRules } = require('../services/rules/applyRules');
@@ -276,6 +277,78 @@ async function reorder(req, res) {
     res.status(204).end();
 }
 
+// ── Reconcile (Quicken/Actual Budget-style statement reconciliation) ────
+// Two-step flow: reconcileCandidates lists what's eligible to check off
+// against a bank statement, finishReconcile locks in whichever of those the
+// caller actually checked, once the total actually matches the statement.
+// Everything already reconciled in an earlier session is excluded from
+// candidates entirely — this reviews what's happened SINCE the last
+// completed session, never re-litigates transactions already locked in.
+async function reconcileCandidates(req, res) {
+    const accountId = req.query.account;
+    const access = await requireAccountAccess(req, res, accountId, { write: true });
+    if (!access) return;
+    const account = await accounts.findById(accountId, access.ownerId);
+    if (!account) return res.status(404).json({ error: 'Not found' });
+
+    const through = req.query.through ? new Date(req.query.through) : new Date();
+    const all = await transactions.list(access.ownerId, { account: accountId, to: through, sort: 'oldest' });
+    // Never reconciled before -> starts from the account's own starting
+    // balance; otherwise picks up from the last completed session's ending
+    // balance, same running-total idea a real bank statement uses.
+    const startingBalanceCents = account.lastReconciledBalanceCents != null ? account.lastReconciledBalanceCents : account.startingBalanceCents;
+
+    res.json({
+        startingBalanceCents,
+        lastReconciledDate: account.lastReconciledDate || null,
+        transactions: all.filter((t) => t.cleared !== 'reconciled').map(serialize)
+    });
+}
+
+async function finishReconcile(req, res) {
+    const { account: accountId, statementDate, statementBalanceCents, transactionIds } = req.body || {};
+    const access = await requireAccountAccess(req, res, accountId, { write: true });
+    if (!access) return;
+    if (!statementDate) return res.status(400).json({ error: 'statementDate is required' });
+    if (statementBalanceCents === undefined) return res.status(400).json({ error: 'statementBalanceCents is required' });
+    if (!Array.isArray(transactionIds) || transactionIds.length === 0) {
+        return res.status(400).json({ error: 'Select at least one transaction to reconcile' });
+    }
+
+    const account = await accounts.findById(accountId, access.ownerId);
+    if (!account) return res.status(404).json({ error: 'Not found' });
+    const startingBalanceCents = account.lastReconciledBalanceCents != null ? account.lastReconciledBalanceCents : account.startingBalanceCents;
+
+    // Re-derives the checked total from the DB rather than trusting the
+    // client's own arithmetic — the only thing that actually has to match
+    // the statement is the real amounts of the transactions being locked
+    // in, not whatever sum the client claims it added up to.
+    const onAccount = await transactions.list(access.ownerId, { account: accountId });
+    const checkedIds = new Set(transactionIds.map(String));
+    const matched = onAccount.filter((t) => checkedIds.has(String(t._id)));
+    if (matched.length !== transactionIds.length) {
+        return res.status(400).json({ error: "One or more selected transactions weren't found on this account" });
+    }
+    if (matched.some((t) => t.cleared === 'reconciled')) {
+        return res.status(400).json({ error: 'One or more selected transactions are already reconciled' });
+    }
+
+    const endingBalanceCents = startingBalanceCents + matched.reduce((sum, t) => sum + t.amountCents, 0);
+    if (endingBalanceCents !== Number(statementBalanceCents)) {
+        return res.status(400).json({
+            error: "Selected transactions don't add up to the statement balance — adjust your selection",
+            endingBalanceCents
+        });
+    }
+
+    await transactions.markReconciled(transactionIds, accountId, access.ownerId);
+    const updated = await accounts.update(accountId, {
+        lastReconciledDate: statementDate,
+        lastReconciledBalanceCents: Number(statementBalanceCents)
+    }, access.ownerId);
+    res.json({ ok: true, lastReconciledDate: updated.lastReconciledDate, lastReconciledBalanceCents: updated.lastReconciledBalanceCents });
+}
+
 // Runs the active ruleset against a candidate (not-yet-saved) transaction
 // and returns suggested category/payee/tags — never writes anything.
 // `account` is optional — omitted means "my own rules" (e.g. previewing
@@ -292,4 +365,4 @@ async function previewRules(req, res) {
     res.json(result);
 }
 
-module.exports = { list, get, create, createTransfer, convertToTransfer, update, remove, reorder, previewRules };
+module.exports = { list, get, create, createTransfer, convertToTransfer, update, remove, reorder, previewRules, reconcileCandidates, finishReconcile };

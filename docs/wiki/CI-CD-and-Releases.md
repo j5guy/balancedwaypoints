@@ -1,9 +1,9 @@
 # CI/CD and Releases
 
 Two Gitea Actions workflows (`.gitea/workflows/test.yml` and `.gitea/workflows/prod.yml`) mirror
-the pattern used by this project's sibling apps (`workouts`, `fondwaypoints`): deploy straight to a
-running Node.js process on a self-managed host on every push, rather than building/publishing a
-Docker image from CI.
+the pattern used by this project's sibling apps (`loadout`, `workouts`, `fondwaypoints`): deploy
+straight to a running Node.js process on a self-managed host on every push. `prod.yml` additionally
+builds and publishes a Docker image (see [Docker image publishing](#docker-image-publishing) below).
 
 ## `test.yml` — push to `test`
 
@@ -31,7 +31,7 @@ Runs on a Gitea Actions runner labeled `web-prod`. On every push to `master`:
    missing" step (it's assumed to already exist there).
 2. **Mirrors `master` to GitHub** — `git push --force` to
    `github.com/j5guy/balancedwaypoints.git` `HEAD:master`, authenticated with the
-   `REMOTE_REPO_TOKEN` secret. This is a force push, so GitHub's `master` always exactly matches
+   `GHCR_TOKEN` secret. This is a force push, so GitHub's `master` always exactly matches
    Gitea's — don't expect GitHub-side commits to `master` to survive the next push.
 3. **Reads the version from `package.json`** (`grep '"version"'` + `sed`) into `VERSION`.
 4. **Creates a GitHub release**, tagged `v<VERSION>`, if one for that tag doesn't already exist
@@ -39,23 +39,23 @@ Runs on a Gitea Actions runner labeled `web-prod`. On every push to `master`:
    (`generate_release_notes: true`). Bump `version` in `package.json` to publish a new one; pushing
    again at the same version is a no-op for this step.
 5. **Creates a matching Gitea release** the same way, against this repo's own Gitea API
-   (`GITEA_HOST`/`GITEA_REPO`), authenticated with the `DOCKER_GITEA_TOKEN` secret.
+   (`GITEA_HOST`/`GITEA_REPO`), authenticated with the `LOCAL_GITEA_REGISTRY_TOKEN` secret.
+6. **Builds and pushes the Docker image** — see [Docker image publishing](#docker-image-publishing).
 
 [`RELEASE_NOTES`](https://github.com/j5guy/balancedwaypoints/blob/master/RELEASE_NOTES) at the repo
 root is a separate, hand-written changelog (one entry per version) — distinct from either release's
 auto-generated notes, and not something this workflow touches; update it yourself alongside a
 version bump if you want a human-readable summary of what changed.
 
-## No Docker image is built or published by this pipeline
+## Docker image publishing
 
-Unlike some self-hosted projects, this pipeline deploys straight to a systemd-managed Node.js
-process on the runner host — it never builds or pushes a Docker image anywhere. As of the move to a
-standalone Docker Compose deploy (see [Installation Guide](Installation-Guide.md)),
-`dist-example/docker-compose.yml` and `docker-compose.pull.yml` reference
-`ghcr.io/j5guy/balancedwaypoints:latest`, which this pipeline does **not** currently publish — that
-image needs a separate publish step (e.g. a `docker buildx build --push` added to `prod.yml`) before
-those two files work as written; until then, self-hosters should use `docker-compose.yml`'s default
-`build: .` (build from source) instead of pulling.
+`prod.yml` also builds and publishes a Docker image on every push to `master`, after the release
+steps above — tagged with both `:latest` and the exact version read from `package.json`, and pushed
+to two registries: the internal Gitea registry (`gitea.pinkham.lan/allthewaypoints/balancedwaypoints`)
+and GHCR (`ghcr.io/j5guy/balancedwaypoints`). This is what makes `dist-example/docker-compose.yml` and
+`docker-compose.pull.yml` — which reference `ghcr.io/j5guy/balancedwaypoints:latest` — actually work
+as written; before this, self-hosters had to use `docker-compose.yml`'s default `build: .` instead of
+pulling.
 
 ## Infrastructure this repo doesn't provision
 
@@ -67,11 +67,16 @@ inert (a push will simply fail or do nothing useful):
   Node.js/`npm`, and `npx sass` available, and (`prod.yml` only) `curl` for the release API calls.
 - A `balancedwaypoints` systemd service already reachable by `systemctl` on each of those hosts —
   `test.yml` creates the unit file itself if it's missing; `prod.yml` assumes it already exists.
-- Two repository secrets, under **Settings → Actions → Secrets** on the Gitea repo (`prod.yml`
+- Repository secrets, under **Settings → Actions → Secrets** on the Gitea repo (`prod.yml`
   only — `test.yml` needs none):
-  - `REMOTE_REPO_TOKEN` — a GitHub personal access token (`repo` scope). Authenticates both the
-    force-push to GitHub and the GitHub release creation.
-  - `DOCKER_GITEA_TOKEN` — a Gitea access token. Authenticates the Gitea release creation.
+  - `GHCR_TOKEN` — a GitHub personal access token (`repo` scope, plus `write:packages` for GHCR).
+    Authenticates the force-push to GitHub, the GitHub release creation, and the GHCR login.
+  - `GHCR_USER` — the GitHub username that token belongs to, for the GHCR `docker login`.
+  - `LOCAL_GITEA_REGISTRY_TOKEN` — a Gitea access token. Authenticates the Gitea release creation and
+    the Gitea container registry login.
+  - `LOCAL_GITEA_REGISTRY_USER` — the Gitea username that token belongs to, for that `docker login`.
+- `docker` available on the `web-prod` runner host (for the image build/push steps) — not required
+  on `web-test`.
 
 ## Cutting a release by hand instead
 

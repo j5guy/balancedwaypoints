@@ -13,6 +13,11 @@
     // in which case it powers the "Sync Now" button next to Import above.
     let simplefinConnectionId = null;
     let editingId = null;
+    // Set in startEdit()/resetForm() — the save handler branches on this
+    // rather than re-deriving it from anything in the DOM, since a
+    // transfer's edit form hides most of the fields a plain transaction's
+    // save path reads.
+    let editingIsTransfer = false;
     let currentBalanceCents = 0;
     let transactionsById = new Map();
     let preferences = null;
@@ -186,6 +191,16 @@
         accountVehicleVin = account.vehicleVin || '';
         forecastThresholdCents = account.forecastThresholdCents != null ? account.forecastThresholdCents : null;
         forecastThresholdColor = account.forecastThresholdColor || '#B5433A';
+        // Only applied on the very first load — loadReferenceData() re-runs
+        // after every write (add/edit/delete a transaction, etc.), and this
+        // account-level default shouldn't keep overriding a manual Hide/Show
+        // click made earlier in the same session.
+        if (!forecastInitialized) {
+            forecastExpanded = account.forecastExpandedByDefault !== false;
+            document.getElementById('register-forecast-chart').hidden = !forecastExpanded;
+            document.getElementById('toggle-forecast-btn').textContent = forecastExpanded ? 'Hide' : 'Show';
+            forecastInitialized = true;
+        }
         accounts = accountsRes.accounts;
         categories = categoriesRes.categories;
         categoryGroups = categoryGroupsRes.categoryGroups;
@@ -1122,8 +1137,12 @@
     // an explicit "today" marker, and its past/future window sourced from
     // the register's OWN registerHistory/upcomingSchedules preferences
     // (Table settings) rather than a separate widget config, so it always
-    // matches whatever window the register itself is showing.
+    // matches whatever window the register itself is showing. Its initial
+    // value is a placeholder overwritten on first load from the account's
+    // own forecastExpandedByDefault setting (Account settings) — see
+    // loadReferenceData's forecastInitialized guard below.
     let forecastExpanded = true;
+    let forecastInitialized = false;
 
     // Same "nice" (1/2/5 × 10^n) rounding as the Dashboard's forecast
     // widget (public/js/dashboard.js's niceStepCents) — each page keeps
@@ -1612,29 +1631,68 @@
     // ── Save / edit / delete ─────────────────────────────────────────
     function startEdit(t) {
         if (accountRole === 'readonly') return;
-        if (t.transferId) {
-            alert("Transfers can't be edited directly — delete and recreate the transfer instead.");
-            return;
-        }
         editingId = t.id;
         document.getElementById('txn-form-card').hidden = false;
-        document.getElementById('txn-form-title').textContent = 'Edit transaction';
         document.getElementById('txn-date').value = window.BWDate.toDateInputValue(t.date);
-        document.getElementById('txn-payee').value = t.payee ? t.payee.name : '';
         document.getElementById('txn-amount').value = (t.amountCents / 100).toFixed(2);
         document.getElementById('txn-notes').value = t.notes || '';
+        document.getElementById('cancel-txn-btn').hidden = false;
+
+        const isTransfer = !!t.transferId;
+        editingIsTransfer = isTransfer;
+        document.getElementById('txn-transfer-warning').hidden = !isTransfer;
+
+        if (isTransfer) {
+            // Only date/amount/notes are editable here — see
+            // controllers/transactionsController.js's update() and
+            // services/database/transactions.js's updateTransferPair, which
+            // keep both legs of the pair in sync on save. Everything else
+            // below either doesn't apply to a transfer leg at all (payee/
+            // category/splits/tags), or would mean moving which two
+            // accounts are involved, which isn't supported here — "Convert
+            // to transfer"/delete-and-recreate cover changing that instead.
+            document.getElementById('txn-form-title').textContent = 'Edit transfer';
+            document.getElementById('txn-is-transfer').checked = false;
+            const otherAccount = accounts.find(a => a.id === t.transferAccount);
+            document.getElementById('txn-transfer-to-value').value = otherAccount ? otherAccount.name : 'another account';
+            document.getElementById('txn-transfer-to-display').hidden = false;
+            document.getElementById('txn-payee-group').hidden = true;
+            document.getElementById('txn-category-group').hidden = true;
+            document.getElementById('txn-tags-group').hidden = true;
+            document.getElementById('txn-cleared').parentElement.hidden = true;
+            document.getElementById('txn-splits-actions-group').hidden = true;
+            document.getElementById('splits-editor').hidden = true;
+            document.getElementById('txn-is-transfer').parentElement.hidden = true;
+            document.getElementById('txn-transfer-group').hidden = true;
+            document.getElementById('convert-to-transfer-btn').hidden = true;
+            document.getElementById('convert-to-transfer-form').hidden = true;
+            // createRuleFromTransaction's field/value prefill falls back to
+            // "notes" when there's no payee (see its own comment) — still
+            // useful on a transfer, so only the schedule button (which
+            // already has its own transferAccount branch) stays offered
+            // alongside it, not hidden.
+            document.getElementById('txn-create-schedule-btn').hidden = false;
+            document.getElementById('txn-create-rule-btn').hidden = false;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+
+        document.getElementById('txn-form-title').textContent = 'Edit transaction';
+        document.getElementById('txn-payee').value = t.payee ? t.payee.name : '';
         document.getElementById('txn-tags').value = (t.tags || []).map(tag => tag.name).join(', ');
         document.getElementById('txn-cleared').checked = t.cleared !== 'pending';
-        document.getElementById('cancel-txn-btn').hidden = false;
+        document.getElementById('txn-cleared').parentElement.hidden = false;
+        document.getElementById('txn-transfer-to-display').hidden = true;
+        document.getElementById('txn-payee-group').hidden = false;
+        document.getElementById('txn-tags-group').hidden = false;
+        document.getElementById('txn-splits-actions-group').hidden = false;
 
         // Converting an existing transaction into a transfer isn't
         // supported — transfers are their own paired-transaction flow (see
         // createTransfer in transactionsController.js), and update() has no
         // path to it, so leaving this checkbox live during an edit let you
         // check it, hit Save, and have it silently do a normal update
-        // instead (same "delete and recreate" limitation the transferId
-        // guard above already enforces the other direction). Force it off
-        // and hide it for the duration of this edit.
+        // instead. Force it off and hide it for the duration of this edit.
         document.getElementById('txn-is-transfer').checked = false;
         document.getElementById('txn-is-transfer').parentElement.hidden = true;
         document.getElementById('txn-transfer-group').hidden = true;
@@ -1646,6 +1704,14 @@
         // account's side" to make into a transfer).
         document.getElementById('convert-to-transfer-btn').hidden = !!(t.splits && t.splits.length);
         document.getElementById('convert-to-transfer-form').hidden = true;
+
+        // Same "no split UI to receive it" restriction as the row-level 📅
+        // button (see hasSplits in transactionRow) — Create rule has no such
+        // restriction, since a rule's conditions/actions work off the
+        // transaction's own top-level payee/notes/amountCents regardless of
+        // whether it's split by category underneath.
+        document.getElementById('txn-create-schedule-btn').hidden = !!(t.splits && t.splits.length);
+        document.getElementById('txn-create-rule-btn').hidden = false;
 
         if (t.splits && t.splits.length) {
             document.getElementById('splits-editor').hidden = false;
@@ -1664,7 +1730,14 @@
 
     function resetForm() {
         editingId = null;
+        editingIsTransfer = false;
         document.getElementById('txn-form-title').textContent = 'New transaction';
+        document.getElementById('txn-transfer-warning').hidden = true;
+        document.getElementById('txn-transfer-to-display').hidden = true;
+        document.getElementById('txn-payee-group').hidden = false;
+        document.getElementById('txn-tags-group').hidden = false;
+        document.getElementById('txn-splits-actions-group').hidden = false;
+        document.getElementById('txn-cleared').parentElement.hidden = false;
         document.getElementById('txn-date').value = '';
         document.getElementById('txn-payee').value = '';
         document.getElementById('txn-amount').value = '';
@@ -1682,6 +1755,8 @@
         document.getElementById('cancel-txn-btn').hidden = true;
         document.getElementById('convert-to-transfer-btn').hidden = true;
         document.getElementById('convert-to-transfer-form').hidden = true;
+        document.getElementById('txn-create-schedule-btn').hidden = true;
+        document.getElementById('txn-create-rule-btn').hidden = true;
         document.getElementById('txn-form-card').hidden = true;
     }
 
@@ -1764,6 +1839,14 @@
                         notes: document.getElementById('txn-notes').value
                     }
                 });
+            } else if (editingIsTransfer) {
+                // Only date/amount/notes — see controllers/transactionsController.js's
+                // update(), which rejects anything else for a transfer leg
+                // and keeps both sides of the pair in sync on save.
+                await window.BWApi.apiFetch(`/api/transactions/${editingId}`, {
+                    method: 'PUT',
+                    body: { date, amountCents, notes: document.getElementById('txn-notes').value }
+                });
             } else {
                 const splits = document.getElementById('splits-editor').hidden ? [] : readSplits();
                 const payeeId = await resolvePayee(document.getElementById('txn-payee').value.trim());
@@ -1807,25 +1890,262 @@
         }
     }
 
-    // Hands off to the Schedules page rather than duplicating its whole
-    // form here — the target fields are passed as query params, which
-    // schedules.js reads on load to prefill and open its "New schedule"
-    // form (see prefillFromRegisterEntry there). Only called for non-split
-    // transactions (see hasSplits above) — a split's category lives
-    // per-split, and the schedule form has no split UI to receive it.
-    function createScheduleFromTransaction(t) {
-        const params = new URLSearchParams();
-        params.set('fromAccount', accountId);
-        params.set('fromAmountCents', t.amountCents);
-        if (t.transferAccount) {
-            params.set('fromTransferAccount', t.transferAccount);
-        } else {
-            if (t.payee) params.set('fromPayee', t.payee.name);
-            if (t.category) params.set('fromCategory', t.category.id);
-        }
-        if (t.notes) params.set('fromNotes', t.notes);
-        window.location.href = `/schedules?${params.toString()}`;
+    // ── Create a schedule from a register entry ─────────────────────
+    // A quick-add modal right on the register, rather than sending people
+    // off to the Schedules page — prefilled from the transaction, with only
+    // the fields common enough to matter here (a fixed-interval repeat, not
+    // the ordinalWeekday/dayOfMonth/autopay options the full Schedules page
+    // has). Only offered for non-split transactions (see hasSplits above) —
+    // a split's category lives per-split, and this dialog has no split UI
+    // to receive it.
+    let quickSchedTransaction = null;
+
+    function populateQuickSchedTransferAccountOptions() {
+        document.getElementById('quick-sched-transfer-account').innerHTML = accounts
+            .filter(a => a.id !== accountId)
+            .map(a => `<option value="${a.id}">${a.name}</option>`).join('');
     }
+
+    function createScheduleFromTransaction(t) {
+        quickSchedTransaction = t;
+        document.getElementById('quick-sched-warning').hidden = true;
+        document.getElementById('quick-sched-amount').value = (t.amountCents / 100).toFixed(2);
+        document.getElementById('quick-sched-next-date').value = '';
+        document.getElementById('quick-sched-interval').value = '1';
+        document.getElementById('quick-sched-unit').value = 'months';
+        document.getElementById('quick-sched-auto-enter').checked = false;
+        document.getElementById('quick-sched-notes').value = t.notes || '';
+
+        const isTransfer = !!t.transferAccount;
+        document.getElementById('quick-sched-transfer-group').hidden = !isTransfer;
+        document.getElementById('quick-sched-category-group').hidden = isTransfer;
+        if (isTransfer) {
+            populateQuickSchedTransferAccountOptions();
+            document.getElementById('quick-sched-transfer-account').value = t.transferAccount;
+            document.getElementById('quick-sched-name').value = 'Transfer';
+            document.getElementById('quick-sched-payee').value = '';
+            document.getElementById('quick-sched-category').value = '';
+        } else {
+            document.getElementById('quick-sched-payee').value = t.payee ? t.payee.name : '';
+            document.getElementById('quick-sched-category').value = t.category ? t.category.name : '';
+            document.getElementById('quick-sched-name').value = t.payee ? t.payee.name : 'New schedule';
+        }
+
+        document.getElementById('quick-schedule-overlay').hidden = false;
+    }
+
+    function closeQuickScheduleModal() {
+        document.getElementById('quick-schedule-overlay').hidden = true;
+        quickSchedTransaction = null;
+    }
+    document.getElementById('quick-sched-cancel-btn').addEventListener('click', closeQuickScheduleModal);
+
+    // Warns (rather than blocks) when an existing schedule on this same
+    // account already looks like it's for the same recurring thing — same
+    // transfer destination, or same payee name and same money direction
+    // (amounts on a real bill drift month to month, so an exact match would
+    // miss the common case). A second click on Create proceeds anyway.
+    async function findSimilarSchedule(t) {
+        const { schedules } = await window.BWApi.apiFetch(`/api/schedules?account=${accountId}`);
+        return schedules.find((s) => {
+            if (String(s.account) !== String(accountId)) return false;
+            if (t.transferAccount) return s.transferAccount && String(s.transferAccount.id) === String(t.transferAccount);
+            if (!t.payee || !s.payee) return false;
+            const sameDirection = (s.amountCents < 0) === (t.amountCents < 0);
+            return sameDirection && s.payee.name.toLowerCase() === t.payee.name.toLowerCase();
+        }) || null;
+    }
+
+    document.getElementById('quick-sched-save-btn').addEventListener('click', async () => {
+        const t = quickSchedTransaction;
+        if (!t) return;
+        const warningBox = document.getElementById('quick-sched-warning');
+        const name = document.getElementById('quick-sched-name').value.trim();
+        const amountCents = window.BWMoney.toCents(document.getElementById('quick-sched-amount').value || 0);
+        const nextDate = document.getElementById('quick-sched-next-date').value;
+        if (!name || !amountCents || !nextDate) {
+            warningBox.textContent = 'Name, amount, and next date are required';
+            warningBox.hidden = false;
+            return;
+        }
+        const isTransfer = !!t.transferAccount;
+
+        // First click checks for a likely duplicate and stops there instead
+        // of saving — the warning box itself doubles as the "are you sure"
+        // prompt; a second click on Create (warning already showing, same
+        // transaction) goes ahead and saves.
+        if (warningBox.hidden) {
+            try {
+                const similar = await findSimilarSchedule(t);
+                if (similar) {
+                    warningBox.textContent = `This looks similar to the existing schedule "${similar.name}" (next due ${window.BWDate.formatDate(similar.nextDate)}). Click Create again to add this one anyway.`;
+                    warningBox.hidden = false;
+                    return;
+                }
+            } catch (err) {
+                // A failed duplicate-check shouldn't block creating the
+                // schedule outright — fall through and save normally.
+            }
+        }
+
+        try {
+            const body = {
+                name,
+                account: accountId,
+                amountCents,
+                nextDate,
+                frequency: {
+                    kind: 'interval',
+                    interval: Number(document.getElementById('quick-sched-interval').value) || 1,
+                    unit: document.getElementById('quick-sched-unit').value
+                },
+                autoEnter: document.getElementById('quick-sched-auto-enter').checked,
+                notes: document.getElementById('quick-sched-notes').value
+            };
+            if (isTransfer) {
+                body.transferAccount = document.getElementById('quick-sched-transfer-account').value;
+            } else {
+                const payeeName = document.getElementById('quick-sched-payee').value.trim();
+                const categoryName = document.getElementById('quick-sched-category').value.trim();
+                body.payee = await resolvePayee(payeeName);
+                const category = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
+                body.category = category ? category.id : null;
+            }
+            await window.BWApi.apiFetch('/api/schedules', { method: 'POST', body });
+            closeQuickScheduleModal();
+        } catch (err) {
+            warningBox.textContent = err.message || 'Something went wrong';
+            warningBox.hidden = false;
+        }
+    });
+
+    // Both buttons live in the "extended" edit-transaction form
+    // (#txn-form-card) rather than being rebuilt per-row like the register's
+    // own 📅 button — one static listener here, looking up the transaction
+    // currently being edited by id, rather than rebinding on every
+    // startEdit() call (which would stack duplicate listeners on this
+    // never-replaced element).
+    document.getElementById('txn-create-schedule-btn').addEventListener('click', () => {
+        const t = transactionsById.get(editingId);
+        if (t) createScheduleFromTransaction(t);
+    });
+    document.getElementById('txn-create-rule-btn').addEventListener('click', () => {
+        const t = transactionsById.get(editingId);
+        if (t) createRuleFromTransaction(t);
+    });
+
+    // ── Create a rule from a register entry ──────────────────────────
+    // Same quick-add-modal idea as createScheduleFromTransaction above, one
+    // condition and one action rather than the Rules page's full multi-row
+    // builder — prefilled from whichever field this transaction actually
+    // has (payee, falling back to notes when there's no payee to match on).
+    let quickRuleTransaction = null;
+
+    function populateQuickRuleCategoryOptions() {
+        document.getElementById('quick-rule-action-category').innerHTML =
+            categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+
+    function syncQuickRuleActionVisibility() {
+        const isCategory = document.getElementById('quick-rule-action-type').value === 'setCategory';
+        document.getElementById('quick-rule-action-category-group').hidden = !isCategory;
+        document.getElementById('quick-rule-action-text-group').hidden = isCategory;
+    }
+    document.getElementById('quick-rule-action-type').addEventListener('change', syncQuickRuleActionVisibility);
+
+    function createRuleFromTransaction(t) {
+        quickRuleTransaction = t;
+        document.getElementById('quick-rule-warning').hidden = true;
+        document.getElementById('quick-rule-priority').value = '0';
+        populateQuickRuleCategoryOptions();
+
+        if (t.payee) {
+            document.getElementById('quick-rule-name').value = t.category ? `${t.payee.name} → ${t.category.name}` : t.payee.name;
+            document.getElementById('quick-rule-cond-field').value = 'payee';
+            document.getElementById('quick-rule-cond-value').value = t.payee.name;
+        } else {
+            document.getElementById('quick-rule-name').value = 'New rule';
+            document.getElementById('quick-rule-cond-field').value = 'notes';
+            document.getElementById('quick-rule-cond-value').value = t.notes || '';
+        }
+        document.getElementById('quick-rule-cond-operator').value = 'contains';
+
+        if (t.category) {
+            document.getElementById('quick-rule-action-type').value = 'setCategory';
+            document.getElementById('quick-rule-action-category').value = t.category.id;
+        } else {
+            document.getElementById('quick-rule-action-type').value = 'setCategory';
+            document.getElementById('quick-rule-action-category').value = '';
+        }
+        syncQuickRuleActionVisibility();
+
+        document.getElementById('quick-rule-overlay').hidden = false;
+    }
+
+    function closeQuickRuleModal() {
+        document.getElementById('quick-rule-overlay').hidden = true;
+        quickRuleTransaction = null;
+    }
+    document.getElementById('quick-rule-cancel-btn').addEventListener('click', closeQuickRuleModal);
+
+    // Warns rather than blocks, same two-click pattern as the schedule
+    // modal — a rule already matching the same field/operator/value would
+    // just run redundantly alongside the new one (whichever has the lower
+    // priority number runs first), which is easy to do by accident when
+    // you don't remember exactly what you already have.
+    async function findSimilarRule(field, operator, value) {
+        const { rules } = await window.BWApi.apiFetch(`/api/rules?account=${accountId}`);
+        return rules.find((r) => r.conditions.some((c) => (
+            c.field === field && c.operator === operator && c.value.toLowerCase() === value.toLowerCase()
+        ))) || null;
+    }
+
+    document.getElementById('quick-rule-save-btn').addEventListener('click', async () => {
+        if (!quickRuleTransaction) return;
+        const warningBox = document.getElementById('quick-rule-warning');
+        const name = document.getElementById('quick-rule-name').value.trim();
+        const field = document.getElementById('quick-rule-cond-field').value;
+        const operator = document.getElementById('quick-rule-cond-operator').value;
+        const value = document.getElementById('quick-rule-cond-value').value.trim();
+        const actionType = document.getElementById('quick-rule-action-type').value;
+        const actionValue = actionType === 'setCategory'
+            ? document.getElementById('quick-rule-action-category').value
+            : document.getElementById('quick-rule-action-text').value.trim();
+        if (!name || !value || !actionValue) {
+            warningBox.textContent = 'Name, condition value, and action value are all required';
+            warningBox.hidden = false;
+            return;
+        }
+
+        if (warningBox.hidden) {
+            try {
+                const similar = await findSimilarRule(field, operator, value);
+                if (similar) {
+                    warningBox.textContent = `This looks similar to the existing rule "${similar.name}" (same condition). Click Create again to add this one anyway.`;
+                    warningBox.hidden = false;
+                    return;
+                }
+            } catch (err) {
+                // A failed duplicate-check shouldn't block creating the rule.
+            }
+        }
+
+        try {
+            await window.BWApi.apiFetch(`/api/rules?account=${accountId}`, {
+                method: 'POST',
+                body: {
+                    name,
+                    priority: Number(document.getElementById('quick-rule-priority').value) || 0,
+                    conditions: [{ field, operator, value }],
+                    actions: [{ type: actionType, value: actionValue }]
+                }
+            });
+            closeQuickRuleModal();
+        } catch (err) {
+            warningBox.textContent = err.message || 'Something went wrong';
+            warningBox.hidden = false;
+        }
+    });
 
     // ── Live filter row — narrows #register-tbody as you type, no re-fetch
     // (see matchesFilters/renderRegisterRows above). Stays in its own tbody

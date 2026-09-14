@@ -182,7 +182,33 @@ async function update(req, res) {
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const access = await requireAccountAccess(req, res, existing.account, { write: true });
     if (!access) return;
-    if (existing.transferId) return res.status(400).json({ error: 'Transfer transactions cannot be edited directly — delete and recreate the transfer instead' });
+
+    // A transfer leg only accepts date/amountCents/notes — everything else
+    // either doesn't apply to a transfer (payee/category/splits/tags) or
+    // would require moving which two accounts are involved, which this
+    // endpoint doesn't support (delete-and-recreate, or the register's own
+    // "Convert to transfer", cover that instead). Both legs get kept in
+    // sync by updateTransferPair — see its own comment for why `cleared`
+    // isn't included.
+    if (existing.transferId) {
+        // Needs write access to BOTH sides to edit — same reasoning as
+        // createTransfer/postOccurrence's identical check: a readwrite
+        // share on just this leg's account shouldn't be a backdoor into
+        // editing the other side of the pair too.
+        const transferAccess = await requireAccountAccess(req, res, existing.transferAccount, { write: true });
+        if (!transferAccess) return;
+
+        const { account, payee, category, splits, tags, cleared, date, amountCents, notes } = req.body || {};
+        if (account !== undefined || payee !== undefined || category !== undefined || splits !== undefined || tags !== undefined || cleared !== undefined) {
+            return res.status(400).json({ error: 'Only date, amount, and notes can be edited on a transfer' });
+        }
+        const legs = await transactions.updateTransferPair(existing.transferId, access.ownerId, {
+            date, amountCents: amountCents !== undefined ? Number(amountCents) : undefined, notes
+        });
+        if (!legs) return res.status(404).json({ error: 'Not found' });
+        const thisLeg = legs.find((l) => String(l.account) === String(existing.account)) || legs[0];
+        return res.json(serialize(thisLeg));
+    }
 
     const { account, date, payee, amountCents, category, splits, cleared, tags, notes } = req.body || {};
     const effectiveAmount = amountCents !== undefined ? amountCents : existing.amountCents;

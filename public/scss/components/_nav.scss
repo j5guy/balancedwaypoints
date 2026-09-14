@@ -11,6 +11,20 @@
     gap: 12px;
 }
 
+// One-shot banner shown right after a demo account is created (see
+// server.js's res.locals.demoCredentials and controllers/demoController.js)
+// — sits directly under the nav on whichever page the post-signup redirect
+// lands on, so it needs its own side margins .form-success doesn't have on
+// its own (that class assumes it's already inside a padded form/card).
+.demo-credentials-banner {
+    margin: 16px 24px 0;
+    text-align: center;
+
+    code {
+        font-size: 0.95em;
+    }
+}
+
 // Holds just the hamburger button itself, between the brand and the link
 // list — the theme toggle lives in .nav-links now (as its last item) so it
 // sits on the right with the rest of the menu instead of floating in its

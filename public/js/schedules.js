@@ -358,6 +358,54 @@
         form.hidden = true;
     }
 
+    // Arrives via a "Create a schedule" link from a register entry (see
+    // public/js/register.js's createScheduleFromTransaction) — the target
+    // fields are passed as query params rather than duplicating the
+    // register's own form here. Deliberately leaves the next-date field
+    // blank rather than defaulting it to the source entry's own date: that
+    // date already happened, and prefilling it would let an autoEnter
+    // schedule immediately re-post on save without the user consciously
+    // picking when this should actually recur next.
+    function prefillFromRegisterEntry() {
+        const params = new URLSearchParams(window.location.search);
+        const fromAccount = params.get('fromAccount');
+        if (!fromAccount) return;
+
+        resetForm();
+        if (accounts.some(a => a.id === fromAccount)) {
+            document.getElementById('sched-account').value = fromAccount;
+            populateTransferAccountOptions();
+            populateAutopayFromAccountOptions();
+        }
+        document.getElementById('sched-amount').value = (Number(params.get('fromAmountCents') || 0) / 100).toFixed(2);
+        document.getElementById('schedule-form-title').textContent = 'New schedule (from register entry)';
+
+        const transferAccountId = params.get('fromTransferAccount');
+        if (transferAccountId) {
+            document.getElementById('sched-name').value = 'Transfer';
+            document.getElementById('sched-is-transfer').checked = true;
+            document.getElementById('sched-transfer-group').hidden = false;
+            document.getElementById('sched-category-group').hidden = true;
+            document.getElementById('sched-transfer-account').value = transferAccountId;
+        } else {
+            const payeeName = params.get('fromPayee') || '';
+            const categoryId = params.get('fromCategory') || '';
+            document.getElementById('sched-name').value = payeeName || 'New schedule';
+            document.getElementById('sched-payee').value = payeeName;
+            if (categoryId && categories.some(c => c.id === categoryId)) {
+                document.getElementById('sched-category').value = categoryId;
+            }
+        }
+        const notes = params.get('fromNotes');
+        if (notes) document.getElementById('sched-notes').value = notes;
+
+        form.hidden = false;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Clears the query string so a later refresh/back-nav doesn't
+        // re-open this prefilled form on top of whatever's been edited since.
+        window.history.replaceState(null, '', window.location.pathname);
+    }
+
     document.getElementById('new-schedule-btn').addEventListener('click', () => {
         if (!form.hidden && !editingId) { resetForm(); return; }
         resetForm();
@@ -458,6 +506,7 @@
             resetForm();
             load();
         });
-        load();
+        await load();
+        prefillFromRegisterEntry();
     })();
 })();

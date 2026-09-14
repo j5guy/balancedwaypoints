@@ -1,0 +1,111 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-admin-settings">
+    <div class="page-header">
+        <h1>Log Export &amp; Metrics</h1>
+    </div>
+
+    <div class="card">
+        <h3>Log export</h3>
+        <p class="muted">
+            Ships this app's log lines to an external destination in addition to the local console/file logs,
+            which are never affected by this setting. Useful when this instance is hosted somewhere your own
+            logging server can't reach in to pull from directly.
+        </p>
+        <div id="logging-error" class="form-error" hidden></div>
+        <div id="logging-success" class="form-success" hidden></div>
+
+        <div class="form-group">
+            <label for="logging-destination">Destination</label>
+            <select id="logging-destination">
+                <option value="none">None</option>
+                <option value="syslog">Syslog</option>
+                <option value="http">HTTP / webhook</option>
+            </select>
+        </div>
+
+        <div id="logging-syslog-fields" hidden>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="syslog-host">Host</label>
+                    <input type="text" id="syslog-host" placeholder="logs.example.com">
+                </div>
+                <div class="form-group">
+                    <label for="syslog-port">Port</label>
+                    <input type="number" id="syslog-port">
+                </div>
+                <div class="form-group">
+                    <label for="syslog-protocol">Protocol</label>
+                    <select id="syslog-protocol">
+                        <option value="udp4">UDP</option>
+                        <option value="tcp4">TCP</option>
+                        <option value="tls4">TCP + TLS</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="logging-http-fields" hidden>
+            <div class="form-group">
+                <label for="http-url">URL</label>
+                <input type="text" id="http-url" placeholder="https://logs.example.com/ingest">
+            </div>
+            <div class="form-group">
+                <label for="http-auth-header">Authorization header (optional)</label>
+                <input type="text" id="http-auth-header" placeholder="Bearer &lt;token&gt;">
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-logging-btn">Save</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Metrics</h3>
+        <p class="muted">
+            Exposes a Prometheus-compatible <code>/metrics</code> endpoint. Disabled by default since this
+            instance may be reachable from the public internet — set a token below to require it on every scrape.
+        </p>
+        <div id="metrics-error" class="form-error" hidden></div>
+        <div id="metrics-success" class="form-success" hidden></div>
+
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="metrics-enabled">
+            <label for="metrics-enabled">Enable <code>/metrics</code> endpoint</label>
+        </div>
+        <div class="form-group">
+            <label for="metrics-token">Bearer token (optional)</label>
+            <input type="text" id="metrics-token" placeholder="Leave blank to allow open scraping">
+            <p class="form-hint">When set, scrapes must send <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-metrics-btn">Save</button>
+        </div>
+
+        <h3 style="margin-top:24px;">Push to a Pushgateway</h3>
+        <p class="muted">
+            For when your Prometheus can't scrape this instance directly — pushes the same metrics on an
+            interval to a <a href="https://github.com/prometheus/pushgateway" target="_blank" rel="noopener">Pushgateway</a> you run.
+        </p>
+        <div id="pushgateway-error" class="form-error" hidden></div>
+        <div id="pushgateway-success" class="form-success" hidden></div>
+
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="pushgateway-enabled">
+            <label for="pushgateway-enabled">Enable Pushgateway export</label>
+        </div>
+        <div class="form-group">
+            <label for="pushgateway-url">Pushgateway URL</label>
+            <input type="text" id="pushgateway-url" placeholder="https://pushgateway.example.com">
+        </div>
+        <div class="form-group">
+            <label for="pushgateway-interval">Push interval (seconds)</label>
+            <input type="number" id="pushgateway-interval" style="max-width:120px;">
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="save-pushgateway-btn">Save</button>
+        </div>
+    </div>
+</main>
+<%- include('../components/footer', { pageScripts: ['/js/adminSettings.js'] }) %>

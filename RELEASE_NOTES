@@ -1,3 +1,32 @@
+v0.17.0b
+------
+Added an optional demo mode (DEMO_MODE=true, off by default — no effect on a normal self-hosted or cloud
+install) for running a public try-it-yourself instance. A /demo page lets an anonymous visitor spin up an
+ordinary, non-admin account with a randomly generated login (controllers/demoController.js) and is logged
+straight in — no signup, no email required. Unlike a shared demo pool, each new demo account gets its own
+freshly generated private starter dataset — a few accounts, categories, payees, budget assignments, and a
+couple months of transaction history (services/demo/seedDemoUserData.js) — so nothing is ever shared
+between demo users; editing your own copy never affects anyone else's. Rate-limited per IP
+(middleware/demoRateLimit.js) to keep the database from filling up with junk between resets.
+
+The whole database is wiped every night at 03:00 (services/demo/scheduler.js/reset.js) — a full
+dropDatabase() rather than an actual container recreation, so there's no downtime — and once more at
+every process boot. The license doc is snapshotted and restored across the wipe so a demo box doesn't come
+back up gated behind /license with nothing to validate. Since this app had no existing admin-bootstrap
+script (unlike a from-scratch signup, which always makes the first user an admin), added
+services/bootstrap/createInitialAdmin.js: it recreates a persistent operator login from a new
+ADMIN_PASSWORD env var (alongside the existing ADMIN_EMAIL) right after each reset, so whoever runs the
+demo deployment can always get back in.
+
+Also shortened the header logo text from "Balanced Waypoints" to just "Balanced" — the browser tab title
+is unchanged.
+
+v0.16.2b
+------
+Each account's register page now has a "↻ Refresh" button in the toolbar, next to Sync Now/Import — it
+re-fetches the account's balance and transactions and re-renders just the table, without reloading the
+whole page.
+
 v0.16.1b
 ------
 Fixed the new hamburger menu (v0.16.0b): on a wide-enough window the theme toggle was floating on its own

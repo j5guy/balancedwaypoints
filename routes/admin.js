@@ -34,4 +34,8 @@ router.get('/backups', requireAdmin, (req, res) => {
     res.render('admin/backups', { title: 'Backups' });
 });
 
+router.get('/settings', requireAdmin, (req, res) => {
+    res.render('admin/settings', { title: 'Log Export & Metrics' });
+});
+
 module.exports = router;

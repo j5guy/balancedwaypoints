@@ -1,0 +1,24 @@
+<%- include('../components/head', { title: title }) %>
+<%- include('../components/nav') %>
+<main class="page page-auth">
+    <div class="auth-card">
+        <h1>Try the Demo</h1>
+        <% if (error) { %>
+            <div class="form-error"><%= error %></div>
+        <% } %>
+        <p>
+            This spins up a real account with its own randomly generated login and a full set of
+            sample accounts, categories, and transactions already filled in — no signup, no email
+            required. You'll be able to browse the budget, register, and reports exactly like a
+            real user would.
+        </p>
+        <p class="form-hint">
+            This is a shared demo environment: everything resets every night, including your
+            account, so don't put anything in here you want to keep.
+        </p>
+        <form action="/demo/start" method="POST">
+            <button type="submit" class="btn btn-primary btn-block">Start the demo</button>
+        </form>
+    </div>
+</main>
+<%- include('../components/footer') %>

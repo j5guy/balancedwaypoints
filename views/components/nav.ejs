@@ -2,7 +2,7 @@
     <div class="nav-brand">
         <a href="/" class="nav-logo">
             <img src="/balancedwaypoints-icon.svg" alt="" class="nav-logo-icon">
-            Balanced Waypoints
+            Balanced
         </a>
     </div>
     <div class="nav-actions">
@@ -38,6 +38,9 @@
         <% } else { %>
             <a href="/auth/login" class="nav-link<%= locals.path === '/auth/login' ? ' active' : '' %>">Log in</a>
             <a href="/auth/signup" class="nav-link btn-nav-create">Get started</a>
+            <% if (locals.demoMode) { %>
+                <a href="/demo" class="nav-link">Try the demo</a>
+            <% } %>
         <% } %>
         <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
     </div>

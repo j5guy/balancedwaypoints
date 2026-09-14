@@ -10,6 +10,7 @@
             </div>
             <button type="button" class="btn btn-secondary btn-sm" id="refresh-register-btn" title="Reload this account's transactions">↻ Refresh</button>
             <button type="button" class="btn btn-secondary btn-sm" id="sync-now-btn" title="Pull new transactions from the bank now" hidden>🔄 Sync Now</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="reconcile-btn" title="Match this register against a bank/statement balance">✓ Reconcile</button>
             <a href="/imports?account=<%= accountId %>" class="btn btn-secondary btn-sm" id="import-link" title="Import transactions into this account">⇩ Import</a>
             <a href="/accounts?edit=<%= accountId %>" class="btn btn-secondary btn-sm" id="account-settings-link" title="Edit this account's settings">✎ Account settings</a>
             <button type="button" class="btn btn-secondary btn-sm" id="toggle-mask-btn" title="Hide amounts/balances">🙈 Mask</button>
@@ -546,6 +547,54 @@
         <div class="btn-row">
             <button type="button" class="btn btn-primary" id="quick-rule-save-btn">Create rule</button>
             <button type="button" class="btn btn-secondary" id="quick-rule-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="reconcile-overlay" hidden>
+    <div class="modal-card" style="max-width:640px;">
+        <h3>Reconcile</h3>
+        <p class="muted" id="reconcile-last-info"></p>
+        <div id="reconcile-error" class="form-error" hidden></div>
+
+        <div id="reconcile-setup">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="reconcile-statement-date">Statement date</label>
+                    <input type="date" id="reconcile-statement-date">
+                </div>
+                <div class="form-group">
+                    <label for="reconcile-statement-balance">Statement ending balance</label>
+                    <input type="number" id="reconcile-statement-balance" step="0.01" placeholder="1234.56">
+                </div>
+            </div>
+        </div>
+
+        <div id="reconcile-checklist" hidden>
+            <p class="form-hint">
+                Check off everything that actually appears on your statement. Cleared transactions start
+                checked; pending ones start unchecked.
+            </p>
+            <div class="table-wrap" style="max-height:320px;overflow-y:auto;">
+                <table class="data-table">
+                    <thead><tr><th></th><th>Date</th><th>Payee / Category</th><th>Amount</th></tr></thead>
+                    <tbody id="reconcile-tbody"></tbody>
+                </table>
+            </div>
+            <div class="reconcile-summary" style="margin-top:12px;line-height:1.6;">
+                <div>Starting balance: <strong id="reconcile-starting"></strong></div>
+                <div>+ Checked total: <strong id="reconcile-checked-total"></strong></div>
+                <div>= New balance: <strong id="reconcile-new-balance"></strong></div>
+                <div>Statement balance: <strong id="reconcile-target"></strong></div>
+                <div id="reconcile-difference-row">Difference: <strong id="reconcile-difference"></strong></div>
+            </div>
+        </div>
+
+        <div class="btn-row" style="margin-top:16px;">
+            <button type="button" class="btn btn-primary" id="reconcile-start-btn">Start</button>
+            <button type="button" class="btn btn-primary" id="reconcile-finish-btn" hidden disabled>Finish reconciling</button>
+            <button type="button" class="btn btn-secondary" id="reconcile-back-btn" hidden>Back</button>
+            <button type="button" class="btn btn-secondary" id="reconcile-cancel-btn">Cancel</button>
         </div>
     </div>
 </div>

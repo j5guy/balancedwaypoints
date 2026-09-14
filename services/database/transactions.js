@@ -90,6 +90,15 @@ const create = async (data) => {
 const update = (id, data, ownerId) => Transaction.findOneAndUpdate({ _id: id, owner: ownerId }, data, { new: true, runValidators: true }).populate(populateOpts).exec();
 const remove = (id, ownerId) => Transaction.findOneAndDelete({ _id: id, owner: ownerId }).exec();
 
+// Finishes a Reconcile session (see controllers/transactionsController.js's
+// finishReconcile) — flips every checked transaction to 'reconciled' in one
+// go. Scoped to BOTH account and owner (not just id + owner, unlike
+// update()/remove() above) so a tampered id list from the client can't
+// reach into a different account than the one the reconcile session itself
+// was authorized against.
+const markReconciled = (ids, accountId, ownerId) =>
+    Transaction.updateMany({ _id: { $in: ids }, account: accountId, owner: ownerId }, { cleared: 'reconciled' }).exec();
+
 // Both sides of a transfer share a transferId so editing/deleting one can
 // keep the other in sync (see updateTransferPair/removeTransferPair below).
 // `schedule`/`scheduleOccurrenceDate` are optional — set on both legs when
@@ -209,5 +218,6 @@ const sumForCategoryMonth = async (categoryId, month, ownerId) => {
 
 module.exports = {
     list, findById, findByIdRaw, findByImportedIds, existsForAccount, create, update, remove,
-    createTransfer, updateTransferPair, removeTransferPair, createAutopayOccurrence, reorder, sumForAccount, sumForCategoryMonth
+    createTransfer, updateTransferPair, removeTransferPair, createAutopayOccurrence, reorder, sumForAccount, sumForCategoryMonth,
+    markReconciled
 };

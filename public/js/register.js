@@ -273,6 +273,9 @@
         // transactions the same way a collaborator can't via a shared
         // register's own write controls.
         document.getElementById('sync-now-btn').hidden = !simplefinConnectionId || isShared;
+        // Same "no single account balance to match a statement against"
+        // reasoning as the asset-type checks above.
+        document.getElementById('reconcile-btn').hidden = readonly || isAsset;
 
         // ── Simplified view for Home/Vehicle accounts — Import (CSV/OFX
         // bank exports don't apply to a house) is hidden; "Balance" is
@@ -2144,6 +2147,148 @@
         } catch (err) {
             warningBox.textContent = err.message || 'Something went wrong';
             warningBox.hidden = false;
+        }
+    });
+
+    // ── Reconcile (Quicken/Actual Budget-style statement reconciliation) ─
+    // Two steps: enter the statement's date/ending balance, then check off
+    // everything that actually appears on it. Finish stays disabled until
+    // the checked total exactly matches the statement, same as those apps —
+    // see GET /api/transactions/reconcile/candidates and POST
+    // /api/transactions/reconcile/finish in controllers/transactionsController.js.
+    let reconcileCandidates = [];
+    let reconcileStartingBalanceCents = 0;
+
+    function reconcileTransactionLabel(t) {
+        if (t.transferAccount) {
+            const other = accounts.find(a => a.id === t.transferAccount);
+            return `${t.amountCents < 0 ? '→' : '←'} ${other ? other.name : 'Transfer'}`;
+        }
+        return t.payee ? t.payee.name : (t.category ? t.category.name : (t.splits && t.splits.length ? 'Split' : ''));
+    }
+
+    function reconcileCheckedTotalCents() {
+        return [...document.querySelectorAll('#reconcile-tbody input[type="checkbox"]:checked')]
+            .reduce((sum, cb) => sum + reconcileCandidates.find(t => t.id === cb.dataset.id).amountCents, 0);
+    }
+
+    function updateReconcileSummary() {
+        const target = window.BWMoney.toCents(document.getElementById('reconcile-statement-balance').value || 0);
+        const checkedTotal = reconcileCheckedTotalCents();
+        const newBalance = reconcileStartingBalanceCents + checkedTotal;
+        const difference = target - newBalance;
+        document.getElementById('reconcile-starting').textContent = window.BWMoney.formatCents(reconcileStartingBalanceCents);
+        document.getElementById('reconcile-checked-total').textContent = window.BWMoney.formatCents(checkedTotal);
+        document.getElementById('reconcile-new-balance').textContent = window.BWMoney.formatCents(newBalance);
+        document.getElementById('reconcile-target').textContent = window.BWMoney.formatCents(target);
+        const diffEl = document.getElementById('reconcile-difference');
+        diffEl.textContent = window.BWMoney.formatCents(difference);
+        diffEl.classList.toggle('money-positive', difference === 0);
+        diffEl.classList.toggle('money-negative', difference !== 0);
+        document.getElementById('reconcile-finish-btn').disabled = difference !== 0 || checkedTotal === 0;
+    }
+
+    function reconcileRow(t) {
+        const tr = document.createElement('tr');
+        const amountClass = t.amountCents < 0 ? 'money-negative' : 'money-positive';
+        tr.innerHTML = `
+            <td style="text-align:center;"><input type="checkbox" data-id="${t.id}" ${t.cleared === 'cleared' ? 'checked' : ''}></td>
+            <td>${window.BWDate.formatDate(t.date)}</td>
+            <td>${reconcileTransactionLabel(t)}</td>
+            <td class="money ${amountClass}">${window.BWMoney.formatCents(t.amountCents)}</td>
+        `;
+        tr.querySelector('input').addEventListener('change', updateReconcileSummary);
+        return tr;
+    }
+
+    function resetReconcileModal() {
+        document.getElementById('reconcile-error').hidden = true;
+        document.getElementById('reconcile-setup').hidden = false;
+        document.getElementById('reconcile-checklist').hidden = true;
+        document.getElementById('reconcile-start-btn').hidden = false;
+        document.getElementById('reconcile-finish-btn').hidden = true;
+        document.getElementById('reconcile-back-btn').hidden = true;
+        document.getElementById('reconcile-statement-date').value = window.BWDate.todayDateInputValue();
+        document.getElementById('reconcile-statement-balance').value = '';
+        reconcileCandidates = [];
+    }
+
+    document.getElementById('reconcile-btn').addEventListener('click', () => {
+        resetReconcileModal();
+        const info = document.getElementById('reconcile-last-info');
+        info.textContent = 'Enter your statement date and ending balance to get started.';
+        document.getElementById('reconcile-overlay').hidden = false;
+    });
+    document.getElementById('reconcile-cancel-btn').addEventListener('click', () => {
+        document.getElementById('reconcile-overlay').hidden = true;
+    });
+    document.getElementById('reconcile-back-btn').addEventListener('click', () => {
+        document.getElementById('reconcile-setup').hidden = false;
+        document.getElementById('reconcile-checklist').hidden = true;
+        document.getElementById('reconcile-start-btn').hidden = false;
+        document.getElementById('reconcile-finish-btn').hidden = true;
+        document.getElementById('reconcile-back-btn').hidden = true;
+    });
+
+    document.getElementById('reconcile-start-btn').addEventListener('click', async () => {
+        const errorBox = document.getElementById('reconcile-error');
+        errorBox.hidden = true;
+        const statementDate = document.getElementById('reconcile-statement-date').value;
+        const statementBalanceCents = window.BWMoney.toCents(document.getElementById('reconcile-statement-balance').value || 0);
+        if (!statementDate) {
+            errorBox.textContent = 'Statement date is required';
+            errorBox.hidden = false;
+            return;
+        }
+        try {
+            const data = await window.BWApi.apiFetch(`/api/transactions/reconcile/candidates?account=${accountId}&through=${statementDate}`);
+            reconcileCandidates = data.transactions;
+            reconcileStartingBalanceCents = data.startingBalanceCents;
+            const tbody = document.getElementById('reconcile-tbody');
+            tbody.innerHTML = '';
+            if (reconcileCandidates.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Nothing to reconcile through this date.</td></tr>';
+            } else {
+                reconcileCandidates.forEach(t => tbody.appendChild(reconcileRow(t)));
+            }
+            document.getElementById('reconcile-last-info').textContent = data.lastReconciledDate
+                ? `Last reconciled ${window.BWDate.formatDate(data.lastReconciledDate)} at ${window.BWMoney.formatCents(reconcileStartingBalanceCents)}.`
+                : 'Never reconciled before — starting from this account’s opening balance.';
+            document.getElementById('reconcile-setup').hidden = true;
+            document.getElementById('reconcile-checklist').hidden = false;
+            document.getElementById('reconcile-start-btn').hidden = true;
+            document.getElementById('reconcile-finish-btn').hidden = false;
+            document.getElementById('reconcile-back-btn').hidden = false;
+            updateReconcileSummary();
+        } catch (err) {
+            errorBox.textContent = err.message || 'Something went wrong';
+            errorBox.hidden = false;
+        }
+    });
+    document.getElementById('reconcile-statement-balance').addEventListener('input', () => {
+        if (!document.getElementById('reconcile-checklist').hidden) updateReconcileSummary();
+    });
+
+    document.getElementById('reconcile-finish-btn').addEventListener('click', async () => {
+        const errorBox = document.getElementById('reconcile-error');
+        errorBox.hidden = true;
+        const transactionIds = [...document.querySelectorAll('#reconcile-tbody input[type="checkbox"]:checked')].map(cb => cb.dataset.id);
+        try {
+            await window.BWApi.apiFetch('/api/transactions/reconcile/finish', {
+                method: 'POST',
+                body: {
+                    account: accountId,
+                    statementDate: document.getElementById('reconcile-statement-date').value,
+                    statementBalanceCents: window.BWMoney.toCents(document.getElementById('reconcile-statement-balance').value || 0),
+                    transactionIds
+                }
+            });
+            document.getElementById('reconcile-overlay').hidden = true;
+            await loadReferenceData();
+            await loadTransactions();
+        } catch (err) {
+            errorBox.textContent = err.message || 'Something went wrong';
+            errorBox.hidden = false;
         }
     });
 

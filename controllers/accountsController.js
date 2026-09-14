@@ -45,6 +45,8 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         forecastThresholdCents: account.forecastThresholdCents != null ? account.forecastThresholdCents : null,
         forecastThresholdColor: account.forecastThresholdColor || '#B5433A',
         forecastExpandedByDefault: account.forecastExpandedByDefault !== false,
+        lastReconciledDate: account.lastReconciledDate || null,
+        lastReconciledBalanceCents: account.lastReconciledBalanceCents != null ? account.lastReconciledBalanceCents : null,
         closed: account.closed,
         notes: account.notes,
         sortOrder: account.sortOrder,

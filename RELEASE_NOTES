@@ -1,5 +1,25 @@
 v0.19.0b
 ------
+Added statement reconciliation — a "✓ Reconcile" button on the register (hidden for read-only access
+and asset-type accounts, same as other write-only actions) walks through the same two-step flow
+Quicken/Actual Budget use: enter your bank statement's date and ending balance, then check off every
+transaction that actually appears on it. Finish stays disabled until the checked total exactly
+matches the statement. Confirming locks every checked transaction to a new 'reconciled' state (the
+transaction model already had this as its third cleared state alongside pending/cleared — nothing in
+the UI ever set it until now) and records the account's new reconciliation checkpoint
+(models/account.js's lastReconciledDate/lastReconciledBalanceCents), which the next session starts
+from instead of the account's original opening balance. The server re-derives the checked total from
+the database rather than trusting the client's arithmetic, and requires it to match the entered
+statement balance exactly before anything is written (controllers/transactionsController.js's
+reconcileCandidates/finishReconcile).
+
+Fixed the one-shot demo-login banner (added earlier this same version, below) never actually
+appearing — routes/pages.js's '/' handler redirects again to /dashboard, /budget, or /accounts
+depending on the signed-in user's preference, and the banner's session flag was being cleared
+unconditionally on that intermediate redirect, before the page that actually shows it ever got a
+chance to read it. server.js now defers clearing it until a page actually renders (wraps res.render),
+so it survives any number of redirect hops and still only shows once overall.
+
 Transfers can now be edited instead of only delete-and-recreate — clicking ✎ Edit on either leg opens
 the edit form with a warning banner ("This is a transfer — date, amount, and notes changes apply to
 BOTH sides of it") and only those three fields exposed; saving keeps both legs in sync

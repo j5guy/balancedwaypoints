@@ -1,3 +1,40 @@
+v0.19.0b
+------
+You can now create a schedule directly from an existing register entry — a new 📅 button next to
+Edit/Delete on each row hands off to the Schedules page with that entry's account, amount, payee/
+category (or transfer account) pre-filled into the "New schedule" form (public/js/register.js,
+public/js/schedules.js). The next-date field is left blank on purpose rather than reusing the
+entry's own (already-past) date, so an auto-enter schedule can't immediately re-post itself the
+moment you save it. Not offered for split transactions — the schedule form has no split UI yet to
+receive them.
+
+Demo mode (DEMO_MODE=true) now seeds rules and schedules along with everything else a fresh demo
+account already got — previously both pages sat empty. Each new demo account gets 3 rules that
+actually fire against its own seeded payees (Amazon → Shopping, Coffee → Dining Out, Gas & Go →
+Transportation) and 5 schedules covering every shape the app supports: a plain auto-entered
+paycheck, an autopay bill, a reminder-only bill that never posts itself, an autopay subscription
+with email notify, and a recurring transfer to savings (services/demo/seedDemoUserData.js).
+
+Starting the demo now actually shows you your generated login. Previously /demo/start logged you
+straight in with no way to ever see the randomly generated email/password it created — there was no
+way back in if your session ever expired. A one-shot banner under the nav bar now shows both right
+after signup (controllers/demoController.js, server.js, views/components/nav.ejs), same pattern
+loadoutwaypoints already used, then clears itself so it doesn't linger on every later page load.
+
+Fixed the licensing gate for a brand-new install: LICENSE_SERVER_URL now defaults to the real
+allthewaypoints licensing service (https://licensing.allthewaypoints.com) instead of requiring it be
+set by hand, and dropped the now-vestigial LICENSE_API_SECRET requirement — that service's /api/trial
+and /api/validate are public now (email-gated and rate-limited on its side instead), matching
+loadoutwaypoints (config/licensing.js, services/licensing/client.js). Existing installs that had
+LICENSE_SERVER_URL/LICENSE_API_SECRET set by hand are unaffected; new installs no longer need either.
+
+prod.yml now also builds and publishes a Docker image on every push to master — tagged with both
+:latest and the exact package.json version, pushed to both the internal Gitea registry and GHCR
+(.gitea/workflows/prod.yml). This is what makes dist-example/docker-compose.yml and
+docker-compose.pull.yml (which reference ghcr.io/j5guy/balancedwaypoints:latest) actually work as
+written; previously nothing published that image. Needs new/renamed repo secrets — see the CI/CD
+wiki page.
+
 v0.18.0b
 ------
 Deployment rebuilt from scratch around a single, self-contained docker-compose.yml — no more shared

@@ -122,6 +122,13 @@ app.use((req, res, next) => {
     res.locals.themeColors = req.session.themeColors || null;
     res.locals.themeColorFields = themeColorFields;
     res.locals.demoMode = demoMode;
+    // One-shot — set by controllers/demoController.js right after a demo
+    // account is created, read here on the very next request (whatever page
+    // the post-signup redirect lands on) and immediately cleared, so the
+    // credentials banner (see components/nav.ejs) shows exactly once instead
+    // of on every page load for the rest of the session.
+    res.locals.demoCredentials = req.session.demoCredentials || null;
+    delete req.session.demoCredentials;
     next();
 });
 

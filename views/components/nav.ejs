@@ -45,3 +45,11 @@
         <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle light/dark theme">🌙</button>
     </div>
 </nav>
+<% if (locals.demoCredentials) { %>
+    <div class="form-success demo-credentials-banner">
+        <strong>Your demo login</strong> — save this if you want to come back later today:<br>
+        Email: <code><%= demoCredentials.email %></code> &middot;
+        Password: <code><%= demoCredentials.password %></code><br>
+        <span class="form-hint">This is a shared demo environment — everything resets every night, including this account.</span>
+    </div>
+<% } %>

@@ -394,7 +394,8 @@
         // category lives per-split (see startCellEdit's identical guard on
         // the category cell), so both get a disabled, unchecked checkbox
         // rather than being silently skipped by a bulk apply.
-        const bulkDisabled = accountRole === 'readonly' || !!t.transferId || (t.splits && t.splits.length > 0);
+        const hasSplits = !!(t.splits && t.splits.length > 0);
+        const bulkDisabled = accountRole === 'readonly' || !!t.transferId || hasSplits;
         const bulkTitle = t.transferId ? "Transfers can't be bulk-edited"
             : (t.splits && t.splits.length ? 'Split transactions must be edited individually' : 'Select for bulk actions');
         tr.innerHTML = `
@@ -415,10 +416,12 @@
             </td>
             <td class="row-actions">
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
+                <button type="button" class="btn btn-secondary btn-sm icon-btn" data-create-schedule ${hasSplits ? 'disabled' : ''} title="${hasSplits ? "Split transactions can't be turned into a schedule yet" : 'Create a schedule from this entry'}">📅</button>
                 <button type="button" class="btn btn-danger btn-sm icon-btn" data-delete title="Delete">🗑</button>
             </td>
         `;
         tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(t));
+        if (!hasSplits) tr.querySelector('[data-create-schedule]').addEventListener('click', () => createScheduleFromTransaction(t));
         tr.querySelector('[data-delete]').addEventListener('click', () => deleteTransaction(t.id));
         tr.querySelector('[data-cleared-toggle]').addEventListener('click', () => toggleCleared(t));
         const selectCb = tr.querySelector('.row-select-checkbox');
@@ -1802,6 +1805,26 @@
         } catch (err) {
             showError(err);
         }
+    }
+
+    // Hands off to the Schedules page rather than duplicating its whole
+    // form here — the target fields are passed as query params, which
+    // schedules.js reads on load to prefill and open its "New schedule"
+    // form (see prefillFromRegisterEntry there). Only called for non-split
+    // transactions (see hasSplits above) — a split's category lives
+    // per-split, and the schedule form has no split UI to receive it.
+    function createScheduleFromTransaction(t) {
+        const params = new URLSearchParams();
+        params.set('fromAccount', accountId);
+        params.set('fromAmountCents', t.amountCents);
+        if (t.transferAccount) {
+            params.set('fromTransferAccount', t.transferAccount);
+        } else {
+            if (t.payee) params.set('fromPayee', t.payee.name);
+            if (t.category) params.set('fromCategory', t.category.id);
+        }
+        if (t.notes) params.set('fromNotes', t.notes);
+        window.location.href = `/schedules?${params.toString()}`;
     }
 
     // ── Live filter row — narrows #register-tbody as you type, no re-fetch

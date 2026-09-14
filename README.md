@@ -30,10 +30,9 @@ install it. See [RELEASE_NOTES](RELEASE_NOTES) for release notes and version his
 - **Backups are a first-class, in-app feature, not an afterthought.** Whole-site scheduled backups
   live under Admin, and every individual user can independently schedule and restore backups of
   just their own data from My Account — see [Backup and Restore](https://github.com/j5guy/balancedwaypoints/wiki/Backup-and-Restore).
-- **Docker-only, deliberately simple.** There's no local-systemd-service install path and no
-  existing-host-nginx auto-wiring the way some sibling projects have — the guided setup always
-  brings the app up as a small Docker Compose stack (app + bundled nginx, optionally bundled
-  MongoDB), which keeps the installer and this README a lot shorter.
+- **Docker-only, deliberately simple.** One self-contained `docker-compose.yml` — bundled MongoDB,
+  no `.env` file, no setup wizard, no reverse proxy to stand up first. `docker compose up -d` and
+  you're done; see Installation below.
 
 ## Features
 
@@ -82,7 +81,7 @@ install it. See [RELEASE_NOTES](RELEASE_NOTES) for release notes and version his
   category picker (choose exactly which categories get their own slice) and a Top 5 / Top 10 mode
   for the rest.
 - **LDAP login** (optional) — log in against Active Directory/OpenLDAP alongside local accounts,
-  configurable at install time via `.env` or later from Admin &gt; LDAP without a redeploy. The bind
+  configurable via env vars at install time or later from Admin &gt; LDAP without a redeploy. The bind
   password is AES-256-GCM encrypted at rest, keyed off `sessionSecret`.
 - **Email notifications** — each person configures their own outgoing mail server from My Account
   &gt; Mail Server (not a shared admin-configured relay); per-schedule "email when due" alerts and an
@@ -100,98 +99,58 @@ install it. See [RELEASE_NOTES](RELEASE_NOTES) for release notes and version his
 
 ## Installation
 
-### Guided install (recommended)
+**Docker Compose only** — one self-contained file, nothing else to install first.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/j5guy/balancedwaypoints/master/install.sh | bash
+mkdir balancedwaypoints && cd balancedwaypoints
+curl -O https://raw.githubusercontent.com/j5guy/balancedwaypoints/master/dist-example/docker-compose.yml
+docker compose up -d && docker compose logs app
 ```
 
-Installs whatever this host is missing (git, curl, Node.js), clones the repo into
-`/opt/balancedwaypoints` (override with `--dir /some/other/path`, or the
-`BALANCEDWAYPOINTS_INSTALL_DIR` environment variable — created for you via `sudo mkdir` + `chown` to
-your own user, so nothing afterward needs `sudo`), installs npm dependencies, and hands off to the
-guided setup wizard (`scripts/setup-wizard.js`).
+That's the whole thing — every setting in that file already has a working default. `docker compose
+up -d` returns as soon as the container starts, so the trailing `docker compose logs app` is what
+actually prints the access URL to your terminal. Sign up at `/auth/login` → Sign up — the first
+account created is always made admin, regardless of `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Set those two in
+the file first instead if you'd rather have an admin account ready to go before anyone signs up; no
+default/insecure password is ever created if you leave them blank.
 
-Already have a checkout, or want to review the script first? Same thing, run locally — this
-operates in place, with no scratch clone or `--dir` involved:
+That printed URL uses `WEB_FQDN` (`localhost` by default) — a container can't detect its own host's
+LAN IP, so set `WEB_FQDN` to this host's IP or hostname yourself in the `docker-compose.yml` you
+downloaded if you want that link to work from other devices on your network.
 
-```bash
-git clone https://github.com/j5guy/balancedwaypoints.git
-cd balancedwaypoints
-./install.sh
-```
+Plain HTTP by default — this app can terminate its own HTTPS if you upload a certificate and key
+from Admin → Settings once it's running, or put your own reverse proxy (Traefik, Caddy, nginx,
+whatever you already run) in front of it instead. Either way, set `WEB_PROTOCOL: https` in the
+compose file afterward so links this app generates itself (e.g. in emails) use the right scheme.
 
-The wizard starts a small local web server (bound to this machine, not the public internet) and
-prints a URL to open in a browser:
-
-```
-Open this URL in a browser to continue setup:
-  http://localhost:<random port>/
-```
-
-The form asks for:
-
-- **MongoDB** — Internal (bundled `mongo` container, recommended) or External (point at your own
-  server — fills in `mongoHost`/`mongoUser`/`mongoPass`).
-- **TLS certificate** — Generate one (a local Certificate Authority the first time, then a
-  certificate for your domain signed by it — no public CA or real domain needed) or provide your
-  own `SSL_CERT_FILE`/`SSL_KEY_FILE`.
-- **Domain name (or IP)**, HTTPS/HTTP ports for the bundled nginx, an always-admin email (optional),
-  currency symbol, and the LDAP fields below (all optional — leave blank to skip LDAP entirely).
-
-> **ARM / Raspberry Pi:** if you pick Internal MongoDB, the wizard reads `/proc/cpuinfo` for the
-> `atomics` CPU feature and automatically falls back to `mongo:4.4.18` (the last release before
-> MongoDB required ARMv8.2-A) on hardware that can't run current MongoDB versions — a plain notice
-> appears next to the MongoDB choice when this applies. There's nothing to fill in for it.
-
-Submitting the form writes `.env`, generates the TLS certificate if requested, and runs
-`docker compose up -d --build` for you. The app is **Docker-only** — there is no local systemd
-service mode.
-
-> **Import the certificate before visiting the site.** Unless you supplied a certificate from a
-> public CA (e.g. Let's Encrypt), your browser won't trust the one the wizard generated. It offers a
-> download link for the CA certificate (`certs/ca.pem`, always on the host outside Docker too) —
-> install that into the OS/browser trust store of every device that needs to reach the site without
-> a warning.
-
-The terminal prints the URL(s) the app is reachable at once it's up — your `WEB_FQDN` and this
-machine's LAN IP address(es), on whichever port you picked. Visit `/auth/signup` on one of those to
-create the first account.
-
-## Manual install
+### Building from source instead of pulling
 
 ```bash
 git clone https://github.com/j5guy/balancedwaypoints.git
 cd balancedwaypoints
-cp .env.example .env   # fill in the values, or run the wizard instead: node scripts/setup-wizard.js
-docker compose -f docker-compose.yml -f docker-compose.nginx.yml -f docker-compose.mongo.yml up -d --build
+docker compose up -d --build
 ```
 
-Omit `-f docker-compose.mongo.yml` if pointing `mongoHost` at an external MongoDB server instead of
-the bundled container. See [`.env.example`](.env.example) for every variable and what it does.
+`docker-compose.pull.yml` is an overlay for a checkout like this one that pulls the published image
+instead of building locally:
 
-## Local development (no Docker)
+```bash
+docker compose -f docker-compose.yml -f docker-compose.pull.yml up -d
+```
+
+### Local development (no Docker)
 
 ```bash
 npm install
 npm run build-css      # or npm run watch-css while developing
-cp .env.example .env   # set mongoHost=localhost (or wherever a local Mongo runs) and sessionSecret
-echo "NODE_ENV=development" >> .env
+export sessionSecret=$(node -e "console.log(require('crypto').randomBytes(64).toString('hex'))")
+export mongoHost=localhost mongoPort=27017 mongoDBName=balancedwaypoints
+export NODE_ENV=development
 node server.js
 ```
 
-The app listens on port 5570 directly (no nginx in front) in this mode, over plain HTTP.
-
-> **`NODE_ENV=development` is required for local dev.** Without it, `config/config.js` defaults to
-> `production`, which makes the session and CSRF cookies `Secure`-only (the CSRF cookie is even
-> `__Host-`-prefixed, which browsers refuse to set at all over plain HTTP). Leaving `NODE_ENV` unset
-> is only safe behind the bundled/Docker nginx, which actually terminates TLS.
-
-The first person to sign up (`/auth/signup`) automatically becomes admin, regardless of
-`ADMIN_EMAIL` — signup is always open, and every account gets its own separate, empty set of
-accounts/categories/budget. `ADMIN_EMAIL` only matters for making a *later* signup an admin too.
-There's also a CLI bootstrap for creating an account before the web signup flow is reachable, or for
-recovering admin access:
+The app listens on port 5570 directly, over plain HTTP. There's a CLI bootstrap for creating an
+account before the web signup flow is reachable, or for recovering admin access:
 
 ```bash
 node scripts/createUser.js <email> --password <password> [--admin]
@@ -199,40 +158,26 @@ node scripts/createUser.js <email> --password <password> [--admin]
 
 ## Updating
 
-Same one command regardless of how it was installed, run from the install directory:
-
 ```bash
-cd /opt/balancedwaypoints   # or wherever you installed to
-./update.sh
+docker compose up -d
 ```
 
-Checks out the newest release tag (or pulls `origin/master` if none exist yet — refusing to
-continue if there are uncommitted local changes), then rebuilds and restarts the Docker stack with
-whichever compose overlays match your `.env` (adds `docker-compose.mongo.yml` automatically when
-`mongoHost=mongo`). See [Updating](https://github.com/j5guy/balancedwaypoints/wiki/Updating) on the
-wiki for the full breakdown.
+Relies on `pull_policy: always` in the published-image compose files — re-run the same command any
+time a new release comes out. Building from source instead: `git pull && docker compose up -d --build`.
 
 ## Uninstalling
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/j5guy/balancedwaypoints/master/uninstall.sh -o uninstall.sh
-bash uninstall.sh
+docker compose down -v
 ```
 
-Or, from an existing checkout: `./uninstall.sh`.
-
-**Destructive** — this permanently deletes the Docker containers/images/network for this
-deployment, every named volume (logs, backups, and MongoDB data if internal — every account's
-budget data, if this points at a real deployment), and the install directory itself (`.env`,
-`certs/`, the source checkout — everything in it). It asks you to type `yes` to confirm before
-touching anything; pass `--yes` to skip that prompt only if you're scripting this deliberately
-(e.g. tearing down a CI/test deployment), since a piped `curl | bash -s -- --yes` never gives you
-the chance to back out.
+`-v` also removes the named volumes — including MongoDB data, uploads, backups, and the
+auto-generated session secret. Omit it to stop the app while keeping everything on disk for a later
+`docker compose up -d`.
 
 ---
 
-For the full guided-setup walkthrough, exactly what the installer does and where it needs `sudo`,
-CI/CD internals, the admin area (users, LDAP, backups), and backup & restore in depth, see the
+For the admin area (users, LDAP, backups), backup & restore in depth, and CI/CD internals, see the
 [wiki](https://github.com/j5guy/balancedwaypoints/wiki).
 
 ## License

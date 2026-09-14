@@ -8,11 +8,14 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 module.exports = {
     appName: 'Balanced Waypoints',
     webFQDN: process.env.WEB_FQDN || 'localhost',
-    // Not user-configurable (removed from .env.example/the setup wizard) —
-    // the shared Traefik reverse proxy (see ../scripts/lib/bringUp.js's
-    // ensureTraefikStack) always routes to this fixed container port; no
-    // per-app port for a user to pick any more.
-    webPort: 5570,
+    webPort: parseInt(process.env.PORT, 10) || 5570,
+    // Plain HTTP by default — this app can terminate its own HTTPS if you
+    // upload a cert/key pair from Admin > Settings (see
+    // services/settings/tlsCerts.js), or you can put your own reverse proxy
+    // in front of it. Set to "https" once either of those is actually true,
+    // so links this app generates itself (see appBaseUrl below) use the
+    // right scheme.
+    protocol: process.env.WEB_PROTOCOL === 'https' ? 'https' : 'http',
     nodeEnv: process.env.NODE_ENV,
 
     // Set to the email address that should be granted admin on signup. Only
@@ -32,11 +35,11 @@ module.exports = {
     // symbol/format applied on top for display.
     currencySymbol: process.env.CURRENCY_SYMBOL || '$',
 
-    // Where update.sh/install.sh pull releases from — reused here as the
-    // source of truth for a future update checker, so both stay in sync.
+    // Source repo for a future update checker.
     updateCheckRepoUrl: process.env.BALANCEDWAYPOINTS_REPO_URL || 'https://github.com/j5guy/balancedwaypoints.git',
 
     get appBaseUrl() {
-        return `https://${process.env.WEB_FQDN || 'localhost'}`;
+        const protocol = process.env.WEB_PROTOCOL === 'https' ? 'https' : 'http';
+        return `${protocol}://${process.env.WEB_FQDN || 'localhost'}`;
     }
 };

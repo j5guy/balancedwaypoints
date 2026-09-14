@@ -3,6 +3,8 @@ require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
+const http = require('http');
+const https = require('https');
 const methodOverride = require('method-override');
 const morgan = require('morgan');
 const helmet = require('helmet');
@@ -13,6 +15,7 @@ global.appRoot = path.resolve(__dirname);
 
 const app = express();
 const { webFQDN, webPort, appName, demoMode } = require('./config/config');
+const tlsCerts = require('./services/settings/tlsCerts');
 const logger = require('./utils/logger');
 const mongooseConnect = require('./config/mongoose');
 const sessionConfig = require('./middleware/session');
@@ -204,7 +207,41 @@ app.use((err, req, res, next) => {
     res.status(500).render('error', { message: 'An unexpected error occurred' });
 });
 
-app.listen(webPort, () => {
-    logger.info(`Balanced Waypoints server running at https://${webFQDN}:${webPort}`);
-    console.log(`Balanced Waypoints server running at https://${webFQDN}:${webPort}`);
+// Plain HTTP by default; self-terminates HTTPS instead if an admin has
+// uploaded a cert/key pair (Admin > Settings) and enabled it — see
+// services/settings/tlsCerts.js/store.js and controllers/adminController.js's
+// enableTls/disableTls. restartServer() lets that toggle take effect without
+// a container restart: it swaps this in-process listener for a fresh one on
+// the same port.
+let server = null;
+
+const startServer = () => {
+    const settings = logExportSettingsStore.get();
+    const tls = settings.tls.enabled ? tlsCerts.load() : null;
+    const protocol = tls ? 'https' : 'http';
+
+    server = tls ? https.createServer({ cert: tls.cert, key: tls.key }, app) : http.createServer(app);
+
+    server.listen(webPort, () => {
+        const url = `${protocol}://${webFQDN}:${webPort}`;
+        logger.info(`Balanced Waypoints server running at ${url}`);
+        console.log(`Balanced Waypoints server running at ${url}`);
+    });
+};
+
+const restartServer = () => new Promise((resolve) => {
+    if (!server) {
+        startServer();
+        return resolve();
+    }
+    const old = server;
+    old.closeAllConnections();
+    old.close(() => {
+        startServer();
+        resolve();
+    });
 });
+
+startServer();
+
+module.exports = { restartServer };

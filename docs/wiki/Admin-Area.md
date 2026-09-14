@@ -3,8 +3,8 @@
 Available at `/admin` to any user with `isAdmin` set — anyone else hitting `/admin` gets a 403
 (`middleware/auth.js`'s `requireAdmin`/`requireApiAdmin`). **The first person to ever sign up
 automatically becomes admin**, regardless of `ADMIN_EMAIL` — see
-[Installation Guide](Installation-Guide.md#first-account). To grant it to a specific *later* signup
-instead, set `ADMIN_EMAIL` in `.env` before that account is created. There's no other promote-a-
+[Installation Guide](Installation-Guide.md). To grant it to a specific *later* signup instead, set
+`ADMIN_EMAIL` in `docker-compose.yml` before that account is created. There's no other promote-a-
 user flow outside the Users page below, and no CLI flag for it beyond `scripts/createUser.js
 <email> --password <password> --admin` (bootstraps a brand-new account as admin directly, without
 going through signup).
@@ -36,15 +36,15 @@ specific account of theirs, entirely outside the admin area.
 ## LDAP
 
 `/admin/ldap` — lets an admin configure (or reconfigure) LDAP login from the UI, without touching
-`.env` or redeploying. This never replaces local (email/password) login; both authentication paths
+env vars or redeploying. This never replaces local (email/password) login; both authentication paths
 are always available together once LDAP is enabled.
 
-- **Host / bind DN / bind password / search base / search filter** — the same fields `.env`'s
-  `LDAP_*` variables cover (see [Installation Guide](Installation-Guide.md#configuration) for what
-  each means). The search filter must contain the literal `{{username}}` placeholder.
+- **Host / bind DN / bind password / search base / search filter** — the same fields the `LDAP_*`
+  environment variables in `docker-compose.yml` cover. The search filter must contain the literal
+  `{{username}}` placeholder.
 - **Save** (`PUT /api/admin/settings/ldap`) stores the settings in the `Settings` singleton
-  document in MongoDB, and **takes priority over `.env`** from then on
-  (`config/ldapAuth.js`'s `resolveLdapConfig` checks the database first, falling back to `.env`
+  document in MongoDB, and **takes priority over the env vars** from then on
+  (`config/ldapAuth.js`'s `resolveLdapConfig` checks the database first, falling back to env vars
   only if nothing has ever been saved). The bind password is AES-256-GCM encrypted at rest
   (`utils/secretCrypto.js`, keyed off `sessionSecret` via HMAC-SHA256) and is never sent back to
   the browser — a bind password is required the very first time LDAP is enabled, but can be left
@@ -53,8 +53,9 @@ are always available together once LDAP is enabled.
   bind — host reachable, `bindDN`/`bindPassword` valid — against either the not-yet-saved values in
   the form or whatever's currently active if submitted empty. It does not test a specific user's
   login, only that the directory itself is reachable with these service credentials.
-- **Reset to `.env`** (`DELETE /api/admin/settings/ldap`) clears the database override, falling
-  back to whatever's in `.env` (or LDAP being unconfigured entirely if that's blank too).
+- **Reset to env vars** (`DELETE /api/admin/settings/ldap`) clears the database override, falling
+  back to whatever's set in `docker-compose.yml` (or LDAP being unconfigured entirely if that's
+  blank too).
 
 Under the hood, a login attempt against LDAP binds as the service account
 (`bindDN`/`bindPassword`), searches `searchBase` with `searchFilter` for the entered username, then
@@ -74,8 +75,8 @@ distinct in scope from **My Account &gt; Backups**, described below, which only 
 data belonging to whoever's logged in.
 
 - **Settings** (`GET`/`PUT /api/admin/settings/backup`) — a **destination** directory (defaults to
-  `backups/` inside the app container, backed by the `backups-data` Docker volume — see
-  `BACKUP_HOST_DIR` in `.env.example` to point it at a host/NAS directory instead), a **frequency**
+  `backups/` inside the app container, backed by the `backups-data` Docker volume — bind-mount a
+  host/NAS directory over that volume in `docker-compose.yml` to point it there instead), a **frequency**
   (disabled / daily / weekly), a **time of day** (HH:MM, server-local), a **day of week** (weekly
   only), and a **retention count** (how many backup files to keep before the oldest are deleted
   automatically). Saving reloads the scheduled job immediately (`backupScheduler.reloadSite()`) —

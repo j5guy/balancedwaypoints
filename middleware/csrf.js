@@ -1,12 +1,17 @@
 const { doubleCsrf } = require('csrf-csrf');
+const { protocol } = require('../config/config');
 
+// Not the browser-enforced __Host- prefix (which requires Secure/HTTPS) —
+// this app defaults to plain HTTP (see config.js's protocol), and a
+// __Host- cookie would be silently dropped by the browser under HTTP,
+// breaking CSRF protection outright rather than just running less strictly.
 const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
     getSecret: () => process.env.sessionSecret,
-    cookieName: process.env.NODE_ENV === 'production' ? '__Host-bwp.csrf' : 'bwp.csrf',
+    cookieName: 'bwp.csrf',
     cookieOptions: {
         path: '/',
         sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        secure: protocol === 'https',
         httpOnly: true
     },
     // Deliberately NOT tied to req.session.id — see middleware/session.js

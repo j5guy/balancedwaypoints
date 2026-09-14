@@ -1,3 +1,35 @@
+v0.18.0b
+------
+Deployment rebuilt from scratch around a single, self-contained docker-compose.yml — no more shared
+Traefik reverse proxy, no waypoints-proxy network, no .env file, no guided setup wizard. Replaces
+install.sh/update.sh/uninstall.sh/scripts/setup-wizard.js/scripts/migrate-to-traefik.js and the
+docker-compose.mongo.yml/docker-compose.tls-acme.yml overlay files entirely, matching how
+loadoutwaypoints already deploys: MongoDB bundled in the same compose file, every setting as a plain
+inline environment variable with a working default, `docker compose up -d` and nothing else. See
+dist-example/docker-compose.yml for the file a new install actually downloads, and the wiki's
+Installation Guide for the full rundown. Existing installs need to redeploy onto the new compose
+file by hand (the old toolchain is gone) — the underlying MongoDB data volume carries over
+regardless of compose shape.
+
+The app now serves plain HTTP by default instead of assuming Traefik terminates HTTPS in front of
+it. TLS is now optional and entirely self-contained: Admin > Settings has a new TLS section where
+uploading a certificate and private key switches this process to terminating HTTPS itself, on the
+same port, without a container restart (it swaps its own in-process listener) — or keep running
+plain HTTP behind your own reverse proxy instead, same as before. Session and CSRF cookies adapt
+automatically (`secure: 'auto'`/a plain, non-`__Host-`-prefixed CSRF cookie) so login and forms keep
+working correctly under plain HTTP, self-terminated HTTPS, or a reverse proxy, instead of assuming
+HTTPS is always present. The session secret is now baked into the image at build time and persisted
+in a new secrets-data volume — nothing to hand-generate and put in a .env file anymore. The web
+port is now configurable via a PORT env var instead of a fixed 5570, and MONGO_URI is now supported
+as a direct override of the mongoHost/mongoPort/mongoUser/mongoPass block (for mongodb+srv://
+/Atlas-style hosts).
+
+Dropped OIDC/SSO support entirely, for the same deployment-simplicity reasons — local accounts and
+LDAP remain, unaffected. Breaking change: any account that was using OIDC login has no other way to
+sign back in (no password, no LDAP username) — recreate that person's login with
+`node scripts/createUser.js <email> --password <password>` after updating, or have them sign up
+fresh, before dropping their old account from Admin > Users.
+
 v0.17.0b
 ------
 Added an optional demo mode (DEMO_MODE=true, off by default — no effect on a normal self-hosted or cloud

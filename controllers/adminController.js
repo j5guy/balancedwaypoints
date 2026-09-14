@@ -6,10 +6,17 @@ const backupRunsDb = require('../services/database/backupRuns');
 const backupService = require('../services/backup/backupService');
 const backupScheduler = require('../services/backup/backupScheduler');
 const { resolveLdapConfig, testBind } = require('../config/ldapAuth');
-const { resolveOidcConfig } = require('../config/oidcAuth');
 const logExportSettingsStore = require('../services/settings/store');
+const tlsCerts = require('../services/settings/tlsCerts');
 const exportTransports = require('../services/logging/exportTransports');
 const pushgatewayService = require('../services/metrics/pushgateway');
+const { webFQDN, webPort } = require('../config/config');
+const logger = require('../utils/logger');
+
+// Lazily required (not at module load) to dodge a require cycle — server.js
+// self-executes and starts listening as soon as it's required, and it's the
+// one requiring routes/admin.js -> this controller in the first place.
+const getServer = () => require('../server');
 
 const LOGGING_DESTINATIONS = ['none', 'syslog', 'http'];
 const SYSLOG_PROTOCOLS = ['udp4', 'tcp4', 'tls4'];
@@ -161,63 +168,6 @@ async function testLdapSettings(req, res) {
     res.json(result);
 }
 
-// ── OIDC settings (Admin > OIDC) — see models/settings.js/config/oidcAuth.js ──
-function parseOidcInput(body) {
-    const enabled = !!(body || {}).enabled;
-    const issuerUrl = String((body || {}).issuerUrl || '').trim();
-    const clientId = String((body || {}).clientId || '').trim();
-    const clientSecret = typeof (body || {}).clientSecret === 'string' ? (body || {}).clientSecret : '';
-    const scopes = String((body || {}).scopes || '').trim() || 'openid profile email';
-
-    if (enabled) {
-        if (!issuerUrl) return { error: 'issuerUrl is required' };
-        if (!clientId) return { error: 'clientId is required' };
-    }
-
-    return { enabled, issuerUrl, clientId, clientSecret, scopes };
-}
-
-// Never echoes the stored client secret back — only whether one exists.
-function serializeOidc(cfg) {
-    if (!cfg) return { configured: false, enabled: false, issuerUrl: null, clientId: null, scopes: 'openid profile email', hasClientSecret: false };
-    return {
-        configured: true,
-        enabled: cfg.enabled,
-        issuerUrl: cfg.issuerUrl,
-        clientId: cfg.clientId,
-        scopes: cfg.scopes,
-        hasClientSecret: !!cfg.clientSecret
-    };
-}
-
-async function getOidcSettings(req, res) {
-    const cfg = await resolveOidcConfig();
-    res.json(serializeOidc(cfg));
-}
-
-async function updateOidcSettings(req, res) {
-    const parsed = parseOidcInput(req.body);
-    if (parsed.error) return res.status(400).json({ error: parsed.error });
-
-    // A client secret is required the first time enabling OIDC (nothing to
-    // fall back to); afterwards an admin can omit it to keep the one
-    // already stored, same as updateLdapSettings' bindPassword handling.
-    const existing = await settingsDb.getOidcSettings();
-    if (parsed.enabled && !parsed.clientSecret && !(existing && existing.clientSecret)) {
-        return res.status(400).json({ error: 'clientSecret is required' });
-    }
-
-    await settingsDb.setOidcSettings(parsed, req.session.userId);
-    const cfg = await resolveOidcConfig();
-    res.json(serializeOidc(cfg));
-}
-
-async function resetOidcSettings(req, res) {
-    await settingsDb.clearOidcSettings();
-    const cfg = await resolveOidcConfig();
-    res.json(serializeOidc(cfg));
-}
-
 // ── Backups (Admin > Backups, site-wide) — see services/backup/backupService.js ──
 // My Account > Backups is the personal-scope equivalent of everything below
 // — see controllers/accountController.js, which mirrors this against
@@ -310,7 +260,7 @@ async function restoreFromFile(req, res) {
 
 // ── Log export & metrics (Admin > Log Export & Metrics) — see
 // services/settings/store.js/services/logging/exportTransports.js/
-// services/metrics/pushgateway.js. Unlike LDAP/OIDC/backup settings above,
+// services/metrics/pushgateway.js. Unlike LDAP/backup settings above,
 // this one small JSON-file-backed store is dedicated to just these two
 // features (see services/settings/store.js for why), not settingsDb/Mongo.
 function getLoggingSettings(req, res) {
@@ -366,13 +316,66 @@ function updatePushgatewaySettings(req, res) {
     res.json(next.metrics);
 }
 
+// ── TLS (Admin > Settings) — self-terminated HTTPS, entirely optional. See
+// services/settings/tlsCerts.js for the cert/key storage and server.js's
+// startServer/restartServer for how a toggle here takes effect without a
+// container restart.
+const switchProtocolPage = ({ enabled, newUrl }) => `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta http-equiv="refresh" content="4;url=${newUrl}">
+<title>Switching protocol — Balanced Waypoints</title></head>
+<body style="font-family:sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5;">
+<h1>TLS ${enabled ? 'enabled' : 'disabled'}</h1>
+<p>This server is restarting on <code>${newUrl}</code>. Your browser can't be redirected across schemes on this same connection, so you'll be sent there automatically in a few seconds.</p>
+<p><a href="${newUrl}">Continue now</a></p>
+</body></html>`;
+
+function finishProtocolSwitch(req, res, enabled) {
+    const newUrl = `${enabled ? 'https' : 'http'}://${webFQDN}:${webPort}/admin/settings`;
+    res.send(switchProtocolPage({ enabled, newUrl }));
+    res.on('finish', () => {
+        getServer().restartServer().catch((err) => logger.error('Failed to restart server after TLS change: ' + err.message));
+    });
+}
+
+function enableTls(req, res) {
+    try {
+        const files = req.files || {};
+        const certFile = files.cert && files.cert[0];
+        const keyFile = files.key && files.key[0];
+        if (!certFile || !keyFile) {
+            return res.redirect('/admin/settings?error=' + encodeURIComponent('Both a certificate and a private key file are required.'));
+        }
+
+        tlsCerts.validate(certFile.buffer, keyFile.buffer);
+        tlsCerts.save(certFile.buffer, keyFile.buffer);
+        logExportSettingsStore.save({ tls: { enabled: true } });
+        logger.info(`TLS enabled by ${req.session.email}`);
+        finishProtocolSwitch(req, res, true);
+    } catch (err) {
+        logger.error('admin/enableTls error: ' + err.message);
+        res.redirect('/admin/settings?error=' + encodeURIComponent(err.message));
+    }
+}
+
+function disableTls(req, res) {
+    try {
+        logExportSettingsStore.save({ tls: { enabled: false } });
+        logger.info(`TLS disabled by ${req.session.email}`);
+        finishProtocolSwitch(req, res, false);
+    } catch (err) {
+        logger.error('admin/disableTls error: ' + err.message);
+        res.redirect('/admin/settings?error=' + encodeURIComponent('Failed to disable TLS.'));
+    }
+}
+
 module.exports = {
     listUsers, updateUser, setAdmin, removeUser,
     getLdapSettings, updateLdapSettings, resetLdapSettings, testLdapSettings,
-    getOidcSettings, updateOidcSettings, resetOidcSettings,
     getBackupSettings, updateBackupSettings, checkBackupDestination,
     runBackupNow, listBackupRuns, listBackupFiles, downloadBackupFile, deleteBackupFile,
     restoreFromUpload, restoreFromFile,
     getLoggingSettings, updateLoggingSettings,
-    getMetricsSettings, updateMetricsSettings, updatePushgatewaySettings
+    getMetricsSettings, updateMetricsSettings, updatePushgatewaySettings,
+    enableTls, disableTls
 };

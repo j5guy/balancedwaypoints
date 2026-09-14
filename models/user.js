@@ -53,12 +53,12 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    // 'ldap'/'oidc' accounts have no passwordHash — they authenticate against
-    // the directory/IdP every time (see config/ldapAuth.js, config/oidcAuth.js)
-    // and are auto-provisioned on first successful login.
+    // 'ldap' accounts have no passwordHash — they authenticate against the
+    // directory every time (see config/ldapAuth.js) and are auto-provisioned
+    // on first successful login.
     authSource: {
         type: String,
-        enum: ['local', 'ldap', 'oidc'],
+        enum: ['local', 'ldap'],
         default: 'local'
     },
     // The username this account was looked up by in LDAP — only set for
@@ -69,13 +69,6 @@ const userSchema = new mongoose.Schema({
         type: String,
         lowercase: true,
         trim: true,
-        default: null
-    },
-    // The IdP's stable subject identifier — only set for authSource: 'oidc'.
-    // Not email, since a directory-backed IdP's email claim can change while
-    // `sub` never does.
-    oidcSubject: {
-        type: String,
         default: null
     },
     passwordHash: {
@@ -309,6 +302,5 @@ const userSchema = new mongoose.Schema({
 // actually have one, and is what makes requireApiKeyOrAuth's per-request
 // lookup (find the user by this exact hash) an indexed O(1) query.
 userSchema.index({ 'apiKey.hash': 1 }, { sparse: true });
-userSchema.index({ oidcSubject: 1 }, { sparse: true });
 
 module.exports = mongoose.model('User', userSchema);

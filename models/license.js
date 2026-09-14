@@ -7,7 +7,7 @@ const crypto = require('crypto');
 // resetting: instanceId (generated once, on first use) and the last
 // successfully validated key. Both are ordinary fields in this app's own
 // MongoDB, which is already backed by a persistent volume (see
-// docker-compose.mongo.yml) — no extra persistence mechanism needed.
+// docker-compose.yml) — no extra persistence mechanism needed.
 const licenseSchema = new mongoose.Schema({
     _id: { type: String, default: 'singleton' },
 

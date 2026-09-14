@@ -114,6 +114,31 @@ const createTransfer = async ({ owner, fromAccount, toAccount, date, amountCents
 
 const removeTransferPair = async (transferId, ownerId) => Transaction.deleteMany({ transferId, owner: ownerId }).exec();
 
+// Keeps both legs of a transfer in sync on edit — date/amountCents/notes are
+// the only fields that make sense to change here (see
+// controllers/transactionsController.js's update(), which rejects anything
+// else for a transfer): `cleared` isn't included since createTransfer above
+// always marks both legs cleared immediately, and payee/category/splits/
+// tags/account don't apply to a transfer leg at all. Each leg keeps its own
+// sign — only the magnitude of amountCents comes from the caller. Returns
+// null if transferId doesn't resolve to exactly two legs (already deleted,
+// or a data inconsistency), same "not found" shape findOneAndUpdate's null
+// already gives update()'s non-transfer path.
+const updateTransferPair = async (transferId, ownerId, { date, amountCents, notes }) => {
+    const legs = await Transaction.find({ transferId, owner: ownerId }).exec();
+    if (legs.length !== 2) return null;
+
+    await Promise.all(legs.map((leg) => {
+        const data = {};
+        if (date !== undefined) data.date = date;
+        if (notes !== undefined) data.notes = notes;
+        if (amountCents !== undefined) data.amountCents = leg.amountCents < 0 ? -Math.abs(amountCents) : Math.abs(amountCents);
+        return Transaction.updateOne({ _id: leg._id }, data);
+    }));
+
+    return Transaction.find({ transferId, owner: ownerId }).populate(populateOpts).exec();
+};
+
 // Posts an autopay bill that drafts from a different account than the one
 // it's billed against (a schedule with both autopay and autopayFromAccount
 // set — see models/schedule.js). Same paired-transaction shape as
@@ -184,5 +209,5 @@ const sumForCategoryMonth = async (categoryId, month, ownerId) => {
 
 module.exports = {
     list, findById, findByIdRaw, findByImportedIds, existsForAccount, create, update, remove,
-    createTransfer, removeTransferPair, createAutopayOccurrence, reorder, sumForAccount, sumForCategoryMonth
+    createTransfer, updateTransferPair, removeTransferPair, createAutopayOccurrence, reorder, sumForAccount, sumForCategoryMonth
 };

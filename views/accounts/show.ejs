@@ -140,15 +140,22 @@
     <div class="card" id="txn-form-card" hidden>
         <h3 id="txn-form-title">New transaction</h3>
         <input type="hidden" id="txn-id">
+        <div id="txn-transfer-warning" class="form-error" hidden>
+            ⚠ This is a transfer — date, amount, and notes changes apply to BOTH sides of it.
+        </div>
         <div class="form-row">
             <div class="form-group">
                 <label for="txn-date">Date</label>
                 <input type="date" id="txn-date">
             </div>
-            <div class="form-group">
+            <div class="form-group" id="txn-payee-group">
                 <label for="txn-payee">Payee</label>
                 <input type="text" id="txn-payee" list="payee-options" placeholder="Payee name">
                 <datalist id="payee-options"></datalist>
+            </div>
+            <div class="form-group" id="txn-transfer-to-display" hidden>
+                <label for="txn-transfer-to-value">Transfers to</label>
+                <input type="text" id="txn-transfer-to-value" disabled>
             </div>
             <div class="form-group">
                 <label for="txn-amount">Amount</label>
@@ -180,7 +187,7 @@
             <select id="txn-transfer-account"></select>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="txn-splits-actions-group">
             <div class="btn-row">
                 <button type="button" class="btn btn-secondary btn-sm" id="toggle-splits-btn">Split into categories</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="suggest-rules-btn">Suggest from rules</button>
@@ -194,7 +201,7 @@
         </div>
 
         <div class="form-row">
-            <div class="form-group">
+            <div class="form-group" id="txn-tags-group">
                 <label for="txn-tags">Tags</label>
                 <input type="text" id="txn-tags" placeholder="comma, separated, tags">
             </div>
@@ -212,6 +219,8 @@
             <button type="button" class="btn btn-primary" id="save-txn-btn">Save transaction</button>
             <button type="button" class="btn btn-secondary" id="cancel-txn-btn" hidden>Cancel edit</button>
             <button type="button" class="btn btn-secondary" id="convert-to-transfer-btn" hidden>Convert to transfer</button>
+            <button type="button" class="btn btn-secondary" id="txn-create-schedule-btn" hidden>📅 Create schedule from this</button>
+            <button type="button" class="btn btn-secondary" id="txn-create-rule-btn" hidden>📋 Create rule from this</button>
         </div>
 
         <div class="form-row" id="convert-to-transfer-form" hidden>
@@ -395,6 +404,148 @@
         <div class="btn-row" style="justify-content:space-between;">
             <button type="button" class="btn btn-danger btn-sm" id="occ-delete-schedule-btn">Delete this schedule entirely</button>
             <button type="button" class="btn btn-secondary" id="occ-modal-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="quick-schedule-overlay" hidden>
+    <div class="modal-card" style="max-width:520px;">
+        <h3>Create a schedule</h3>
+        <p class="muted" id="quick-sched-subtitle">From this register entry.</p>
+        <div id="quick-sched-warning" class="form-error" hidden></div>
+
+        <div class="form-group">
+            <label for="quick-sched-name">Name</label>
+            <input type="text" id="quick-sched-name" placeholder="Rent, Netflix, Paycheck...">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="quick-sched-amount">Amount</label>
+                <input type="number" id="quick-sched-amount" step="0.01">
+            </div>
+            <div class="form-group">
+                <label for="quick-sched-next-date">Next date</label>
+                <input type="date" id="quick-sched-next-date">
+            </div>
+        </div>
+        <div class="form-row" id="quick-sched-category-group">
+            <div class="form-group">
+                <label for="quick-sched-payee">Payee</label>
+                <input type="text" id="quick-sched-payee" list="payee-options" placeholder="Payee name">
+            </div>
+            <div class="form-group">
+                <label for="quick-sched-category">Category</label>
+                <input type="text" id="quick-sched-category" list="category-options" placeholder="Category">
+            </div>
+        </div>
+        <div class="form-group" id="quick-sched-transfer-group" hidden>
+            <label for="quick-sched-transfer-account">Transfers to</label>
+            <select id="quick-sched-transfer-account"></select>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="quick-sched-interval">Repeat every</label>
+                <input type="number" id="quick-sched-interval" value="1" min="1">
+            </div>
+            <div class="form-group">
+                <label for="quick-sched-unit">Unit</label>
+                <select id="quick-sched-unit">
+                    <option value="days">Day(s)</option>
+                    <option value="weeks">Week(s)</option>
+                    <option value="months" selected>Month(s)</option>
+                    <option value="years">Year(s)</option>
+                </select>
+            </div>
+        </div>
+        <div class="checkbox-row form-group">
+            <input type="checkbox" id="quick-sched-auto-enter">
+            <label for="quick-sched-auto-enter">Auto-enter into the register when due (otherwise just a reminder)</label>
+        </div>
+        <div class="form-group">
+            <label for="quick-sched-notes">Notes</label>
+            <input type="text" id="quick-sched-notes">
+        </div>
+        <p class="form-hint">
+            Need a specific weekday/day-of-month, autopay, or email reminders? Fine-tune it from the
+            <a href="/schedules" target="_blank" rel="noopener">Schedules page</a> after creating it here.
+        </p>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="quick-sched-save-btn">Create schedule</button>
+            <button type="button" class="btn btn-secondary" id="quick-sched-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="quick-rule-overlay" hidden>
+    <div class="modal-card" style="max-width:520px;">
+        <h3>Create a rule</h3>
+        <p class="muted">From this register entry — matches new transactions against the condition below.</p>
+        <div id="quick-rule-warning" class="form-error" hidden></div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="quick-rule-name">Name</label>
+                <input type="text" id="quick-rule-name" placeholder="Amazon → Shopping">
+            </div>
+            <div class="form-group">
+                <label for="quick-rule-priority">Priority</label>
+                <input type="number" id="quick-rule-priority" value="0">
+            </div>
+        </div>
+
+        <h4 style="margin-bottom:8px;">If</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="quick-rule-cond-field">Field</label>
+                <select id="quick-rule-cond-field">
+                    <option value="payee">Payee</option>
+                    <option value="notes">Notes</option>
+                    <option value="amountCents">Amount (cents)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="quick-rule-cond-operator">Operator</label>
+                <select id="quick-rule-cond-operator">
+                    <option value="contains">contains</option>
+                    <option value="equals">equals</option>
+                    <option value="startsWith">starts with</option>
+                    <option value="greaterThan">greater than</option>
+                    <option value="lessThan">less than</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="quick-rule-cond-value">Value</label>
+                <input type="text" id="quick-rule-cond-value" placeholder="value">
+            </div>
+        </div>
+
+        <h4 style="margin-bottom:8px;">Then</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="quick-rule-action-type">Action</label>
+                <select id="quick-rule-action-type">
+                    <option value="setCategory">Set category to</option>
+                    <option value="renamePayee">Rename payee to</option>
+                    <option value="addTag">Add tag</option>
+                </select>
+            </div>
+            <div class="form-group" id="quick-rule-action-category-group">
+                <label for="quick-rule-action-category">Category</label>
+                <select id="quick-rule-action-category"></select>
+            </div>
+            <div class="form-group" id="quick-rule-action-text-group" hidden>
+                <label for="quick-rule-action-text">Value</label>
+                <input type="text" id="quick-rule-action-text" placeholder="value">
+            </div>
+        </div>
+
+        <p class="form-hint">
+            Need more than one condition or action? Fine-tune it from the
+            <a href="/rules" target="_blank" rel="noopener">Rules page</a> after creating it here.
+        </p>
+        <div class="btn-row">
+            <button type="button" class="btn btn-primary" id="quick-rule-save-btn">Create rule</button>
+            <button type="button" class="btn btn-secondary" id="quick-rule-cancel-btn">Cancel</button>
         </div>
     </div>
 </div>

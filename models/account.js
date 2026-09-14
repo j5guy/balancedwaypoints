@@ -22,6 +22,11 @@ const accountSchema = new mongoose.Schema({
     // buildRegisterForecastSvg's SUPPRESS_WARNING_TYPES.
     forecastThresholdCents: { type: Number, default: null },
     forecastThresholdColor: { type: String, trim: true, default: '#B5433A' },
+    // Whether the register's Forecast chart starts expanded or collapsed on
+    // page load (see public/js/register.js's forecastExpanded) — purely a
+    // per-account display preference, never affects the projection itself,
+    // which is always computed the same way regardless.
+    forecastExpandedByDefault: { type: Boolean, default: true },
     closed: { type: Boolean, default: false },
     notes: { type: String, trim: true, default: '' },
     sortOrder: { type: Number, default: 0 },

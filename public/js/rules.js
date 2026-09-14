@@ -11,6 +11,7 @@
     // over whatever load() last fetched, so typing never re-fetches.
     let currentRules = [];
     let filterState = { priority: '', name: '', conditions: '', actions: '' };
+    let editingId = null;
 
     function showError(err) {
         errorBox.textContent = err.message || 'Something went wrong';
@@ -87,8 +88,42 @@
     document.getElementById('add-action-btn').addEventListener('click', () => {
         document.getElementById('actions-list').appendChild(actionRow());
     });
-    document.getElementById('new-rule-btn').addEventListener('click', () => { newForm.hidden = !newForm.hidden; });
-    document.getElementById('cancel-rule-btn').addEventListener('click', () => { newForm.hidden = true; });
+
+    function resetForm() {
+        editingId = null;
+        document.getElementById('rule-form-title').textContent = 'New rule';
+        document.getElementById('rule-name').value = '';
+        document.getElementById('rule-priority').value = '0';
+        document.getElementById('rule-stop').checked = false;
+        document.getElementById('conditions-list').innerHTML = '';
+        document.getElementById('actions-list').innerHTML = '';
+    }
+
+    function startEdit(rule) {
+        editingId = rule.id;
+        document.getElementById('rule-form-title').textContent = `Edit ${rule.name}`;
+        document.getElementById('rule-name').value = rule.name;
+        document.getElementById('rule-priority').value = rule.priority;
+        document.getElementById('rule-stop').checked = !!rule.stopProcessing;
+        const conditionsList = document.getElementById('conditions-list');
+        const actionsList = document.getElementById('actions-list');
+        conditionsList.innerHTML = '';
+        actionsList.innerHTML = '';
+        rule.conditions.forEach((c) => conditionsList.appendChild(conditionRow(c.field, c.operator, c.value)));
+        rule.actions.forEach((a) => actionsList.appendChild(actionRow(a.type, a.value)));
+        newForm.hidden = false;
+        newForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    document.getElementById('new-rule-btn').addEventListener('click', () => {
+        if (!newForm.hidden && !editingId) { newForm.hidden = true; return; }
+        resetForm();
+        newForm.hidden = false;
+    });
+    document.getElementById('cancel-rule-btn').addEventListener('click', () => {
+        resetForm();
+        newForm.hidden = true;
+    });
 
     function readConditions() {
         return [...document.querySelectorAll('#conditions-list .split-row')].map(row => ({
@@ -128,7 +163,10 @@
             <td class="wrap">${describeConditions(rule.conditions)}</td>
             <td class="wrap">${describeActions(rule.actions)}</td>
             <td><input type="checkbox" data-active-toggle ${rule.active ? 'checked' : ''}></td>
-            <td class="row-actions"><button type="button" class="btn btn-danger btn-sm" data-delete>Delete</button></td>
+            <td class="row-actions">
+                <button type="button" class="btn btn-secondary btn-sm" data-edit>Edit</button>
+                <button type="button" class="btn btn-danger btn-sm" data-delete>Delete</button>
+            </td>
         `;
         tr.querySelector('[data-active-toggle]').addEventListener('change', async (e) => {
             try {
@@ -138,6 +176,7 @@
                 showError(err);
             }
         });
+        tr.querySelector('[data-edit]').addEventListener('click', () => startEdit(rule));
         tr.querySelector('[data-delete]').addEventListener('click', async () => {
             if (!confirm(`Delete rule "${rule.name}"?`)) return;
             try {
@@ -209,21 +248,21 @@
     document.getElementById('save-rule-btn').addEventListener('click', async () => {
         const name = document.getElementById('rule-name').value.trim();
         if (!name) return showError(new Error('Name is required'));
+        const body = {
+            name,
+            priority: Number(document.getElementById('rule-priority').value) || 0,
+            stopProcessing: document.getElementById('rule-stop').checked,
+            conditions: readConditions(),
+            actions: readActions()
+        };
         try {
-            await window.BWApi.apiFetch(`/api/rules${forQuery()}`, {
-                method: 'POST',
-                body: {
-                    name,
-                    priority: Number(document.getElementById('rule-priority').value) || 0,
-                    stopProcessing: document.getElementById('rule-stop').checked,
-                    conditions: readConditions(),
-                    actions: readActions()
-                }
-            });
+            if (editingId) {
+                await window.BWApi.apiFetch(`/api/rules/${editingId}${forQuery()}`, { method: 'PUT', body });
+            } else {
+                await window.BWApi.apiFetch(`/api/rules${forQuery()}`, { method: 'POST', body });
+            }
+            resetForm();
             newForm.hidden = true;
-            document.getElementById('rule-name').value = '';
-            document.getElementById('conditions-list').innerHTML = '';
-            document.getElementById('actions-list').innerHTML = '';
             load();
         } catch (err) {
             showError(err);
@@ -232,6 +271,7 @@
 
     (async function init() {
         ownerSwitcher = await window.BWOwnerSwitcher.init(() => {
+            resetForm();
             newForm.hidden = true;
             load();
         });

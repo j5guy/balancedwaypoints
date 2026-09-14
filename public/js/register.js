@@ -671,6 +671,25 @@
         `).join('');
     }
 
+    // ── Refresh — re-fetches this account's balance/transactions and
+    // re-renders just the register table, no full page reload. Same two
+    // calls loadReferenceData()/loadTransactions() every write handler in
+    // this file already makes after its own change — this just exposes
+    // that pair as its own button for "someone else may have changed
+    // something, show me current data" without a real edit to trigger it.
+    document.getElementById('refresh-register-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('refresh-register-btn');
+        btn.disabled = true;
+        try {
+            await loadReferenceData();
+            await loadTransactions();
+        } catch (err) {
+            showError(err);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
     // ── Sync Now — pulls new transactions for just this account's own
     // SimpleFIN connection (see controllers/simplefinController.js's
     // syncNow), same endpoint the Bank Sync page's own button hits. Hidden

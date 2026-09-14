@@ -1,3 +1,9 @@
+v0.16.2b
+------
+Each account's register page now has a "↻ Refresh" button in the toolbar, next to Sync Now/Import — it
+re-fetches the account's balance and transactions and re-renders just the table, without reloading the
+whole page.
+
 v0.16.1b
 ------
 Fixed the new hamburger menu (v0.16.0b): on a wide-enough window the theme toggle was floating on its own

@@ -8,6 +8,7 @@
                 <div class="stat-label" id="account-balance-label">Balance</div>
                 <div class="stat-value money" id="account-balance">—</div>
             </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="refresh-register-btn" title="Reload this account's transactions">↻ Refresh</button>
             <button type="button" class="btn btn-secondary btn-sm" id="sync-now-btn" title="Pull new transactions from the bank now" hidden>🔄 Sync Now</button>
             <a href="/imports?account=<%= accountId %>" class="btn btn-secondary btn-sm" id="import-link" title="Import transactions into this account">⇩ Import</a>
             <a href="/accounts?edit=<%= accountId %>" class="btn btn-secondary btn-sm" id="account-settings-link" title="Edit this account's settings">✎ Account settings</a>

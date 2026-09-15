@@ -3,17 +3,35 @@ const Account = require('../../models/account');
 const Transaction = require('../../models/transaction');
 const Schedule = require('../../models/schedule');
 const Payee = require('../../models/payee');
+const { encryptNotes, decryptNotes } = require('./notesCrypto');
 
-const list = (ownerId) => Account.find({ owner: ownerId }).sort({ name: 1 }).exec();
+// notes is encrypted at rest (AES-256-GCM, see utils/secretCrypto.js and
+// services/database/notesCrypto.js) — decorate() attaches plaintext back
+// onto the in-memory document. `name` stays plaintext — it's the account's
+// load-bearing display field, sorted/shown everywhere, not free-form memo text.
+function decorate(doc) {
+    if (!doc) return doc;
+    doc.notes = decryptNotes(doc);
+    return doc;
+}
+function decorateAll(docs) { docs.forEach(decorate); return docs; }
+
+function prepareWrite({ notes, ...rest }) {
+    const out = { ...rest };
+    if (notes !== undefined) Object.assign(out, encryptNotes(notes));
+    return out;
+}
+
+const list = async (ownerId) => decorateAll(await Account.find({ owner: ownerId }).sort({ name: 1 }).exec());
 // Every account linked to a given SimpleFIN connection — used by
 // services/simplefin/syncService.js to know which local accounts to pull
 // transactions into for that connection's sync run.
-const findLinkedToSimplefin = (connectionId, ownerId) => Account.find({ owner: ownerId, simplefinConnection: connectionId }).exec();
+const findLinkedToSimplefin = async (connectionId, ownerId) => decorateAll(await Account.find({ owner: ownerId, simplefinConnection: connectionId }).exec());
 // findOne (not findById) with owner in the filter itself — a request for
 // another user's account id resolves to nothing instead of ever loading it.
-const findById = (id, ownerId) => Account.findOne({ _id: id, owner: ownerId }).exec();
-const create = (data) => Account.create(data);
-const update = (id, data, ownerId) => Account.findOneAndUpdate({ _id: id, owner: ownerId }, data, { new: true, runValidators: true }).exec();
+const findById = async (id, ownerId) => decorate(await Account.findOne({ _id: id, owner: ownerId }).exec());
+const create = async (data) => decorate(await Account.create(prepareWrite(data)));
+const update = async (id, data, ownerId) => decorate(await Account.findOneAndUpdate({ _id: id, owner: ownerId }, prepareWrite(data), { new: true, runValidators: true }).exec());
 
 const remove = async (id, ownerId) => {
     const inUse = await Transaction.exists({ owner: ownerId, $or: [{ account: id }, { transferAccount: id }] });
@@ -90,4 +108,11 @@ const balancesForAll = async (ownerId) => {
     }));
 };
 
-module.exports = { list, findLinkedToSimplefin, findById, create, update, remove, forceRemove, balanceFor, balanceForAccountDoc, balancesForAll, ForceDeleteError };
+module.exports = {
+    list, findLinkedToSimplefin, findById, create, update, remove, forceRemove, balanceFor, balanceForAccountDoc, balancesForAll, ForceDeleteError,
+    // Exported for services/database/accountShares.js, which fetches Account
+    // documents directly (resolveAccountAccess, listSharedWithMe) rather than
+    // through this file's own find*/update — those need the same
+    // decrypt-notes-onto-the-doc treatment before a controller reads `.notes`.
+    decorate, decorateAll
+};

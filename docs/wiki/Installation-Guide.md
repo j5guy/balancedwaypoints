@@ -51,6 +51,35 @@ Plain HTTP by default. Two ways to get HTTPS, either or neither:
 Either way, set `WEB_PROTOCOL: https` in `docker-compose.yml` afterward so links this app generates
 itself use the right scheme.
 
+## Data at rest
+
+Payee name/address/phone/account-number, and every notes/memo field (transactions, split lines,
+accounts, schedules and their occurrence overrides), are AES-256-GCM encrypted before they're ever
+written to MongoDB — the same mechanism and key (`sessionSecret`) already used for the LDAP bind
+password. Amounts, dates, categories, tags, and account balances are left in the clear, so budgets,
+reports, and aggregations keep running inside MongoDB instead of requiring every query to decrypt
+and recompute in the app.
+
+This protects against someone reading the database files/backups directly (a stolen disk, a leaked
+`mongodump`, an over-shared volume) without also having `sessionSecret`. It does **not** replace
+disk/volume encryption — MongoDB Community (the bundled `mongo` image) has no encrypted storage
+engine of its own, so if you want the whole data directory protected too (not just these fields),
+encrypt the volume/disk it lives on at the OS level (LUKS, BitLocker, FileVault, or your cloud
+provider's disk encryption).
+
+`sessionSecret` has no rotation path today — rotating it (or losing it) makes every already-encrypted
+field permanently unreadable, since the encryption key is derived directly from it. Back it up
+alongside your database, the same way you'd back up a disk encryption key.
+
+If you're upgrading an existing install from before this feature existed, run the one-time migration
+after upgrading (back up your database first):
+
+```bash
+docker compose exec app node scripts/encryptExistingData.js
+```
+
+Safe to re-run — it only touches documents that still have the old plaintext field.
+
 ## First account
 
 The first person to sign up (`/auth/signup`) always becomes admin, regardless of `ADMIN_EMAIL` —

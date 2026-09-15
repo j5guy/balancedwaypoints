@@ -10,6 +10,23 @@ function deriveKey() {
     return crypto.createHmac('sha256', process.env.sessionSecret).update('secret-encryption-key-v1').digest();
 }
 
+// A separate, domain-separated key for hashLookup() below — deliberately not
+// deriveKey()'s own output, so a blind index can never be run backwards
+// through the encryption key (or vice versa).
+function deriveBlindIndexKey() {
+    return crypto.createHmac('sha256', process.env.sessionSecret).update('blind-index-key-v1').digest();
+}
+
+// Deterministic HMAC "blind index" for a value that's encrypted at rest but
+// still needs an exact-match/uniqueness lookup in MongoDB (e.g. Payee.name —
+// see models/payee.js) — random-IV AES-GCM ciphertext can't be queried or
+// deduped on directly. Reveals only whether two values are equal, nothing
+// about the value itself.
+function hashLookup(value) {
+    if (!value) return null;
+    return crypto.createHmac('sha256', deriveBlindIndexKey()).update(String(value)).digest('hex');
+}
+
 function encrypt(plaintext) {
     if (!plaintext) return { iv: null, ciphertext: null };
     const iv = crypto.randomBytes(12);
@@ -32,4 +49,4 @@ function decrypt({ iv, ciphertext }) {
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
 }
 
-module.exports = { encrypt, decrypt };
+module.exports = { encrypt, decrypt, hashLookup };

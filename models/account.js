@@ -23,7 +23,10 @@ const accountSchema = new mongoose.Schema({
     forecastThresholdCents: { type: Number, default: null },
     forecastThresholdColor: { type: String, trim: true, default: '#B5433A' },
     closed: { type: Boolean, default: false },
-    notes: { type: String, trim: true, default: '' },
+    // Encrypted at rest (AES-256-GCM, see utils/secretCrypto.js and
+    // services/database/notesCrypto.js).
+    notesIv: { type: String, default: null },
+    notesCiphertext: { type: String, default: null },
     sortOrder: { type: Number, default: 0 },
     // Purely organizational grouping for the Accounts page's collapsible
     // sections (see models/accountGroup.js, public/js/accounts.js) — null

@@ -5,7 +5,10 @@ const FREQUENCY_UNITS = ['days', 'weeks', 'months', 'years'];
 const splitSchema = new mongoose.Schema({
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
     amountCents: { type: Number, required: true },
-    notes: { type: String, trim: true, default: '' }
+    // Encrypted at rest (AES-256-GCM, see utils/secretCrypto.js and
+    // services/database/notesCrypto.js).
+    notesIv: { type: String, default: null },
+    notesCiphertext: { type: String, default: null }
 }, { _id: false });
 
 // A full-snapshot override of one or more upcoming occurrences, without
@@ -27,7 +30,9 @@ const occurrenceOverrideSchema = new mongoose.Schema({
     amountCents: { type: Number, default: null },
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null },
     payee: { type: mongoose.Schema.Types.ObjectId, ref: 'Payee', default: null },
-    notes: { type: String, trim: true, default: '' },
+    // Encrypted at rest — see splitSchema's own notesIv/notesCiphertext comment above.
+    notesIv: { type: String, default: null },
+    notesCiphertext: { type: String, default: null },
     splits: { type: [splitSchema], default: [] }
 });
 
@@ -98,7 +103,9 @@ const scheduleSchema = new mongoose.Schema({
     autoEnter: { type: Boolean, default: false },
     reminderDaysBefore: { type: Number, default: 3, min: 0 },
     active: { type: Boolean, default: true },
-    notes: { type: String, trim: true, default: '' },
+    // Encrypted at rest — see splitSchema's own notesIv/notesCiphertext comment above.
+    notesIv: { type: String, default: null },
+    notesCiphertext: { type: String, default: null },
     // Per-schedule opt-in — when true, everyone with their own SMTP
     // configured (see models/user.js's smtp field) gets emailed once this
     // occurrence enters its reminder window (see

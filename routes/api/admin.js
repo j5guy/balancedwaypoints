@@ -9,6 +9,7 @@ router.use(requireApiAdmin);
 router.get('/users', adminController.listUsers);
 router.put('/users/:id', adminController.updateUser);
 router.put('/users/:id/admin', adminController.setAdmin);
+router.put('/users/:id/password', adminController.resetUserPassword);
 router.delete('/users/:id', adminController.removeUser);
 
 router.get('/settings/ldap', adminController.getLdapSettings);

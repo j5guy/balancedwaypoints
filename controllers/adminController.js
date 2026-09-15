@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcrypt');
 const usersDb = require('../services/database/users');
 const settingsDb = require('../services/database/settings');
 const backupRunsDb = require('../services/database/backupRuns');
@@ -20,6 +21,7 @@ const getServer = () => require('../server');
 
 const LOGGING_DESTINATIONS = ['none', 'syslog', 'http'];
 const SYSLOG_PROTOCOLS = ['udp4', 'tcp4', 'tls4'];
+const BCRYPT_ROUNDS = 12;
 
 function serializeUser(user) {
     return {
@@ -66,6 +68,28 @@ async function setAdmin(req, res) {
     const user = await usersDb.update(req.params.id, { isAdmin });
     if (!user) return res.status(404).json({ error: 'Not found' });
     res.json(serializeUser(user));
+}
+
+// Lets an admin set someone else's password directly — the only way to
+// recover access for a local account whose password is lost, since
+// forgetting it otherwise means never being able to sign in to change it
+// yourself. Refused for an LDAP-sourced account: it has no local password
+// to reset (see config/ldapAuth.js) — its credential lives in the
+// directory, not here.
+async function resetUserPassword(req, res) {
+    const password = String((req.body || {}).password || '');
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    const target = await usersDb.findById(req.params.id);
+    if (!target) return res.status(404).json({ error: 'Not found' });
+    if (target.authSource === 'ldap') {
+        return res.status(400).json({ error: 'This is an LDAP account — its password is managed by your directory, not here' });
+    }
+
+    target.passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    await target.save();
+    logger.info(`Password reset for ${target.email} by ${req.session.email}`);
+    res.json(serializeUser(target));
 }
 
 async function removeUser(req, res) {
@@ -370,7 +394,7 @@ function disableTls(req, res) {
 }
 
 module.exports = {
-    listUsers, updateUser, setAdmin, removeUser,
+    listUsers, updateUser, setAdmin, removeUser, resetUserPassword,
     getLdapSettings, updateLdapSettings, resetLdapSettings, testLdapSettings,
     getBackupSettings, updateBackupSettings, checkBackupDestination,
     runBackupNow, listBackupRuns, listBackupFiles, downloadBackupFile, deleteBackupFile,

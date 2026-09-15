@@ -318,6 +318,7 @@
         document.getElementById('acct-closed').checked = account.closed;
         document.getElementById('acct-forecast-threshold').value = account.forecastThresholdCents != null ? (account.forecastThresholdCents / 100).toFixed(2) : '';
         document.getElementById('acct-forecast-color').value = account.forecastThresholdColor || '#B5433A';
+        document.getElementById('acct-forecast-expanded').checked = account.forecastExpandedByDefault !== false;
         document.getElementById('acct-group').value = account.group || '';
         populateLinkedAccountsCheckboxes(account.id, account.linkedAccounts);
         document.getElementById('acct-address').value = account.address || '';
@@ -346,6 +347,7 @@
         document.getElementById('acct-closed').checked = false;
         document.getElementById('acct-forecast-threshold').value = '';
         document.getElementById('acct-forecast-color').value = '#B5433A';
+        document.getElementById('acct-forecast-expanded').checked = true;
         document.getElementById('acct-group').value = '';
         populateLinkedAccountsCheckboxes(null, []);
         document.getElementById('acct-address').value = '';
@@ -384,6 +386,7 @@
             startingBalanceCents: window.BWMoney.toCents(document.getElementById('acct-balance').value || 0),
             forecastThresholdCents: optionalCents('acct-forecast-threshold'),
             forecastThresholdColor: document.getElementById('acct-forecast-color').value,
+            forecastExpandedByDefault: document.getElementById('acct-forecast-expanded').checked,
             onBudget: document.getElementById('acct-on-budget').checked,
             group: document.getElementById('acct-group').value || null,
             linkedAccounts: [...document.querySelectorAll('.linked-account-checkbox:checked')].map(cb => cb.value),

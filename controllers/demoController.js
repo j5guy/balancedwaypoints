@@ -43,6 +43,11 @@ const createDemoAccount = async (req, res) => {
 
         logger.info(`Demo account created: ${email}`, { ip: req.ip });
         establishSession(req, demoUser);
+        // One-shot: read (and cleared) by server.js's res.locals middleware
+        // on the very next request, so it surfaces exactly once — on
+        // whichever page this redirect lands on — rather than on every page
+        // load for the rest of the session.
+        req.session.demoCredentials = { email, password };
         req.session.save((err) => {
             if (err) logger.error('Session save error: ' + err.message);
             res.redirect('/');

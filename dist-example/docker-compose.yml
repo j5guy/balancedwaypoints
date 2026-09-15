@@ -45,7 +45,6 @@ services:
       MONGO_URI: ""
 
       LICENSE_SERVER_URL: ""
-      LICENSE_API_SECRET: ""
       LICENSE_OFFLINE_PUBLIC_KEY_JWK: ""
     ports:
       - "5570:5570"

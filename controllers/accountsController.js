@@ -44,6 +44,9 @@ function serialize({ account, balanceCents, role, ownerName, ownerId, shareId })
         startingBalanceCents: account.startingBalanceCents,
         forecastThresholdCents: account.forecastThresholdCents != null ? account.forecastThresholdCents : null,
         forecastThresholdColor: account.forecastThresholdColor || '#B5433A',
+        forecastExpandedByDefault: account.forecastExpandedByDefault !== false,
+        lastReconciledDate: account.lastReconciledDate || null,
+        lastReconciledBalanceCents: account.lastReconciledBalanceCents != null ? account.lastReconciledBalanceCents : null,
         closed: account.closed,
         notes: account.notes,
         sortOrder: account.sortOrder,
@@ -120,7 +123,7 @@ async function get(req, res) {
 
 async function create(req, res) {
     const {
-        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, notes, group, linkedAccounts,
+        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, forecastExpandedByDefault, notes, group, linkedAccounts,
         address, city, state, zip, vehicleYear, vehicleMake, vehicleModel, vehicleTrim, vehicleVin
     } = req.body || {};
     if (!String(name || '').trim()) return res.status(400).json({ error: 'name is required' });
@@ -142,6 +145,7 @@ async function create(req, res) {
         startingBalanceCents: Number(startingBalanceCents) || 0,
         forecastThresholdCents: forecastThresholdCents != null && forecastThresholdCents !== '' ? Number(forecastThresholdCents) : null,
         forecastThresholdColor: forecastThresholdColor || '#B5433A',
+        forecastExpandedByDefault: forecastExpandedByDefault !== false,
         notes: notes || '',
         group: groupId || null,
         linkedAccounts: linkedAccountIds || [],
@@ -164,7 +168,7 @@ async function create(req, res) {
 // check rather than resolveAccountAccess.
 async function update(req, res) {
     const {
-        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, closed, notes, sortOrder, group, linkedAccounts,
+        name, type, onBudget, startingBalanceCents, forecastThresholdCents, forecastThresholdColor, forecastExpandedByDefault, closed, notes, sortOrder, group, linkedAccounts,
         address, city, state, zip, vehicleYear, vehicleMake, vehicleModel, vehicleTrim, vehicleVin
     } = req.body || {};
     if (type && !ACCOUNT_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
@@ -184,6 +188,7 @@ async function update(req, res) {
     if (startingBalanceCents !== undefined) data.startingBalanceCents = Number(startingBalanceCents) || 0;
     if (forecastThresholdCents !== undefined) data.forecastThresholdCents = forecastThresholdCents != null && forecastThresholdCents !== '' ? Number(forecastThresholdCents) : null;
     if (forecastThresholdColor !== undefined) data.forecastThresholdColor = forecastThresholdColor || '#B5433A';
+    if (forecastExpandedByDefault !== undefined) data.forecastExpandedByDefault = !!forecastExpandedByDefault;
     if (closed !== undefined) data.closed = !!closed;
     if (notes !== undefined) data.notes = notes;
     if (sortOrder !== undefined) data.sortOrder = Number(sortOrder) || 0;

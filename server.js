@@ -122,6 +122,23 @@ app.use((req, res, next) => {
     res.locals.themeColors = req.session.themeColors || null;
     res.locals.themeColorFields = themeColorFields;
     res.locals.demoMode = demoMode;
+    // One-shot — set by controllers/demoController.js right after a demo
+    // account is created, meant to surface exactly once on whatever page
+    // the post-signup redirect eventually lands on (see components/nav.ejs).
+    // routes/pages.js's '/' handler redirects again (to /dashboard, /budget,
+    // or /accounts depending on the user's homeDashboard preference) without
+    // ever rendering a template — clearing the session flag unconditionally
+    // right here, on that intermediate hop, deleted it before the page that
+    // actually shows the banner ever got a chance to read it. Wrapping
+    // res.render instead defers the clear until a page actually renders, so
+    // it survives any number of redirect hops first and still only shows
+    // once overall.
+    res.locals.demoCredentials = req.session.demoCredentials || null;
+    const render = res.render.bind(res);
+    res.render = (view, options, callback) => {
+        delete req.session.demoCredentials;
+        render(view, options, callback);
+    };
     next();
 });
 

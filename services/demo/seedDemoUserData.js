@@ -7,6 +7,8 @@ const CategoryGroup = require('../../models/categoryGroup');
 const Category = require('../../models/category');
 const CategoryBudget = require('../../models/categoryBudget');
 const Transaction = require('../../models/transaction');
+const Rule = require('../../models/rule');
+const Schedule = require('../../models/schedule');
 const transactionsDb = require('../database/transactions');
 const payeesDb = require('../database/payees');
 
@@ -23,7 +25,67 @@ const CATEGORY_GROUPS = [
     ['Lifestyle', false, ['Dining Out', 'Entertainment', 'Shopping']]
 ];
 
-const PAYEES = ['Employer Inc.', 'Landlord Properties', 'Fresh Market', 'City Electric', 'Gas & Go', 'Corner Coffee', 'Local Bistro', 'Cineplex', 'Amazon'];
+const PAYEES = ['Employer Inc.', 'Landlord Properties', 'Fresh Market', 'City Electric', 'Gas & Go', 'Corner Coffee', 'Local Bistro', 'Cineplex', 'Amazon', 'Streamflix'];
+
+// Rules: a name, its match conditions, and its actions — categoryName is
+// resolved to that category's id at seed time (see categoriesByName below),
+// so this stays readable instead of a raw ObjectId. Chosen to actually fire
+// against the payees seeded above, so a demo visitor who runs "Apply rules"
+// on the register sees them do something real.
+const RULE_DEFS = [
+    {
+        name: 'Amazon → Shopping', priority: 1,
+        conditions: [{ field: 'payee', operator: 'contains', value: 'Amazon' }],
+        actions: [{ type: 'setCategory', categoryName: 'Shopping' }]
+    },
+    {
+        name: 'Coffee → Dining Out', priority: 2,
+        conditions: [{ field: 'payee', operator: 'contains', value: 'Coffee' }],
+        actions: [{ type: 'setCategory', categoryName: 'Dining Out' }, { type: 'addTag', value: 'coffee' }]
+    },
+    {
+        name: 'Gas & Go → Transportation', priority: 3,
+        conditions: [{ field: 'payee', operator: 'contains', value: 'Gas & Go' }],
+        actions: [{ type: 'setCategory', categoryName: 'Transportation' }]
+    }
+];
+
+// Schedules, one of each shape the app supports, so a demo visitor sees the
+// full feature set on day one instead of an empty Schedules page: a plain
+// auto-entered recurring income/expense (Paycheck, Electric Bill), an
+// autopay bill (Rent, Streaming Service — badge shown in the register), a
+// reminder-only schedule that never posts itself (Electric Bill), and a
+// recurring transfer (Savings Transfer). daysFromNow anchors each one a
+// little past the last matching transaction buildTransactionDefs() already
+// seeded, so "next due" always looks like a believable continuation rather
+// than something already overdue.
+const SCHEDULE_DEFS = [
+    {
+        name: 'Paycheck', accountKey: 'checking', payee: 'Employer Inc.', category: 'Paycheck',
+        amountCents: 260000, daysFromNow: 11, frequency: { kind: 'interval', unit: 'weeks', interval: 2 },
+        autoEnter: true
+    },
+    {
+        name: 'Rent', accountKey: 'checking', payee: 'Landlord Properties', category: 'Rent',
+        amountCents: -150000, daysFromNow: 28, frequency: { kind: 'dayOfMonth', day: 1 },
+        autoEnter: true, autopay: true
+    },
+    {
+        name: 'Electric Bill', accountKey: 'checking', payee: 'City Electric', category: 'Utilities',
+        amountCents: -18000, daysFromNow: 22, frequency: { kind: 'dayOfMonth', day: 8 },
+        autoEnter: false, reminderDaysBefore: 5
+    },
+    {
+        name: 'Streaming Service', accountKey: 'creditCard', payee: 'Streamflix', category: 'Entertainment',
+        amountCents: -1599, daysFromNow: 14, frequency: { kind: 'dayOfMonth', day: 20 },
+        autoEnter: true, autopay: true, notifyByEmail: true
+    },
+    {
+        name: 'Savings Transfer', accountKey: 'checking', transferToKey: 'savings',
+        amountCents: -50000, daysFromNow: 19, frequency: { kind: 'interval', unit: 'months', interval: 1 },
+        autoEnter: true
+    }
+];
 
 // Current month's envelope assignments — category name -> assigned cents.
 const BUDGET_ASSIGNMENTS = {
@@ -149,6 +211,38 @@ async function seedDemoUserData(ownerId) {
             toAccount: accountsByKey[toKey]._id,
             date: daysAgoToDate(daysAgo),
             amountCents
+        });
+    }
+
+    for (const def of RULE_DEFS) {
+        await Rule.create({
+            owner: ownerId,
+            name: def.name,
+            priority: def.priority,
+            conditions: def.conditions,
+            actions: def.actions.map((action) => (
+                action.type === 'setCategory'
+                    ? { type: 'setCategory', value: categoriesByName[action.categoryName]._id.toString() }
+                    : action
+            ))
+        });
+    }
+
+    for (const def of SCHEDULE_DEFS) {
+        await Schedule.create({
+            owner: ownerId,
+            name: def.name,
+            account: accountsByKey[def.accountKey]._id,
+            amountCents: def.amountCents,
+            payee: def.payee ? payeesByName[def.payee]._id : null,
+            category: def.category ? categoriesByName[def.category]._id : null,
+            transferAccount: def.transferToKey ? accountsByKey[def.transferToKey]._id : null,
+            frequency: def.frequency,
+            nextDate: daysAgoToDate(-def.daysFromNow),
+            autoEnter: !!def.autoEnter,
+            autopay: !!def.autopay,
+            notifyByEmail: !!def.notifyByEmail,
+            reminderDaysBefore: def.reminderDaysBefore !== undefined ? def.reminderDaysBefore : 3
         });
     }
 }

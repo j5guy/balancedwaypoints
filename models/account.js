@@ -22,6 +22,19 @@ const accountSchema = new mongoose.Schema({
     // buildRegisterForecastSvg's SUPPRESS_WARNING_TYPES.
     forecastThresholdCents: { type: Number, default: null },
     forecastThresholdColor: { type: String, trim: true, default: '#B5433A' },
+    // Whether the register's Forecast chart starts expanded or collapsed on
+    // page load (see public/js/register.js's forecastExpanded) — purely a
+    // per-account display preference, never affects the projection itself,
+    // which is always computed the same way regardless.
+    forecastExpandedByDefault: { type: Boolean, default: true },
+    // The checkpoint a Reconcile session starts from (see
+    // controllers/transactionsController.js's reconcileCandidates/
+    // finishReconcile) — the balance and date as of the last time this
+    // account was successfully reconciled against a real bank statement.
+    // null/null means "never reconciled yet", in which case reconciling
+    // starts from startingBalanceCents instead.
+    lastReconciledDate: { type: Date, default: null },
+    lastReconciledBalanceCents: { type: Number, default: null },
     closed: { type: Boolean, default: false },
     // Encrypted at rest (AES-256-GCM, see utils/secretCrypto.js and
     // services/database/notesCrypto.js).

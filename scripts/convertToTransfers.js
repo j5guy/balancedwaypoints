@@ -30,6 +30,7 @@ const buildMongoUri = require('../config/mongoUri');
 const Transaction = require('../models/transaction');
 const Category = require('../models/category');
 const Account = require('../models/account');
+const { decrypt } = require('../utils/secretCrypto');
 
 const DATE_TOLERANCE_DAYS = 3;
 
@@ -135,7 +136,8 @@ async function run() {
     if (unmatched.length) {
         console.log(`\n${unmatched.length} transaction(s) had NO matching counterpart within ${DATE_TOLERANCE_DAYS} day(s) — left untouched, review these by hand:`);
         unmatched.forEach((u) => {
-            console.log(`  id=${u._id}  ${dateKey(u.date)}  ${money(u.amountCents)}  notes="${u.notes || ''}"`);
+            const notes = decrypt({ iv: u.notesIv, ciphertext: u.notesCiphertext }) || '';
+            console.log(`  id=${u._id}  ${dateKey(u.date)}  ${money(u.amountCents)}  notes="${notes}"`);
         });
     }
 

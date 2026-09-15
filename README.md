@@ -83,6 +83,13 @@ install it. See [RELEASE_NOTES](RELEASE_NOTES) for release notes and version his
 - **LDAP login** (optional) — log in against Active Directory/OpenLDAP alongside local accounts,
   configurable via env vars at install time or later from Admin &gt; LDAP without a redeploy. The bind
   password is AES-256-GCM encrypted at rest, keyed off `sessionSecret`.
+- **Encryption at rest** — payee name/address/phone/account-number, and every notes/memo field
+  (transactions, split lines, accounts, schedules, and their occurrence overrides) are AES-256-GCM
+  encrypted before they're written to MongoDB, keyed off `sessionSecret` just like the LDAP bind
+  password above. Amounts, dates, categories, and account balances are stored in the clear so
+  budgets/reports/aggregations keep running in the database — see
+  [docs/wiki/Installation-Guide.md](docs/wiki/Installation-Guide.md#data-at-rest) for what that
+  does and doesn't protect against.
 - **Email notifications** — each person configures their own outgoing mail server from My Account
   &gt; Mail Server (not a shared admin-configured relay); per-schedule "email when due" alerts and an
   opt-in weekly summary go out through it.

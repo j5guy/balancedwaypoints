@@ -5,12 +5,12 @@
 const Account = require('../../models/account');
 const CategoryGroup = require('../../models/categoryGroup');
 const Category = require('../../models/category');
-const Payee = require('../../models/payee');
 const CategoryBudget = require('../../models/categoryBudget');
 const Transaction = require('../../models/transaction');
 const Rule = require('../../models/rule');
 const Schedule = require('../../models/schedule');
 const transactionsDb = require('../database/transactions');
+const payeesDb = require('../database/payees');
 
 const ACCOUNTS = [
     { key: 'checking', name: 'Checking', type: 'checking', startingBalanceCents: 250000 },
@@ -184,7 +184,7 @@ async function seedDemoUserData(ownerId) {
 
     const payeesByName = {};
     for (const name of PAYEES) {
-        payeesByName[name] = await Payee.create({ owner: ownerId, name });
+        payeesByName[name] = await payeesDb.create({ owner: ownerId, name });
     }
 
     const month = new Date().toISOString().slice(0, 7); // 'YYYY-MM'

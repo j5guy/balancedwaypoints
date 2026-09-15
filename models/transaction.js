@@ -8,7 +8,11 @@ const CLEARED_STATES = ['pending', 'cleared', 'reconciled'];
 const splitSchema = new mongoose.Schema({
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
     amountCents: { type: Number, required: true },
-    notes: { type: String, trim: true, default: '' }
+    // Encrypted at rest (AES-256-GCM, see utils/secretCrypto.js and
+    // services/database/notesCrypto.js) — a split's memo is as identifying
+    // as the parent transaction's own notes below.
+    notesIv: { type: String, default: null },
+    notesCiphertext: { type: String, default: null }
 }, { _id: false });
 
 const transactionSchema = new mongoose.Schema({
@@ -22,7 +26,9 @@ const transactionSchema = new mongoose.Schema({
     splits: { type: [splitSchema], default: [] },
     cleared: { type: String, enum: CLEARED_STATES, default: 'pending' },
     tags: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Tag' }], default: [] },
-    notes: { type: String, trim: true, default: '' },
+    // Encrypted at rest — see splitSchema's own notesIv/notesCiphertext comment above.
+    notesIv: { type: String, default: null },
+    notesCiphertext: { type: String, default: null },
     // Set on both sides of a transfer — transferId links the pair so editing/
     // deleting one side can keep the other in sync.
     transferAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account', default: null },

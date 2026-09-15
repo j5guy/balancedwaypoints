@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Transaction = require('../../models/transaction');
+const { encryptNotes, decryptNotes, decryptSplitsInPlace, encryptSplitsForWrite } = require('./notesCrypto');
 
 const populateOpts = ['payee', 'category', 'tags', 'splits.category'];
 
@@ -21,7 +22,27 @@ const SORTS = {
     manual: { sortOrder: -1, date: -1, createdAt: -1 }
 };
 
-const list = (ownerId, { account, category, tag, payee, from, to, limit, sort } = {}) => {
+// notes/splits[].notes are encrypted at rest (AES-256-GCM, see
+// utils/secretCrypto.js and services/database/notesCrypto.js) — decorate()
+// attaches plaintext back onto the in-memory document.
+function decorate(doc) {
+    if (!doc) return doc;
+    doc.notes = decryptNotes(doc);
+    decryptSplitsInPlace(doc.splits);
+    return doc;
+}
+function decorateAll(docs) { docs.forEach(decorate); return docs; }
+
+// Builds the fields to write from a payload that may carry notes/splits
+// (create sends both, update only whichever were actually submitted).
+function prepareWrite({ notes, splits, ...rest }) {
+    const out = { ...rest };
+    if (notes !== undefined) Object.assign(out, encryptNotes(notes));
+    if (splits !== undefined) out.splits = encryptSplitsForWrite(splits);
+    return out;
+}
+
+const list = async (ownerId, { account, category, tag, payee, from, to, limit, sort } = {}) => {
     const query = { owner: ownerId };
     if (account) query.account = account;
     if (category) query.$or = [{ category }, { 'splits.category': category }];
@@ -34,17 +55,17 @@ const list = (ownerId, { account, category, tag, payee, from, to, limit, sort } 
     }
     let cursor = Transaction.find(query).sort(SORTS[sort] || SORTS.newest).populate(populateOpts);
     if (limit) cursor = cursor.limit(limit);
-    return cursor.exec();
+    return decorateAll(await cursor.exec());
 };
 
-const findById = (id, ownerId) => Transaction.findOne({ _id: id, owner: ownerId }).populate(populateOpts).exec();
+const findById = async (id, ownerId) => decorate(await Transaction.findOne({ _id: id, owner: ownerId }).populate(populateOpts).exec());
 // No owner filter — for controllers/transactionsController.js's id-scoped
 // actions (get/update/remove/reorder), which now need to read a
 // transaction's `account` FIRST, then resolve access via
 // services/database/accountShares.js's resolveAccountAccess (a collaborator
 // isn't the transaction's `owner`, so the owner-scoped findById above can't
 // be used until access — and the real owner — is known).
-const findByIdRaw = (id) => Transaction.findById(id).populate(populateOpts).exec();
+const findByIdRaw = async (id) => decorate(await Transaction.findById(id).populate(populateOpts).exec());
 const findByImportedIds = (importedIds, ownerId) => Transaction.find({ owner: ownerId, importedId: { $in: importedIds } }).exec();
 // For services/simplefin/syncService.js's first-sync starting-balance
 // reconciliation — needs to know whether an account had any activity at all
@@ -85,9 +106,9 @@ const create = async (data) => {
     const sortOrder = data.sortOrder !== undefined
         ? data.sortOrder
         : await manualSortOrderFor(data.account, data.owner, data.date);
-    return Transaction.create({ ...data, sortOrder });
+    return decorate(await Transaction.create({ ...prepareWrite(data), sortOrder }));
 };
-const update = (id, data, ownerId) => Transaction.findOneAndUpdate({ _id: id, owner: ownerId }, data, { new: true, runValidators: true }).populate(populateOpts).exec();
+const update = async (id, data, ownerId) => decorate(await Transaction.findOneAndUpdate({ _id: id, owner: ownerId }, prepareWrite(data), { new: true, runValidators: true }).populate(populateOpts).exec());
 const remove = (id, ownerId) => Transaction.findOneAndDelete({ _id: id, owner: ownerId }).exec();
 
 // Finishes a Reconcile session (see controllers/transactionsController.js's
@@ -110,15 +131,16 @@ const markReconciled = (ids, accountId, ownerId) =>
 // external institution whose posting you're waiting to reconcile against.
 const createTransfer = async ({ owner, fromAccount, toAccount, date, amountCents, notes, schedule = null, scheduleOccurrenceDate = null }) => {
     const transferId = new mongoose.Types.ObjectId();
+    const encryptedNotes = encryptNotes(notes);
     const [outSortOrder, inSortOrder] = await Promise.all([
         manualSortOrderFor(fromAccount, owner, date),
         manualSortOrderFor(toAccount, owner, date)
     ]);
     const [outgoing, incoming] = await Transaction.create([
-        { owner, account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', sortOrder: outSortOrder },
-        { owner, account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', sortOrder: inSortOrder }
+        { owner, account: fromAccount, transferAccount: toAccount, date, amountCents: -Math.abs(amountCents), transferId, ...encryptedNotes, schedule, scheduleOccurrenceDate, cleared: 'cleared', sortOrder: outSortOrder },
+        { owner, account: toAccount, transferAccount: fromAccount, date, amountCents: Math.abs(amountCents), transferId, ...encryptedNotes, schedule, scheduleOccurrenceDate, cleared: 'cleared', sortOrder: inSortOrder }
     ]);
-    return { outgoing, incoming };
+    return { outgoing: decorate(outgoing), incoming: decorate(incoming) };
 };
 
 const removeTransferPair = async (transferId, ownerId) => Transaction.deleteMany({ transferId, owner: ownerId }).exec();
@@ -137,15 +159,19 @@ const updateTransferPair = async (transferId, ownerId, { date, amountCents, note
     const legs = await Transaction.find({ transferId, owner: ownerId }).exec();
     if (legs.length !== 2) return null;
 
+    // Both legs share the same notes, so this only needs to encrypt once —
+    // see prepareWrite()'s own notes handling above for the general case.
+    const encryptedNotes = notes !== undefined ? encryptNotes(notes) : null;
+
     await Promise.all(legs.map((leg) => {
         const data = {};
         if (date !== undefined) data.date = date;
-        if (notes !== undefined) data.notes = notes;
+        if (encryptedNotes) Object.assign(data, encryptedNotes);
         if (amountCents !== undefined) data.amountCents = leg.amountCents < 0 ? -Math.abs(amountCents) : Math.abs(amountCents);
         return Transaction.updateOne({ _id: leg._id }, data);
     }));
 
-    return Transaction.find({ transferId, owner: ownerId }).populate(populateOpts).exec();
+    return decorateAll(await Transaction.find({ transferId, owner: ownerId }).populate(populateOpts).exec());
 };
 
 // Posts an autopay bill that drafts from a different account than the one
@@ -161,15 +187,17 @@ const updateTransferPair = async (transferId, ownerId, { date, amountCents, note
 // distinguish a transfer pair from an autopay pair).
 const createAutopayOccurrence = async ({ owner, account, autopayFromAccount, date, amountCents, payee, category, splits, notes, schedule = null, scheduleOccurrenceDate = null }) => {
     const transferId = new mongoose.Types.ObjectId();
+    const encryptedNotes = encryptNotes(notes);
+    const encryptedSplits = encryptSplitsForWrite(splits);
     const [draftSortOrder, billSortOrder] = await Promise.all([
         manualSortOrderFor(autopayFromAccount, owner, date),
         manualSortOrderFor(account, owner, date)
     ]);
     const [draft, bill] = await Transaction.create([
-        { owner, account: autopayFromAccount, transferAccount: account, date, amountCents: -Math.abs(amountCents), transferId, notes, schedule, scheduleOccurrenceDate, cleared: 'cleared', autopay: true, sortOrder: draftSortOrder },
-        { owner, account, transferAccount: autopayFromAccount, date, amountCents, payee, category, splits, transferId, notes, schedule, scheduleOccurrenceDate, autopay: true, sortOrder: billSortOrder }
+        { owner, account: autopayFromAccount, transferAccount: account, date, amountCents: -Math.abs(amountCents), transferId, ...encryptedNotes, schedule, scheduleOccurrenceDate, cleared: 'cleared', autopay: true, sortOrder: draftSortOrder },
+        { owner, account, transferAccount: autopayFromAccount, date, amountCents, payee, category, splits: encryptedSplits, transferId, ...encryptedNotes, schedule, scheduleOccurrenceDate, autopay: true, sortOrder: billSortOrder }
     ]);
-    return { draft, bill };
+    return { draft: decorate(draft), bill: decorate(bill) };
 };
 
 // Bulk-persists a new manual display order from the register's drag-and-drop

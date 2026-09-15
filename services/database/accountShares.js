@@ -1,6 +1,7 @@
 const AccountShare = require('../../models/accountShare');
 const Account = require('../../models/account');
 const User = require('../../models/user');
+const { decorate: decorateAccount } = require('./accounts');
 
 // The one primitive nearly everything else in Phase 2 builds on. Owner
 // check first (no query needed) since that's the overwhelmingly common
@@ -8,7 +9,7 @@ const User = require('../../models/user');
 // account. Returns null (no access at all) rather than throwing — callers
 // decide whether that's a 403 or a 404.
 async function resolveAccountAccess(accountId, userId) {
-    const account = await Account.findById(accountId).exec();
+    const account = decorateAccount(await Account.findById(accountId).exec());
     if (!account) return null;
     if (String(account.owner) === String(userId)) {
         return { account, ownerId: account.owner, role: 'owner' };
@@ -54,7 +55,7 @@ async function listWritableAccountIds(userId, targetOwnerId) {
 // Upserts — re-sharing the same account with the same person just updates
 // the permission level rather than erroring on the unique index.
 async function create({ accountId, ownerId, sharedWithEmail, permission }) {
-    const account = await Account.findOne({ _id: accountId, owner: ownerId }).exec();
+    const account = decorateAccount(await Account.findOne({ _id: accountId, owner: ownerId }).exec());
     if (!account) return { error: 'not_found' };
 
     const sharedWith = await User.findOne({ email: sharedWithEmail.toLowerCase().trim() }).exec();
@@ -86,7 +87,7 @@ async function listSharedWithMe(userId) {
         .populate('owner', 'email displayName')
         .sort({ createdAt: 1 })
         .exec();
-    return shares.filter(s => s.account); // defensive: skip any orphaned row if an account was ever force-deleted without cleaning up its shares
+    return shares.filter(s => s.account).map((s) => { decorateAccount(s.account); return s; }); // defensive: skip any orphaned row if an account was ever force-deleted without cleaning up its shares
 }
 
 // Distinct owners the user holds >=1 readwrite share with — populates the

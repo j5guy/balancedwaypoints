@@ -101,19 +101,6 @@ docker-compose.pull.yml (which reference ghcr.io/j5guy/balancedwaypoints:latest)
 written; previously nothing published that image. Needs new/renamed repo secrets — see the CI/CD
 wiki page.
 
-Sensitive free text is now encrypted at rest (AES-256-GCM, keyed off sessionSecret — see
-utils/secretCrypto.js): Payee name/address/phone/accountNumber, and every notes field —
-Transaction.notes/splits[].notes, Schedule.notes/splits[].notes/occurrenceOverrides[].notes/
-occurrenceOverrides[].splits[].notes, and Account.notes. Payee name keeps a deterministic HMAC blind
-index (nameHash) alongside the ciphertext so exact-match lookups and the existing per-owner
-uniqueness constraint still work without ever storing or querying the plaintext
-(models/payee.js's owner_1_nameHash_1 index replaces the old owner_1_name_1). Existing installs must
-run `node scripts/encryptExistingData.js` once after upgrading (back up the database first) to
-migrate already-stored plaintext — safe to re-run, and it skips anything already migrated. Installs
-upgrading from before this version also need to manually drop the now-stale owner_1_name_1 index on
-the payees collection before running that script, or the migration will fail with a duplicate-key
-error the moment two payees for the same owner both lose their plaintext name.
-
 v0.18.0b
 ------
 Deployment rebuilt from scratch around a single, self-contained docker-compose.yml — no more shared

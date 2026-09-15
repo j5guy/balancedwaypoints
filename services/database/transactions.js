@@ -159,15 +159,19 @@ const updateTransferPair = async (transferId, ownerId, { date, amountCents, note
     const legs = await Transaction.find({ transferId, owner: ownerId }).exec();
     if (legs.length !== 2) return null;
 
+    // Both legs share the same notes, so this only needs to encrypt once —
+    // see prepareWrite()'s own notes handling above for the general case.
+    const encryptedNotes = notes !== undefined ? encryptNotes(notes) : null;
+
     await Promise.all(legs.map((leg) => {
         const data = {};
         if (date !== undefined) data.date = date;
-        if (notes !== undefined) data.notes = notes;
+        if (encryptedNotes) Object.assign(data, encryptedNotes);
         if (amountCents !== undefined) data.amountCents = leg.amountCents < 0 ? -Math.abs(amountCents) : Math.abs(amountCents);
         return Transaction.updateOne({ _id: leg._id }, data);
     }));
 
-    return Transaction.find({ transferId, owner: ownerId }).populate(populateOpts).exec();
+    return decorateAll(await Transaction.find({ transferId, owner: ownerId }).populate(populateOpts).exec());
 };
 
 // Posts an autopay bill that drafts from a different account than the one

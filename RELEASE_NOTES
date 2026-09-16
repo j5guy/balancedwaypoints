@@ -45,6 +45,14 @@ inherently per-account, and each leg can settle against a different statement/da
 unreconciling any transaction (transfer or not) dropping it all the way back to 'pending' instead of
 'cleared' (public/js/register.js's toggleCleared).
 
+The full Edit form also now exposes the Cleared checkbox for a transfer (previously hidden
+entirely, so the only way to touch a transfer's cleared status was the register's own quick-toggle)
+and actually sends it on save. On any transaction (transfer or not), that checkbox is disabled once
+reconciled and omitted from the save payload while disabled, rather than resending 'cleared'/'pending'
+and silently downgrading a locked-in reconciled transaction just because you edited its date or notes
+— unreconciling still only happens through the register's own 🔒 click and its confirm dialog
+(public/js/register.js's startEdit/resetForm and the save handler).
+
 v0.19.0b
 ------
 Added statement reconciliation — a "✓ Reconcile" button on the register (hidden for read-only access

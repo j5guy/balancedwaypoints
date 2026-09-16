@@ -157,16 +157,19 @@ const TRANSFER_DEFS = [
     [5, 'checking', 'creditCard', 30000]
 ];
 
-// Normalized to UTC midnight, matching how a real <input type="date"> entry
-// is stored (see public/js/date.js) — otherwise seeded transactions carry
-// whatever time-of-day the seed happened to run at, which can push a
-// same-calendar-day transaction past a reconcile statement date's $lte
-// midnight cutoff (services/database/transactions.js's list()).
+// Normalized to UTC midnight of "today" in server-local time (server.js pins
+// process.env.TZ to America/New_York, so plain getFullYear/getMonth/getDate
+// below already reflect that, not UTC) — matching how a real
+// <input type="date"> entry is stored (see public/js/date.js). Anchoring on
+// UTC's own calendar day instead would make "today"'s seeded transactions
+// dated a day ahead for anyone viewing from America/New_York in the evening,
+// since UTC is already into tomorrow by then. Using a plain time-of-day
+// instead of midnight has the same problem as the UTC anchor did: it can
+// push a same-calendar-day transaction past a reconcile statement date's
+// $lte midnight cutoff (services/database/transactions.js's list()).
 function daysAgoToDate(daysAgo) {
-    const date = new Date();
-    date.setUTCDate(date.getUTCDate() - daysAgo);
-    date.setUTCHours(0, 0, 0, 0);
-    return date;
+    const now = new Date();
+    return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo));
 }
 
 async function seedDemoUserData(ownerId) {

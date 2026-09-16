@@ -1669,14 +1669,15 @@
         document.getElementById('txn-transfer-warning').hidden = !isTransfer;
 
         if (isTransfer) {
-            // Only date/amount/notes are editable here — see
-            // controllers/transactionsController.js's update() and
-            // services/database/transactions.js's updateTransferPair, which
-            // keep both legs of the pair in sync on save. Everything else
-            // below either doesn't apply to a transfer leg at all (payee/
-            // category/splits/tags), or would mean moving which two
-            // accounts are involved, which isn't supported here — "Convert
-            // to transfer"/delete-and-recreate cover changing that instead.
+            // Only date/amount/notes/cleared are editable here — see
+            // controllers/transactionsController.js's update(): date/amount/
+            // notes get kept in sync across both legs of the pair, while
+            // cleared applies to only this leg (reconciling is a per-account
+            // concept). Everything else below either doesn't apply to a
+            // transfer leg at all (payee/category/splits/tags), or would
+            // mean moving which two accounts are involved, which isn't
+            // supported here — "Convert to transfer"/delete-and-recreate
+            // cover changing that instead.
             document.getElementById('txn-form-title').textContent = 'Edit transfer';
             document.getElementById('txn-is-transfer').checked = false;
             const otherAccount = accounts.find(a => a.id === t.transferAccount);
@@ -1685,7 +1686,14 @@
             document.getElementById('txn-payee-group').hidden = true;
             document.getElementById('txn-category-group').hidden = true;
             document.getElementById('txn-tags-group').hidden = true;
-            document.getElementById('txn-cleared').parentElement.hidden = true;
+            document.getElementById('txn-cleared').checked = t.cleared !== 'pending';
+            // Reconciled is locked in from a finished statement — unreconcile
+            // it via the register's own lock-icon click (with its confirm
+            // dialog), not silently through a plain form save.
+            document.getElementById('txn-cleared').disabled = t.cleared === 'reconciled';
+            document.getElementById('txn-cleared').parentElement.title = t.cleared === 'reconciled'
+                ? 'Reconciled — unreconcile it from the register\'s 🔒 icon instead' : '';
+            document.getElementById('txn-cleared').parentElement.hidden = false;
             document.getElementById('txn-splits-actions-group').hidden = true;
             document.getElementById('splits-editor').hidden = true;
             document.getElementById('txn-is-transfer').parentElement.hidden = true;
@@ -1707,6 +1715,12 @@
         document.getElementById('txn-payee').value = t.payee ? t.payee.name : '';
         document.getElementById('txn-tags').value = (t.tags || []).map(tag => tag.name).join(', ');
         document.getElementById('txn-cleared').checked = t.cleared !== 'pending';
+        // Same reconciled-lock treatment as the transfer branch above —
+        // unreconcile via the register's 🔒 icon (with its confirm dialog),
+        // not silently through a plain form save.
+        document.getElementById('txn-cleared').disabled = t.cleared === 'reconciled';
+        document.getElementById('txn-cleared').parentElement.title = t.cleared === 'reconciled'
+            ? 'Reconciled — unreconcile it from the register\'s 🔒 icon instead' : '';
         document.getElementById('txn-cleared').parentElement.hidden = false;
         document.getElementById('txn-transfer-to-display').hidden = true;
         document.getElementById('txn-payee-group').hidden = false;
@@ -1770,6 +1784,8 @@
         document.getElementById('txn-notes').value = '';
         document.getElementById('txn-tags').value = '';
         document.getElementById('txn-cleared').checked = false;
+        document.getElementById('txn-cleared').disabled = false;
+        document.getElementById('txn-cleared').parentElement.title = '';
         document.getElementById('txn-category').value = '';
         document.getElementById('txn-category-new-group').value = '';
         document.getElementById('txn-is-transfer').checked = false;
@@ -1866,12 +1882,21 @@
                     }
                 });
             } else if (editingIsTransfer) {
-                // Only date/amount/notes — see controllers/transactionsController.js's
-                // update(), which rejects anything else for a transfer leg
-                // and keeps both sides of the pair in sync on save.
+                // date/amount/notes get kept in sync across both legs of the
+                // pair; cleared applies to only this one leg (reconciling is
+                // a per-account concept) — see controllers/transactionsController.js's
+                // update(), which rejects anything else for a transfer leg.
+                // The checkbox is disabled (and thus omitted here) when
+                // already reconciled — an unrelated edit (date/amount/notes)
+                // must never silently downgrade it back to plain 'cleared'.
                 await window.BWApi.apiFetch(`/api/transactions/${editingId}`, {
                     method: 'PUT',
-                    body: { date, amountCents, notes: document.getElementById('txn-notes').value }
+                    body: {
+                        date, amountCents,
+                        notes: document.getElementById('txn-notes').value,
+                        cleared: document.getElementById('txn-cleared').disabled
+                            ? undefined : (document.getElementById('txn-cleared').checked ? 'cleared' : 'pending')
+                    }
                 });
             } else {
                 const splits = document.getElementById('splits-editor').hidden ? [] : readSplits();
@@ -1881,12 +1906,16 @@
                     document.getElementById('txn-category').value.trim(),
                     document.getElementById('txn-category-new-group').value
                 );
+                // Same reconciled-lock omission as the transfer branch above
+                // — disabled means already reconciled, so an unrelated field
+                // edit must never silently downgrade it back to 'cleared'.
                 const body = {
                     account: accountId, date, amountCents,
                     payee: payeeId,
                     category: categoryId,
                     splits,
-                    cleared: document.getElementById('txn-cleared').checked ? 'cleared' : 'pending',
+                    cleared: document.getElementById('txn-cleared').disabled
+                        ? undefined : (document.getElementById('txn-cleared').checked ? 'cleared' : 'pending'),
                     tags: tagIds,
                     notes: document.getElementById('txn-notes').value
                 };

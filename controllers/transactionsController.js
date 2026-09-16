@@ -184,13 +184,17 @@ async function update(req, res) {
     const access = await requireAccountAccess(req, res, existing.account, { write: true });
     if (!access) return;
 
-    // A transfer leg only accepts date/amountCents/notes — everything else
-    // either doesn't apply to a transfer (payee/category/splits/tags) or
+    // A transfer leg only accepts date/amountCents/notes/cleared — everything
+    // else either doesn't apply to a transfer (payee/category/splits/tags) or
     // would require moving which two accounts are involved, which this
     // endpoint doesn't support (delete-and-recreate, or the register's own
-    // "Convert to transfer", cover that instead). Both legs get kept in
-    // sync by updateTransferPair — see its own comment for why `cleared`
-    // isn't included.
+    // "Convert to transfer", cover that instead). date/amountCents/notes get
+    // kept in sync across both legs by updateTransferPair; `cleared` doesn't
+    // go through that — it's a per-account concept (whether reconciled
+    // against THIS account's own statement), so it only ever applies to this
+    // one leg. createTransfer already marks both legs 'cleared' immediately
+    // on creation (a transfer has no external institution to wait on), so in
+    // practice this only ever moves a leg into/out of 'reconciled'.
     if (existing.transferId) {
         // Needs write access to BOTH sides to edit — same reasoning as
         // createTransfer/postOccurrence's identical check: a readwrite
@@ -200,14 +204,19 @@ async function update(req, res) {
         if (!transferAccess) return;
 
         const { account, payee, category, splits, tags, cleared, date, amountCents, notes } = req.body || {};
-        if (account !== undefined || payee !== undefined || category !== undefined || splits !== undefined || tags !== undefined || cleared !== undefined) {
-            return res.status(400).json({ error: 'Only date, amount, and notes can be edited on a transfer' });
+        if (account !== undefined || payee !== undefined || category !== undefined || splits !== undefined || tags !== undefined) {
+            return res.status(400).json({ error: 'Only date, amount, notes, and cleared status can be edited on a transfer' });
         }
-        const legs = await transactions.updateTransferPair(existing.transferId, access.ownerId, {
-            date, amountCents: amountCents !== undefined ? Number(amountCents) : undefined, notes
-        });
-        if (!legs) return res.status(404).json({ error: 'Not found' });
-        const thisLeg = legs.find((l) => String(l.account) === String(existing.account)) || legs[0];
+        if (date !== undefined || amountCents !== undefined || notes !== undefined) {
+            const legs = await transactions.updateTransferPair(existing.transferId, access.ownerId, {
+                date, amountCents: amountCents !== undefined ? Number(amountCents) : undefined, notes
+            });
+            if (!legs) return res.status(404).json({ error: 'Not found' });
+        }
+        const thisLeg = cleared !== undefined
+            ? await transactions.update(existing._id, { cleared }, access.ownerId)
+            : await transactions.findById(existing._id, access.ownerId);
+        if (!thisLeg) return res.status(404).json({ error: 'Not found' });
         return res.json(serialize(thisLeg));
     }
 

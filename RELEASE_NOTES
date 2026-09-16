@@ -21,10 +21,20 @@ services/database/schedules.js's own decorate() now also decrypt a populated pay
 schedules, each occurrenceOverrides[].payee), reusing payees.js's newly-exported decorate() instead
 of duplicating the decrypt logic.
 
-Fixed demo-seeded transactions carrying a real time-of-day instead of UTC midnight
-(services/demo/seedDemoUserData.js's daysAgoToDate), which could push a transaction past a
-reconcile statement date's end-of-day cutoff even though it fell on the same calendar day a real,
-UI-entered transaction would have matched fine.
+Fixed demo-seeded transactions carrying a real time-of-day instead of UTC midnight of the correct
+calendar day (services/demo/seedDemoUserData.js's daysAgoToDate) — the first pass at this fix still
+anchored "today" to UTC's own calendar day, which reads as tomorrow for anyone viewing from
+America/New_York (server.js pins process.env.TZ there) once UTC has already rolled over for the
+evening; now anchored on the server-local calendar day instead, matching how a real, UI-entered
+transaction's date is stored.
+
+Fixed several demo-seeded transactions being born already 'reconciled' (for realism) without ever
+setting the owning account's lastReconciledDate/lastReconciledBalanceCents to reflect them — the
+Reconcile flow's starting-balance math assumes every 'reconciled' transaction is already folded into
+that checkpoint, same as a real finishReconcile() call leaves it, so those transactions' amounts were
+silently vanishing from the math (excluded from candidates, but never added to the starting balance
+either), throwing off the very first reconcile session by exactly their total. seedDemoUserData.js
+now tallies each account's pre-reconciled defs and sets a real checkpoint to match.
 
 Reconciled transactions now show a 🔒 instead of a plain ✓ in the register's Cleared column, and
 clicking it warns before unreconciling ("can throw off your next reconcile session's starting
@@ -41,9 +51,17 @@ toggle now stays disabled pre-reconcile instead, since a transfer clears automat
 it's created and has no real "pending" state to offer). `cleared` is applied to only the one leg
 being edited, not synced across the pair the way date/amountCents/notes are — reconciling is
 inherently per-account, and each leg can settle against a different statement/date
-(controllers/transactionsController.js's update(), services/database/transactions.js). Also fixed
-unreconciling any transaction (transfer or not) dropping it all the way back to 'pending' instead of
-'cleared' (public/js/register.js's toggleCleared).
+(controllers/transactionsController.js's update(), services/database/transactions.js).
+
+Unreconciling a transaction now correctly backs its own amount out of the account's
+lastReconciledBalanceCents checkpoint instead of leaving it baked in — previously the checkmark's
+click-to-unreconcile just flipped that one transaction's own `cleared` field, silently double-counting
+it the next time you reconciled (still counted in the checkpoint, AND reappearing as a candidate to
+check off again). Moving a transaction OUT of 'reconciled' now goes through a new dedicated
+POST /api/transactions/:id/unreconcile (services/database/transactions.js's unreconcile()) — the
+plain PUT rejects that transition outright so it can't be done any other way. Deliberately surgical
+rather than cascading: only the one transaction you unreconcile reopens; every other already-reconciled
+transaction on the account, and lastReconciledDate itself, are left untouched.
 
 The full Edit form also now exposes the Cleared checkbox for a transfer (previously hidden
 entirely, so the only way to touch a transfer's cleared status was the register's own quick-toggle)

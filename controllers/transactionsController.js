@@ -207,6 +207,13 @@ async function update(req, res) {
         if (account !== undefined || payee !== undefined || category !== undefined || splits !== undefined || tags !== undefined) {
             return res.status(400).json({ error: 'Only date, amount, notes, and cleared status can be edited on a transfer' });
         }
+        // Moving OUT of 'reconciled' has to go through unreconcile() instead
+        // — it also backs this transaction's amount out of the account's
+        // lastReconciledBalanceCents checkpoint, which a plain field update
+        // here doesn't know to do (see unreconcile()'s own comment).
+        if (existing.cleared === 'reconciled' && cleared !== undefined && cleared !== 'reconciled') {
+            return res.status(400).json({ error: 'Use the unreconcile action to change a reconciled transaction\'s cleared status' });
+        }
         if (date !== undefined || amountCents !== undefined || notes !== undefined) {
             const legs = await transactions.updateTransferPair(existing.transferId, access.ownerId, {
                 date, amountCents: amountCents !== undefined ? Number(amountCents) : undefined, notes
@@ -225,6 +232,13 @@ async function update(req, res) {
     const effectiveSplits = splits !== undefined ? splits : existing.splits;
     const splitError = validateSplits(effectiveAmount, effectiveSplits);
     if (splitError) return res.status(400).json({ error: splitError });
+
+    // Same reasoning as the transfer branch above — moving OUT of
+    // 'reconciled' has to go through unreconcile() instead, which also
+    // backs this amount out of the account's checkpoint.
+    if (existing.cleared === 'reconciled' && cleared !== undefined && cleared !== 'reconciled') {
+        return res.status(400).json({ error: 'Use the unreconcile action to change a reconciled transaction\'s cleared status' });
+    }
 
     // Moving a transaction to a different account requires write access to
     // THAT account too — and, same reasoning as createTransfer's no-cross-
@@ -254,6 +268,23 @@ async function update(req, res) {
     if (notes !== undefined) data.notes = notes;
 
     const t = await transactions.update(req.params.id, data, access.ownerId);
+    res.json(serialize(t));
+}
+
+// Breaks a single transaction back out of 'reconciled' — see
+// services/database/transactions.js's unreconcile() for why this needs its
+// own endpoint instead of being just another field on the plain update()
+// above: it also backs this transaction's amount out of the account's
+// lastReconciledBalanceCents checkpoint, surgically, without touching any
+// other already-reconciled transaction.
+async function unreconcile(req, res) {
+    const existing = await transactions.findByIdRaw(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const access = await requireAccountAccess(req, res, existing.account, { write: true });
+    if (!access) return;
+
+    const t = await transactions.unreconcile(req.params.id, access.ownerId);
+    if (!t) return res.status(400).json({ error: 'That transaction is not reconciled' });
     res.json(serialize(t));
 }
 
@@ -374,4 +405,4 @@ async function previewRules(req, res) {
     res.json(result);
 }
 
-module.exports = { list, get, create, createTransfer, convertToTransfer, update, remove, reorder, previewRules, reconcileCandidates, finishReconcile };
+module.exports = { list, get, create, createTransfer, convertToTransfer, update, unreconcile, remove, reorder, previewRules, reconcileCandidates, finishReconcile };

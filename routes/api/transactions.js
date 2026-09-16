@@ -15,6 +15,7 @@ router.post('/preview-rules', controller.previewRules);
 router.get('/reconcile/candidates', controller.reconcileCandidates);
 router.post('/reconcile/finish', controller.finishReconcile);
 router.put('/:id', controller.update);
+router.post('/:id/unreconcile', controller.unreconcile);
 router.delete('/:id', controller.remove);
 
 module.exports = router;

@@ -13,6 +13,27 @@ upgrading from before this version also need to manually drop the now-stale owne
 the payees collection before running that script, or the migration will fail with a duplicate-key
 error the moment two payees for the same owner both lose their plaintext name.
 
+Fixed a payee's name showing as blank/undefined everywhere except the dedicated Payees page, a
+regression from the encryption work above: `.populate('payee')` on a Transaction or Schedule only
+pulls the stored nameIv/nameCiphertext — it never ran that through the decrypt step, which only
+existed in services/database/payees.js's own CRUD functions. services/database/transactions.js and
+services/database/schedules.js's own decorate() now also decrypt a populated payee ref (and, for
+schedules, each occurrenceOverrides[].payee), reusing payees.js's newly-exported decorate() instead
+of duplicating the decrypt logic.
+
+Fixed demo-seeded transactions carrying a real time-of-day instead of UTC midnight
+(services/demo/seedDemoUserData.js's daysAgoToDate), which could push a transaction past a
+reconcile statement date's end-of-day cutoff even though it fell on the same calendar day a real,
+UI-entered transaction would have matched fine.
+
+Reconciled transactions now show a 🔒 instead of a plain ✓ in the register's Cleared column, and
+clicking it warns before unreconciling ("can throw off your next reconcile session's starting
+balance") instead of silently flipping it back to pending like any other cleared transaction
+(public/js/register.js, public/scss/components/_tables.scss). The register header also now shows
+"Last reconciled <date>" for the account being viewed (controllers/accountsController.js already
+exposed lastReconciledDate/lastReconciledBalanceCents; nothing surfaced it outside the Reconcile
+modal itself until now).
+
 v0.19.0b
 ------
 Added statement reconciliation — a "✓ Reconcile" button on the register (hidden for read-only access

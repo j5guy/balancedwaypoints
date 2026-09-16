@@ -193,6 +193,13 @@ table.register-table {
     color: $text-muted;
 }
 
+// Reconciled — locked in by a finished reconcile session (see the Reconcile
+// modal), distinct from a plain cleared checkmark so it reads as "settled,
+// don't touch" rather than an ordinary toggle.
+.cleared-toggle-reconciled {
+    color: $accent;
+}
+
 // Column show/hide (see public/js/register.js's applyColumnPreferences).
 // Zeroing the <col> width AND display:none-ing the cells at that position is
 // belt-and-suspenders: table-layout:fixed fixes column widths from the

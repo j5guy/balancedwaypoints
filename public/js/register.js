@@ -207,6 +207,9 @@
         payees = payeesRes.payees;
 
         document.getElementById('account-name').textContent = account.name;
+        document.getElementById('last-reconciled-info').textContent = account.lastReconciledDate
+            ? `Last reconciled ${window.BWDate.formatDate(account.lastReconciledDate)}`
+            : '';
         currentBalanceCents = account.balanceCents;
         renderAccountBalance();
 
@@ -407,6 +410,7 @@
         const amountClass = maskAmount ? 'money-masked' : (t.amountCents < 0 ? 'money-negative' : 'money-positive');
         const balanceClass = maskBalance ? 'money-masked' : (balanceCents < 0 ? 'money-negative' : 'money-positive');
         const isCleared = t.cleared !== 'pending';
+        const isReconciled = t.cleared === 'reconciled';
         // Bulk category selection is offered for plain transactions only —
         // a transfer has no category at all, and a split transaction's
         // category lives per-split (see startCellEdit's identical guard on
@@ -429,8 +433,8 @@
             <td class="money editable-cell ${amountClass}" data-col="amount">${window.BWMoney.formatCents(t.amountCents, maskAmount)}</td>
             <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents, maskBalance)}</td>
             <td data-col="cleared">
-                <button type="button" class="cleared-toggle ${isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off'}"
-                        data-cleared-toggle title="${isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared'}">${isCleared ? '✓' : '✕'}</button>
+                <button type="button" class="cleared-toggle ${isReconciled ? 'cleared-toggle-reconciled' : (isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off')}"
+                        data-cleared-toggle title="${isReconciled ? 'Reconciled — click to unreconcile' : (isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared')}">${isReconciled ? '🔒' : (isCleared ? '✓' : '✕')}</button>
             </td>
             <td class="row-actions">
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
@@ -575,11 +579,19 @@
         input.addEventListener('blur', () => commit());
     }
 
-    // Cleared is binary in this UI (a checkmark or an x) — toggling never
-    // sets 'reconciled', only flips between 'pending' and 'cleared'. Updates
-    // the button in place rather than reloading the whole register.
+    // Clicking toggles between 'pending' and 'cleared' as before. A
+    // 'reconciled' transaction is locked in by a finished reconcile session
+    // (see the Reconcile modal below) — clicking it still allows breaking
+    // that lock, but only after an explicit confirmation, since undoing it
+    // can throw off the account's next reconcile session (its starting
+    // balance/date already assumed this transaction stayed locked in).
+    // Updates the button in place rather than reloading the whole register.
     async function toggleCleared(t) {
         if (accountRole === 'readonly') return;
+        if (t.cleared === 'reconciled') {
+            const ok = confirm('This transaction is reconciled and locked in from a past statement. Unreconciling it can throw off your next reconcile session\'s starting balance — mark it pending anyway?');
+            if (!ok) return;
+        }
         const next = t.cleared === 'pending' ? 'cleared' : 'pending';
         try {
             const updated = await window.BWApi.apiFetch(`/api/transactions/${t.id}`, { method: 'PUT', body: { cleared: next } });
@@ -588,6 +600,7 @@
             const isCleared = t.cleared !== 'pending';
             btn.textContent = isCleared ? '✓' : '✕';
             btn.title = isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared';
+            btn.classList.remove('cleared-toggle-reconciled');
             btn.classList.toggle('cleared-toggle-on', isCleared);
             btn.classList.toggle('cleared-toggle-off', !isCleared);
         } catch (err) {

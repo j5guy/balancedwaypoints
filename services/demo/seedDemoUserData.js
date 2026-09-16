@@ -157,9 +157,15 @@ const TRANSFER_DEFS = [
     [5, 'checking', 'creditCard', 30000]
 ];
 
+// Normalized to UTC midnight, matching how a real <input type="date"> entry
+// is stored (see public/js/date.js) — otherwise seeded transactions carry
+// whatever time-of-day the seed happened to run at, which can push a
+// same-calendar-day transaction past a reconcile statement date's $lte
+// midnight cutoff (services/database/transactions.js's list()).
 function daysAgoToDate(daysAgo) {
     const date = new Date();
-    date.setDate(date.getDate() - daysAgo);
+    date.setUTCDate(date.getUTCDate() - daysAgo);
+    date.setUTCHours(0, 0, 0, 0);
     return date;
 }
 

@@ -434,7 +434,11 @@
             <td class="money js-balance-cell ${balanceClass}" data-col="balance">${window.BWMoney.formatCents(balanceCents, maskBalance)}</td>
             <td data-col="cleared">
                 <button type="button" class="cleared-toggle ${isReconciled ? 'cleared-toggle-reconciled' : (isCleared ? 'cleared-toggle-on' : 'cleared-toggle-off')}"
-                        data-cleared-toggle title="${isReconciled ? 'Reconciled — click to unreconcile' : (isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared')}">${isReconciled ? '🔒' : (isCleared ? '✓' : '✕')}</button>
+                        data-cleared-toggle
+                        ${(t.transferId && !isReconciled) ? 'disabled' : ''}
+                        title="${isReconciled ? 'Reconciled — click to unreconcile'
+                            : (t.transferId ? 'A transfer moves money between your own accounts, so it\'s cleared automatically'
+                                : (isCleared ? 'Cleared — click to mark pending' : 'Pending — click to mark cleared'))}">${isReconciled ? '🔒' : (isCleared ? '✓' : '✕')}</button>
             </td>
             <td class="row-actions">
                 <button type="button" class="btn btn-secondary btn-sm icon-btn" data-edit title="Edit">✎</button>
@@ -589,10 +593,16 @@
     async function toggleCleared(t) {
         if (accountRole === 'readonly') return;
         if (t.cleared === 'reconciled') {
-            const ok = confirm('This transaction is reconciled and locked in from a past statement. Unreconciling it can throw off your next reconcile session\'s starting balance — mark it pending anyway?');
+            const ok = confirm('This transaction is reconciled and locked in from a past statement. Unreconciling it can throw off your next reconcile session\'s starting balance — unreconcile it anyway?');
             if (!ok) return;
         }
-        const next = t.cleared === 'pending' ? 'cleared' : 'pending';
+        // Unreconciling drops back to 'cleared', not all the way to
+        // 'pending' — it did clear the bank, it's just no longer locked into
+        // a finished statement. Otherwise this is the plain pending<->cleared
+        // toggle (a transfer never reaches this branch pre-reconcile — its
+        // button is disabled — so 'cleared' -> 'pending' only ever applies
+        // to a regular transaction here).
+        const next = t.cleared === 'cleared' ? 'pending' : 'cleared';
         try {
             const updated = await window.BWApi.apiFetch(`/api/transactions/${t.id}`, { method: 'PUT', body: { cleared: next } });
             t.cleared = updated.cleared;

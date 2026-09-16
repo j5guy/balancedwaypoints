@@ -34,6 +34,17 @@ balance") instead of silently flipping it back to pending like any other cleared
 exposed lastReconciledDate/lastReconciledBalanceCents; nothing surfaced it outside the Reconcile
 modal itself until now).
 
+A transfer leg can now be reconciled and unreconciled like any other transaction — previously
+PUT /api/transactions/:id flatly rejected the `cleared` field for any transfer leg, so the
+lock-icon-click-to-unreconcile flow above had no way to actually work on a transfer row (its quick
+toggle now stays disabled pre-reconcile instead, since a transfer clears automatically the moment
+it's created and has no real "pending" state to offer). `cleared` is applied to only the one leg
+being edited, not synced across the pair the way date/amountCents/notes are — reconciling is
+inherently per-account, and each leg can settle against a different statement/date
+(controllers/transactionsController.js's update(), services/database/transactions.js). Also fixed
+unreconciling any transaction (transfer or not) dropping it all the way back to 'pending' instead of
+'cleared' (public/js/register.js's toggleCleared).
+
 v0.19.0b
 ------
 Added statement reconciliation — a "✓ Reconcile" button on the register (hidden for read-only access

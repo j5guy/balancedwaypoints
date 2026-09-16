@@ -586,22 +586,33 @@
     // Clicking toggles between 'pending' and 'cleared' as before. A
     // 'reconciled' transaction is locked in by a finished reconcile session
     // (see the Reconcile modal below) — clicking it still allows breaking
-    // that lock, but only after an explicit confirmation, since undoing it
-    // can throw off the account's next reconcile session (its starting
-    // balance/date already assumed this transaction stayed locked in).
-    // Updates the button in place rather than reloading the whole register.
+    // that lock, but only after an explicit confirmation, through the
+    // dedicated unreconcile endpoint (services/database/transactions.js's
+    // unreconcile() — it also backs this transaction's amount out of the
+    // account's reconcile checkpoint; a plain PUT no longer accepts moving a
+    // transaction OUT of 'reconciled' at all, precisely so that can't be
+    // skipped). Updates the button in place rather than reloading the whole
+    // register.
     async function toggleCleared(t) {
         if (accountRole === 'readonly') return;
         if (t.cleared === 'reconciled') {
-            const ok = confirm('This transaction is reconciled and locked in from a past statement. Unreconciling it can throw off your next reconcile session\'s starting balance — unreconcile it anyway?');
+            const ok = confirm('This transaction is reconciled and locked in from a past statement. Unreconciling it will reappear as a candidate next time you reconcile this account — unreconcile it anyway?');
             if (!ok) return;
+            try {
+                const updated = await window.BWApi.apiFetch(`/api/transactions/${t.id}/unreconcile`, { method: 'POST' });
+                t.cleared = updated.cleared;
+                const btn = document.querySelector(`tr[data-drag-id="${t.id}"] [data-cleared-toggle]`);
+                btn.textContent = '✓';
+                btn.title = 'Cleared — click to mark pending';
+                btn.classList.remove('cleared-toggle-reconciled');
+                btn.classList.add('cleared-toggle-on');
+            } catch (err) {
+                showError(err);
+            }
+            return;
         }
-        // Unreconciling drops back to 'cleared', not all the way to
-        // 'pending' — it did clear the bank, it's just no longer locked into
-        // a finished statement. Otherwise this is the plain pending<->cleared
-        // toggle (a transfer never reaches this branch pre-reconcile — its
-        // button is disabled — so 'cleared' -> 'pending' only ever applies
-        // to a regular transaction here).
+        // Plain pending<->cleared toggle (a transfer never reaches here
+        // pre-reconcile — its button is disabled).
         const next = t.cleared === 'cleared' ? 'pending' : 'cleared';
         try {
             const updated = await window.BWApi.apiFetch(`/api/transactions/${t.id}`, { method: 'PUT', body: { cleared: next } });

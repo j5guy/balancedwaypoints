@@ -1,7 +1,9 @@
 const mongoose = require('mongoose');
 const Transaction = require('../../models/transaction');
+const Account = require('../../models/account');
 const { encryptNotes, decryptNotes, decryptSplitsInPlace, encryptSplitsForWrite } = require('./notesCrypto');
 const { decorate: decoratePayee } = require('./payees');
+const accountsDb = require('./accounts');
 
 const populateOpts = ['payee', 'category', 'tags', 'splits.category'];
 
@@ -123,6 +125,33 @@ const remove = (id, ownerId) => Transaction.findOneAndDelete({ _id: id, owner: o
 // was authorized against.
 const markReconciled = (ids, accountId, ownerId) =>
     Transaction.updateMany({ _id: { $in: ids }, account: accountId, owner: ownerId }, { cleared: 'reconciled' }).exec();
+
+// Unreconciling a transaction can't just flip its own `cleared` flag back —
+// the account's lastReconciledBalanceCents is a single running checkpoint
+// over every transaction reconciled so far (see
+// controllers/transactionsController.js's reconcileCandidates/finishReconcile),
+// not a per-transaction record, so this transaction's own amount needs
+// backing out of it or it'd get double-counted (still baked into the
+// checkpoint, AND reappearing as a reconcile candidate). Deliberately
+// surgical rather than cascading — every OTHER already-reconciled
+// transaction on this account, and lastReconciledDate itself, are left
+// exactly as they were; only this one drops back to 'cleared' and reappears
+// as a future candidate, adding its amount back in once it's checked off
+// again. Returns null if the transaction isn't actually reconciled.
+const unreconcile = async (id, ownerId) => {
+    const target = await Transaction.findOne({ _id: id, owner: ownerId }).exec();
+    if (!target || target.cleared !== 'reconciled') return null;
+
+    const account = await Account.findOne({ _id: target.account, owner: ownerId }).exec();
+    await Transaction.updateOne({ _id: id }, { cleared: 'cleared' });
+    if (account && account.lastReconciledBalanceCents != null) {
+        await accountsDb.update(target.account, {
+            lastReconciledBalanceCents: account.lastReconciledBalanceCents - target.amountCents
+        }, ownerId);
+    }
+
+    return decorate(await Transaction.findOne({ _id: id, owner: ownerId }).populate(populateOpts).exec());
+};
 
 // Both sides of a transfer share a transferId so editing/deleting one can
 // keep the other in sync (see updateTransferPair/removeTransferPair below).
@@ -251,5 +280,5 @@ const sumForCategoryMonth = async (categoryId, month, ownerId) => {
 module.exports = {
     list, findById, findByIdRaw, findByImportedIds, existsForAccount, create, update, remove,
     createTransfer, updateTransferPair, removeTransferPair, createAutopayOccurrence, reorder, sumForAccount, sumForCategoryMonth,
-    markReconciled
+    markReconciled, unreconcile
 };

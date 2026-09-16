@@ -201,6 +201,18 @@ async function seedDemoUserData(ownerId) {
         await CategoryBudget.create({ owner: ownerId, category: categoriesByName[categoryName]._id, month, assignedCents });
     }
 
+    // Several of buildTransactionDefs()'s older entries are seeded straight
+    // into 'reconciled' for realism (a demo account with nothing ever
+    // settled looks wrong) — but the Reconcile flow's starting-balance math
+    // (controllers/transactionsController.js's reconcileCandidates) assumes
+    // every 'reconciled' transaction is already folded into the account's
+    // own lastReconciledBalanceCents checkpoint, same as a real
+    // finishReconcile() call would leave it. Without setting that
+    // checkpoint here too, those pre-reconciled transactions' amounts would
+    // silently vanish from the reconcile math (excluded from candidates,
+    // but never added to the starting balance either) — reproduced by
+    // tallying each account's reconciled defs as they're created below.
+    const reconciledCheckpoints = {}; // accountKey -> { sumCents, mostRecentDaysAgo }
     for (const def of buildTransactionDefs()) {
         await Transaction.create({
             owner: ownerId,
@@ -210,6 +222,19 @@ async function seedDemoUserData(ownerId) {
             category: categoriesByName[def.category]._id,
             amountCents: def.amountCents,
             cleared: def.cleared
+        });
+        if (def.cleared === 'reconciled') {
+            const cp = reconciledCheckpoints[def.accountKey] || { sumCents: 0, mostRecentDaysAgo: Infinity };
+            cp.sumCents += def.amountCents;
+            cp.mostRecentDaysAgo = Math.min(cp.mostRecentDaysAgo, def.daysAgo);
+            reconciledCheckpoints[def.accountKey] = cp;
+        }
+    }
+    for (const [accountKey, cp] of Object.entries(reconciledCheckpoints)) {
+        const accountDef = ACCOUNTS.find((a) => a.key === accountKey);
+        await Account.findByIdAndUpdate(accountsByKey[accountKey]._id, {
+            lastReconciledDate: daysAgoToDate(cp.mostRecentDaysAgo),
+            lastReconciledBalanceCents: accountDef.startingBalanceCents + cp.sumCents
         });
     }
 

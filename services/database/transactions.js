@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Transaction = require('../../models/transaction');
 const { encryptNotes, decryptNotes, decryptSplitsInPlace, encryptSplitsForWrite } = require('./notesCrypto');
+const { decorate: decoratePayee } = require('./payees');
 
 const populateOpts = ['payee', 'category', 'tags', 'splits.category'];
 
@@ -24,11 +25,14 @@ const SORTS = {
 
 // notes/splits[].notes are encrypted at rest (AES-256-GCM, see
 // utils/secretCrypto.js and services/database/notesCrypto.js) — decorate()
-// attaches plaintext back onto the in-memory document.
+// attaches plaintext back onto the in-memory document. Also decrypts a
+// populated `payee` ref — populate() only pulls the stored
+// nameIv/nameCiphertext, it doesn't run it through payees.js's own decorate().
 function decorate(doc) {
     if (!doc) return doc;
     doc.notes = decryptNotes(doc);
     decryptSplitsInPlace(doc.splits);
+    if (doc.payee && doc.payee.nameIv !== undefined) decoratePayee(doc.payee);
     return doc;
 }
 function decorateAll(docs) { docs.forEach(decorate); return docs; }

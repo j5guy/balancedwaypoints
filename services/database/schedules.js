@@ -1,16 +1,24 @@
 const Schedule = require('../../models/schedule');
 const { reconcile } = require('../schedules/occurrenceOverrides');
 const { encryptNotes, decryptNotes, decryptSplitsInPlace, encryptSplitsForWrite, decryptOverridesInPlace } = require('./notesCrypto');
+const { decorate: decoratePayee } = require('./payees');
 
 // notes/splits[].notes, and occurrenceOverrides[].notes/splits[].notes, are
 // encrypted at rest (AES-256-GCM, see utils/secretCrypto.js and
 // services/database/notesCrypto.js) — decorate() attaches plaintext back
-// onto the in-memory document.
+// onto the in-memory document. Also decrypts a populated `payee` ref (base
+// schedule and, when listActiveForAccount() populated them too, each
+// occurrence override's own payee) — populate() only pulls the stored
+// nameIv/nameCiphertext, it doesn't run it through payees.js's own decorate().
 function decorate(doc) {
     if (!doc) return doc;
     doc.notes = decryptNotes(doc);
     decryptSplitsInPlace(doc.splits);
     decryptOverridesInPlace(doc.occurrenceOverrides);
+    if (doc.payee && doc.payee.nameIv !== undefined) decoratePayee(doc.payee);
+    (doc.occurrenceOverrides || []).forEach((o) => {
+        if (o.payee && o.payee.nameIv !== undefined) decoratePayee(o.payee);
+    });
     return doc;
 }
 function decorateAll(docs) { docs.forEach(decorate); return docs; }

@@ -67,4 +67,8 @@ const remove = async (id, ownerId) => {
     return Payee.findOneAndDelete({ _id: id, owner: ownerId }).exec();
 };
 
-module.exports = { list, findById, findByName, findOrCreateByName, create, update, remove };
+// Exported so other models that `.populate('payee')` a raw Payee ref
+// (services/database/transactions.js, services/database/schedules.js) can
+// decrypt it the same way — populate() only pulls the stored
+// nameIv/nameCiphertext/etc., it never runs them through decorate() itself.
+module.exports = { list, findById, findByName, findOrCreateByName, create, update, remove, decorate };
